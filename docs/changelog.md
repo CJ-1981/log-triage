@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+## 1.1.0 (2026-09-12)
+- feat: search-result click-to-line jump, go-to-line control, stress e2e suite (wheel scroll, line jumps, deep-scan full coverage, wrap/chip stress); deep-scan completion message reports scanned lines
+# Changelog
+
 ## 1.0.0 (2026-09-11)
 
 - G0: scaffold, build pipeline, coverage gate, CI workflow
