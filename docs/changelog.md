@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.1.4 (2026-09-12)
+- test: make stress click-to-jump spec self-contained (fresh page, own ingest, row wait, page-error assertion)
+- docs: resolve changelog history after v1.1.3 release rebase
+- fix: search-results panel scrolls (flex min-height:0); same fix for file list and tab panels
+
 - Fix: the search-results panel is now scrollable when results exceed the viewport (flex `min-height: 0` was missing, so the panel stretched to full content height inside a clipped layout); the same latent issue was fixed for the file list and the tab panels
 
 ## 1.1.3 (2026-09-12)
