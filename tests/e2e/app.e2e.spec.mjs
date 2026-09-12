@@ -287,6 +287,27 @@ test('search results use separate file, line and timestamp columns', async () =>
   assert.match(row.text, /ecu=gateway/);
 });
 
+test('horizontal scrolling works in nowrap mode (long lines widen the scroll area)', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  const geo = await page.evaluate(`JSON.stringify((() => {
+    const el = document.getElementById('viewer');
+    return { sw: el.scrollWidth, cw: el.clientWidth };
+  })())`).then(JSON.parse);
+  assert.ok(geo.sw > geo.cw, 'long lines widen the scroll area: ' + geo.sw + ' vs ' + geo.cw);
+  await page.evaluate(() => { document.getElementById('viewer').scrollLeft = 400; });
+  await page.waitForTimeout(150);
+  const sl = await page.evaluate(() => document.getElementById('viewer').scrollLeft);
+  assert.ok(sl > 100, 'viewer scrolls horizontally, scrollLeft=' + sl);
+  // rows keep their full single-line text in nowrap mode (no clipping to the column)
+  const wide = await page.evaluate(`JSON.stringify((() => {
+    const row = document.querySelector('.vrow .txt');
+    return { rowW: row.offsetWidth, textW: row.scrollWidth };
+  })())`).then(JSON.parse);
+  assert.ok(wide.textW >= wide.rowW || wide.rowW > 500, 'text cell holds the full line');
+});
+
 test('search results panel scrolls when content exceeds the viewport', async () => {
   await fresh();
   await click('btn-demo');

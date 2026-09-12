@@ -189,6 +189,8 @@
   let seqToIdx = new Map();
   let keptLineMap = new Map(); // "displayName:lineNo" -> record (for jumps)
   let filteredCount = 0;
+  let viewMaxLen = 0;       // longest raw line length in the view (chars)
+  let charW = 0;            // measured monospace character width (px)
 
   function onKeptChanged() {
     filterQuickInit();
@@ -216,6 +218,9 @@
     seqToIdx = new Map(view.map((r, i) => [r.seq, i]));
     keptLineMap = new Map();
     for (const r of store.kept) keptLineMap.set(fileDisplayName(r.fileId) + ':' + r.lineNo, r);
+    // widest line in the view drives the nowrap-mode horizontal scroll range
+    viewMaxLen = 0;
+    for (const r of arr) { if (r.raw.length > viewMaxLen) viewMaxLen = r.raw.length; }
     filteredCount = view.length;
     displayCache = new Map();
     selection.clear();
@@ -314,12 +319,29 @@
     return lo;
   }
 
+  function monoCharWidth() {
+    if (charW) return charW;
+    const c = document.createElement('canvas');
+    const ctx = c.getContext('2d');
+    ctx.font = '12.5px "Cascadia Mono", Consolas, "JetBrains Mono", Menlo, monospace';
+    charW = (ctx.measureText('MMMMMMMMMM').width / 10) || 7.5;
+    return charW;
+  }
+
   function renderRows() {
     const v = viewer();
     const spacer = $('vspacer');
-    spacer.style.height = totalHeight() + 'px';
     const top = v.scrollTop;
     const h = v.clientHeight;
+    if (state.wrapOn) {
+      spacer.style.width = v.clientWidth + 'px';
+    } else {
+      // explicit width from the widest line in the view: rendered windows are
+      // partial, so max-content would collapse the horizontal scroll range
+      const gutter = 152 + 34 + 68 + 38 + 24 + (state.viewMode === 'merged' ? 152 : 0);
+      spacer.style.width = Math.ceil(Math.max(v.clientWidth, monoCharWidth() * viewMaxLen + gutter)) + 'px';
+    }
+    spacer.style.height = totalHeight() + 'px';
     const start = Math.max(0, findIndexAtOffset(top) - 5);
     const end = Math.min(view.length, findIndexAtOffset(top + h) + 5);
 
