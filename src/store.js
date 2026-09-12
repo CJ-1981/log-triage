@@ -26,6 +26,18 @@
       return this._files[id];
     }
 
+    /** level tally scoped to one file (chips in per-file view mode) */
+    tallyFor(fileId) {
+      const t = new LevelTally();
+      const f = this._files[fileId];
+      if (!f) return t;
+      for (const key of Object.keys(f.levelCounts || {})) {
+        const lvl = key === 'null' ? null : key;
+        for (let i = 0; i < f.levelCounts[key]; i++) t.add(lvl);
+      }
+      return t;
+    }
+
     removeFile(fileId) {
       const f = this._files[fileId];
       if (!f) return;

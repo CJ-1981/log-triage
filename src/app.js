@@ -251,6 +251,7 @@
     displayCache = new Map();
     selection.clear();
     invalidateHeights();
+    renderChips(); // chips follow the current scope (merged = all files, per-file = active file)
     renderRows();
     updateStatus();
   }
@@ -266,7 +267,10 @@
   function renderChips() {
     const row = $('chips-row');
     row.innerHTML = '';
-    const chips = tally.chipList();
+    // per-file view shows that file's tally; merged view shows everything
+    const chips = (state.viewMode === 'file' && state.activeFile)
+      ? store.tallyFor(state.activeFile).chipList()
+      : tally.chipList();
     if (!chips.length) {
       row.innerHTML = '<span class="muted" id="chips-hint">Level chips appear after loading</span>';
       return;

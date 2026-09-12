@@ -274,6 +274,32 @@ test('wrap mode renders scrolled pages at their true position', async () => {
   await click('btn-wrap');
 });
 
+test('level chips rescope to the selected file in per-file view', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'demo.log'),
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+  ]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
+  const chipsText = () => page.evaluate(() => Array.from(document.querySelectorAll('.chip')).map((c) => c.textContent).join(' '));
+  // merged mode: chips sum severities of all files
+  const mergedChips = await chipsText();
+  assert.match(mergedChips, /E14/, 'merged chips sum: ' + mergedChips);
+  // select syslog in per-file mode: chips rescope to syslog only (I7 E1)
+  await page.evaluate(() => document.querySelectorAll('.file-item')[1].click());
+  await page.waitForFunction(() => document.getElementById('view-mode').value === 'file', null, { timeout: 5000 });
+  await page.waitForFunction(() => !/D\d/.test(Array.from(document.querySelectorAll('.chip')).map((c) => c.textContent).join(' ')), null, { timeout: 5000 });
+  const fileChips = await chipsText();
+  assert.match(fileChips, /I7/);
+  assert.match(fileChips, /E1\b/);
+  assert.ok(!/D\d/.test(fileChips), 'levels from other files disappear: ' + fileChips);
+  // back to merged: chips sum again
+  await page.evaluate(() => {
+    document.querySelectorAll('.file-item')[1].click();
+  });
+  await page.waitForFunction(() => /E14/.test(Array.from(document.querySelectorAll('.chip')).map((c) => c.textContent).join(' ')), null, { timeout: 5000 });
+});
+
 test('file list click switches the viewer between loaded files (regression: undefined handler)', async () => {
   await fresh();
   await page.setInputFiles('#file-input', [

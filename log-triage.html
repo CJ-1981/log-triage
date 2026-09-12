@@ -1136,6 +1136,18 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       return this._files[id];
     }
 
+    /** level tally scoped to one file (chips in per-file view mode) */
+    tallyFor(fileId) {
+      const t = new LevelTally();
+      const f = this._files[fileId];
+      if (!f) return t;
+      for (const key of Object.keys(f.levelCounts || {})) {
+        const lvl = key === 'null' ? null : key;
+        for (let i = 0; i < f.levelCounts[key]; i++) t.add(lvl);
+      }
+      return t;
+    }
+
     removeFile(fileId) {
       const f = this._files[fileId];
       if (!f) return;
@@ -1818,6 +1830,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     displayCache = new Map();
     selection.clear();
     invalidateHeights();
+    renderChips(); // chips follow the current scope (merged = all files, per-file = active file)
     renderRows();
     updateStatus();
   }
@@ -1833,7 +1846,10 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   function renderChips() {
     const row = $('chips-row');
     row.innerHTML = '';
-    const chips = tally.chipList();
+    // per-file view shows that file's tally; merged view shows everything
+    const chips = (state.viewMode === 'file' && state.activeFile)
+      ? store.tallyFor(state.activeFile).chipList()
+      : tally.chipList();
     if (!chips.length) {
       row.innerHTML = '<span class="muted" id="chips-hint">Level chips appear after loading</span>';
       return;
@@ -3858,6 +3874,18 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     deepEq(t.counts(), {});
     t.remove(null, 3); // unknown bucket key
     deepEq(t.counts(), {});
+  });
+
+  T('store', 'tallyFor returns the per-file level tally', () => {
+    const s = new SRC.Store(100);
+    s.add('a', 1, 'x', { level: 'I' }, true);
+    s.add('a', 2, 'y', { level: 'W' }, true);
+    s.add('a', 3, 'z', { level: 'W' }, false); // dropped lines count too
+    s.add('b', 1, 'q', { level: 'E' }, true);
+    deepEq(s.tallyFor('a').counts(), { I: 1, W: 2 });
+    deepEq(s.tallyFor('b').counts(), { E: 1 });
+    deepEq(s.tallyFor('zz').counts(), {});
+    deepEq(s.tallyFor('a').chipList().map((c) => c.id), ['I', 'W']);
   });
 
   return { CASES, eq, deepEq, ok };

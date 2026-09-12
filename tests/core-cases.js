@@ -1002,5 +1002,17 @@
     deepEq(t.counts(), {});
   });
 
+  T('store', 'tallyFor returns the per-file level tally', () => {
+    const s = new SRC.Store(100);
+    s.add('a', 1, 'x', { level: 'I' }, true);
+    s.add('a', 2, 'y', { level: 'W' }, true);
+    s.add('a', 3, 'z', { level: 'W' }, false); // dropped lines count too
+    s.add('b', 1, 'q', { level: 'E' }, true);
+    deepEq(s.tallyFor('a').counts(), { I: 1, W: 2 });
+    deepEq(s.tallyFor('b').counts(), { E: 1 });
+    deepEq(s.tallyFor('zz').counts(), {});
+    deepEq(s.tallyFor('a').chipList().map((c) => c.id), ['I', 'W']);
+  });
+
   return { CASES, eq, deepEq, ok };
 }));
