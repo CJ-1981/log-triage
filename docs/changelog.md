@@ -2,35 +2,29 @@
 
 ## Unreleased
 
-<<<<<<< HEAD
-## 1.1.3 (2026-09-12)
-- chore: rebuild log-triage.html at v1.1.2
-- fix: wrap mode actually wraps long lines (spacer width root cause) with true-offset windowed rendering; refresh README screenshots; clean changelog after v1.1.1
-
-=======
 - Fix: the search-results panel is now scrollable when results exceed the viewport (flex `min-height: 0` was missing, so the panel stretched to full content height inside a clipped layout); the same latent issue was fixed for the file list and the tab panels
->>>>>>> 85d911f (fix: search-results panel scrolls (flex min-height:0); same fix for file list and tab panels)
-- Fix: wrap mode now actually wraps long lines — the row container previously stretched to the longest single line (no wrapping, mostly-empty scroll area); windowed pages are also positioned at their true scroll offset
+
+## 1.1.3 (2026-09-12)
+
+- chore: rebuild log-triage.html at v1.1.2
+- fix: wrap mode now actually wraps long lines — the row container previously stretched to the longest single line (no wrapping, mostly-empty scroll area); windowed pages are also positioned at their true scroll offset
+- fix: search results use dedicated file / line number / timestamp / text columns (deep-scan rows extract the timestamp from each line) — the file name no longer overlaps the timestamp
+- fix: newly loaded files are visible immediately — stale per-file selection resets to the merged view; files panel is collapsible via the header "☰ Files" toggle
+- fix: release-bot changelog insertion folds Unreleased bullets into the new version section with a single header (regression-tested)
+- docs: refresh README screenshots; clean changelog structure
 
 ## 1.1.2 (2026-09-12)
+
+- chore: rebuild log-triage.html at v1.1.2 (Pages build)
 - fix: release-bot changelog insertion now folds Unreleased bullets into the new version section with a single header (regression-tested)
 
 ## 1.1.1 (2026-09-12)
+
 - fix: wrap mode renders scrolled windows at true offset; new files visible after per-file selection; collapsible files panel; search results in file/line/timestamp/text columns; changelog structure fix in bump flow; e2e 20 specs
 - docs: add screenshots (viewer dark/light, masks, analysis, search) to README; refresh stale project tree and script list
 - docs: add live GitHub Pages link to README
 - ci: upload site directory as the github-pages artifact (fixes deploy-pages finding no artifact)
 - ci: deploy the built single-file app to GitHub Pages on main (actions/deploy-pages, served as index.html)
-# Changelog
-
-## Unreleased
-
-- Files panel is collapsible via the header "☰ Files" toggle (state persisted; wrapped line heights re-measured on toggle)
-- Fix: newly loaded files are visible immediately — loading no longer leaves the viewer stuck on a previous file's per-file selection, and a stale per-file selection falls back to the merged view
-- Fix: wrap mode positions rendered pages at their true scroll offset (previously all windowed rows stacked at the container top, so long wrapped logs appeared as a single page)
-- Fix: search results use dedicated file / line number / timestamp / text columns (deep-scan rows extract the timestamp from each line) — the file name no longer overlaps the timestamp
-- Search-result click-to-line jump, go-to-line control, and the stress e2e suite (wheel scroll, line jumps, deep-scan full coverage, wrap/chip stress); deep scan reports scanned lines on completion
-- e2e suite now 20 specs (12 app + 8 stress)
 
 ## 1.1.0 (2026-09-12)
 
