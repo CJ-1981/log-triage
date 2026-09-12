@@ -205,6 +205,7 @@ table.rules { min-width: 620px; }
       <button data-tab="masks">Masks</button>
       <button data-tab="analysis">Analysis</button>
       <button data-tab="export">Export</button>
+      <button data-tab="config">Config</button>
     </div>
     <div id="hdr-right">
       <span id="privacy">100% client-side — files never leave this machine</span>
@@ -355,6 +356,21 @@ table.rules { min-width: 620px; }
           <p class="muted" id="exp-note"></p>
           <h2>Privacy</h2>
           <p class="muted">Exports are generated in your browser via Blob download. Nothing is uploaded — ever. External PII providers (Presidio/LLM) are <b>not</b> active in this build; the default engine is the local regex engine.</p>
+        </div>
+      </div>
+      <!-- CONFIG -->
+      <div class="tab" id="tab-config">
+        <div class="panel">
+          <h2>Configuration — export / import</h2>
+          <p class="muted">One JSON file carries your filter rules, time range, PII mask setup (built-in toggles + custom rules) and issue-scan rules. Share it with colleagues or keep it as a backup.</p>
+          <div class="rowline">
+            <button id="btn-config-export" class="primary">Export config (.json)</button>
+            <button id="btn-config-import">Import config (.json)…</button>
+            <input type="file" id="config-file" accept=".json" class="hidden">
+          </div>
+          <p class="muted" id="config-status"></p>
+          <h2>Current setup</h2>
+          <div class="card-row" id="config-cards"></div>
         </div>
       </div>
     </div>

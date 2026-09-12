@@ -544,6 +544,38 @@ test('drag handle resizes the bookmarks panel', async () => {
   assert.ok(shrunk < grown, 'dragging down shrinks the bookmarks panel: ' + grown + ' -> ' + shrunk);
 });
 
+test('config tab exports and imports filter/mask/issue-scan configuration', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  // change config: disable the VIN mask rule
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
+  await page.evaluate(() => document.querySelector('[data-mask="vin"]').click());
+  await page.waitForTimeout(150);
+  // export the configuration and inspect the downloaded file
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=config]').click());
+  const downloadPromise = page.waitForEvent('download', { timeout: 8000 });
+  await click('btn-config-export');
+  const download = await downloadPromise;
+  assert.match(download.suggestedFilename(), /log-triage-config\.json$/);
+  const path = await download.path();
+  const fs = await import('node:fs');
+  const cfg = JSON.parse(fs.readFileSync(path, 'utf8'));
+  assert.strictEqual(cfg.masks.enabled.vin, false, 'exported config carries the disabled vin rule');
+  assert.strictEqual(cfg.issueGroups.length, 5, 'five issue-scan groups exported');
+  // re-enable vin, then import the config: it must be disabled again
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
+  await page.evaluate(() => document.querySelector('[data-mask="vin"]').click());
+  const enabledAgain = await page.evaluate(() => document.body.innerText.includes('YV4**********4567'));
+  assert.ok(enabledAgain, 'vin masked again after re-enable');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=config]').click());
+  await page.setInputFiles('#config-file', [path]);
+  await page.waitForFunction(() => document.getElementById('config-status').textContent.includes('imported'), null, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
+  const vinCheckbox = await page.evaluate(() => document.querySelector('[data-mask="vin"]').checked);
+  assert.strictEqual(vinCheckbox, false, 'import re-applied the disabled vin rule');
+});
+
 test('mobile layout: page fits width, files panel is an overlay drawer, mask cards stack', async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   await fresh();

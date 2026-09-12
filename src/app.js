@@ -1225,6 +1225,85 @@
     if (blob) download(blob, fname);
   }
   function st() { return store.stats(); }
+
+  function configPayload() {
+    return {
+      app: 'log-triage',
+      configVersion: 1,
+      exportedAt: new Date().toISOString(),
+      filters: { rules: state.rules, timeFrom: state.timeFrom, timeTo: state.timeTo },
+      masks: { enabled: Object.assign({}, state.maskEnabled), custom: state.customMasks.map((c) => Object.assign({}, c)) },
+      issueGroups: state.issueGroups,
+    };
+  }
+
+  function exportConfig() {
+    const blob = new Blob([JSON.stringify(configPayload(), null, 2)], { type: 'application/json' });
+    download(blob, LT.timestampedName(new Date(), 'log-triage-config', 'json'));
+    $('config-status').textContent = 'configuration exported';
+    setTimeout(() => { $('config-status').textContent = ''; }, 4000);
+  }
+
+  function applyConfig(cfg) {
+    const applied = [];
+    if (cfg.filters && Array.isArray(cfg.filters.rules)) {
+      state.rules = cfg.filters.rules.map((r) => Object.assign({ name: 'rule', pattern: '', caseSensitive: false, action: 'include', enabled: true }, r));
+      if (typeof cfg.filters.timeFrom === 'string') { state.timeFrom = cfg.filters.timeFrom; $('time-from').value = state.timeFrom; }
+      if (typeof cfg.filters.timeTo === 'string') { state.timeTo = cfg.filters.timeTo; $('time-to').value = state.timeTo; }
+      applyFilters(); renderRules();
+      applied.push('filters');
+    }
+    if (cfg.masks) {
+      if (cfg.masks.enabled && typeof cfg.masks.enabled === 'object') {
+        for (const id of Object.keys(cfg.masks.enabled)) {
+          if (id in state.maskEnabled) state.maskEnabled[id] = !!cfg.masks.enabled[id];
+        }
+        applied.push('mask rules');
+      }
+      if (Array.isArray(cfg.masks.custom)) {
+        state.customMasks = cfg.masks.custom.map((c) => Object.assign({ name: 'custom', pattern: '', replacement: '', enabled: true }, c));
+        applied.push('custom masks');
+      }
+      syncMasksFromState(); renderMasks();
+    }
+    if (Array.isArray(cfg.issueGroups)) {
+      state.issueGroups = cfg.issueGroups.map((g) => Object.assign({ kind: 'group', pattern: '', on: true }, g));
+      applied.push('issue-scan rules');
+    }
+    saveState(); rebuildView();
+    return applied;
+  }
+
+  function renderConfigSummary() {
+    const enabledMasks = LT.builtinRuleIds().filter((id) => state.maskEnabled[id] !== false).length;
+    const enabledIssues = (state.issueGroups || []).filter((g) => g.on).length;
+    $('config-cards').innerHTML =
+      stat('Filter rules', state.rules.filter((r) => r.enabled !== false).length) +
+      stat('Masks on', enabledMasks + '/' + LT.builtinRuleIds().length) +
+      stat('Custom masks', state.customMasks.length) +
+      stat('Issue rules on', enabledIssues + '/' + (state.issueGroups || []).length) +
+      stat('Presets', Object.keys(state.presets).length);
+  }
+
+  function importConfigFile(file) {
+    const fr = new FileReader();
+    fr.onload = () => {
+      try {
+        const cfg = JSON.parse(fr.result);
+        if (!cfg || typeof cfg !== 'object' || (!cfg.filters && !cfg.masks && !Array.isArray(cfg.issueGroups))) {
+          throw new Error('not a log-triage config file');
+        }
+        const applied = applyConfig(cfg);
+        $('config-status').textContent = 'config imported: ' + (applied.join(', ') || 'empty config');
+      } catch (e) {
+        $('config-status').textContent = 'import failed: ' + e.message;
+      }
+    };
+    fr.onerror = () => { $('config-status').textContent = 'could not read file'; };
+    fr.readAsText(file);
+  }
+
+  function st() { return store.stats(); }
   function exportRg() {
     const rows = [];
     document.querySelectorAll('#search-results .sr-row').forEach((el) => {
@@ -1320,6 +1399,7 @@
     if (name === 'analysis') renderAnalysis();
     if (name === 'masks') renderMasks();
     if (name === 'filters') renderRules();
+    if (name === 'config') renderConfigSummary();
   }
 
   function setMask(on) {
@@ -1536,6 +1616,14 @@
     $('goto-ln').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { goToLine(); e.preventDefault(); }
     });
+
+    $('btn-config-export').onclick = exportConfig;
+    $('btn-config-import').onclick = () => $('config-file').click();
+    $('config-file').onchange = (e) => {
+      const f = e.target.files[0];
+      if (f) importConfigFile(f);
+      e.target.value = '';
+    };
 
     $('btn-add-rule').onclick = () => { state.rules.push({ name: 'rule ' + (state.rules.length + 1), pattern: '', caseSensitive: false, action: 'include', enabled: true }); renderRules(); };
     ;['time-from', 'time-to'].forEach((id) => { $(id).onchange = applyFilters; });
