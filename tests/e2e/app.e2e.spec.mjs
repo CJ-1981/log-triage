@@ -670,7 +670,16 @@ test('analysis file selector scopes every section to one file', async () => {
   ]);
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
-  await page.waitForFunction(() => document.querySelectorAll('#analysis-panel .stat-card').length > 0, null, { timeout: 5000 });
+  try {
+    await page.waitForFunction(() => document.querySelectorAll('#analysis-panel .stat-card').length > 0, null, { timeout: 5000 });
+  } catch (e) {
+    const diag = await page.evaluate(() => JSON.stringify({
+      panelHtml: document.getElementById('analysis-panel').innerHTML.slice(0, 300),
+      active: document.querySelector('#tabs button.active') ? document.querySelector('#tabs button.active').textContent : 'none',
+      errs: window.__errs || []
+    }));
+    throw new Error('analysis panel never rendered: ' + diag);
+  }
   const opts = await page.evaluate(() => Array.from(document.querySelectorAll('#analysis-file option')).map((o) => o.textContent));
   assert.deepStrictEqual(opts, ['All files (2)', 'demo.log', 'syslog.log']);
   // pick syslog: overview lines drop to 8 and issue scan only cites syslog

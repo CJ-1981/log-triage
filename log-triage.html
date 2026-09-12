@@ -1730,7 +1730,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     theme: LT.DEFAULT_THEME || 'midnight',
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
-    timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200,
+    timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200, issueGroups: null,
     bookmarks: null, levels: [], rg: { fixed: false, word: false, invert: false, caseMode: 'smart', before: 0, after: 0 },
   });
   let state = defaults();
@@ -2558,12 +2558,14 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       rules: state.rules, quick: state.quick, levels: state.levels,
       timeFrom: state.timeFrom, timeTo: state.timeTo,
       maskEnabled: state.maskEnabled, customMasks: state.customMasks, rg: state.rg,
+      issueGroups: state.issueGroups,
     };
   }
   function applyPreset(p) {
     state.rules = p.rules || [];
     state.quick = p.quick || '';
     state.levels = p.levels || [];
+    state.issueGroups = Array.isArray(p.issueGroups) ? JSON.parse(JSON.stringify(p.issueGroups)) : JSON.parse(JSON.stringify(DEFAULT_ISSUE_GROUPS));
     state.timeFrom = p.timeFrom || ''; state.timeTo = p.timeTo || '';
     state.maskEnabled = p.maskEnabled || {};
     state.customMasks = p.customMasks || [];
@@ -2682,6 +2684,11 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       '<h2>Top message shapes</h2>' + (msgs.length ? msgs.map((t) => '<div class="hbar"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(t.k) + '</span><b>' + t.n + '</b></div>').join('') : '<span class="muted">none</span>') +
       '</div></div>' +
       '<h2>Issue scan</h2>' +
+      '<details class="issue-config"><summary class="muted">How it works / configure rules</summary>' +
+      '<p class="muted" style="margin:6px 0">Each rule is a case-insensitive keyword pattern scanned against every kept line of the selected scope (first match wins per line, first 200 shown). Click a result to jump to the line. Rules are editable and saved.</p>' +
+      '<div id="issue-groups">' + issueGroupRows() + '</div>' +
+      '<div class="rowline"><button id="btn-issue-add">+ Add rule</button><button id="btn-issue-restore" title="restore the built-in keyword groups">Restore defaults</button></div>' +
+      '</details>' +
       (issues.length ? issues.map((i) => '<div class="issue" data-seq="' + i.seq + '"><span><b>' + i.kind + '</b> — ' + esc(i.snippet) + '</span><span class="muted">' + esc(i.file) + ':' + i.lineNo + '</span></div>').join('') : '<span class="muted">no issue keywords found</span>') +
       '<h2>PII census (kept lines, sample)</h2>' +
       '<div class="card-row">' + Object.keys(census).map((k) => '<div class="stat-card"><div class="v">' + census[k] + '</div><div class="k">' + esc(k) + '</div></div>').join('') + '</div>';
@@ -2691,9 +2698,45 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     fileSel.onchange = () => { state.analysisFile = fileSel.value; renderAnalysis(); };
 
     drawHistogram(recs);
-    p.querySelectorAll('.issue').forEach((el) => {
-      el.onclick = () => { const seq = Number(el.dataset.seq); if (seqToIdx.has(seq)) { jumpTo(seqToIdx.get(seq)); } };
+    p.querySelectorAll('.issue').forEach((el, idx) => {
+      el.onclick = () => { const it = issues[idx]; if (it && it.rec) jumpToRecord(it.rec); };
     });
+    bindIssueEditor(p);
+  }
+
+  function issueGroupRows() {
+    return state.issueGroups.map((g, i) =>
+      '<div class="rowline" data-ig="' + i + '">' +
+      '<input type="checkbox" class="toggle" data-ig-i="' + i + '" data-ig-k="on"' + (g.on ? ' checked' : '') + '>' +
+      '<input type="text" data-ig-i="' + i + '" data-ig-k="kind" value="' + esc(g.kind) + '" style="width:110px">' +
+      '<input type="text" data-ig-i="' + i + '" data-ig-k="pattern" value="' + esc(g.pattern) + '" style="flex:1;min-width:200px;font-family:var(--mono);font-size:12px">' +
+      '<button data-ig-del="' + i + '" title="delete rule">✕</button>' +
+      '</div>').join('');
+  }
+
+  function bindIssueEditor(p) {
+    const box = p.querySelector('#issue-groups');
+    box.onchange = (e) => {
+      const i = Number(e.target.dataset.igI);
+      const k = e.target.dataset.igK;
+      if (k === undefined || isNaN(i)) return;
+      const g = state.issueGroups[i];
+      if (!g) return;
+      if (k === 'on') g.on = e.target.checked; else g[k] = e.target.value;
+      saveState(); renderAnalysis();
+    };
+    box.onclick = (e) => {
+      const i = e.target.dataset ? e.target.dataset.igDel : undefined;
+      if (i !== undefined) { state.issueGroups.splice(Number(i), 1); saveState(); renderAnalysis(); }
+    };
+    p.querySelector('#btn-issue-add').onclick = () => {
+      state.issueGroups.push({ kind: 'custom-' + (state.issueGroups.length + 1), pattern: 'CHANGE_ME', on: true });
+      saveState(); renderAnalysis();
+    };
+    p.querySelector('#btn-issue-restore').onclick = () => {
+      state.issueGroups = JSON.parse(JSON.stringify(DEFAULT_ISSUE_GROUPS));
+      saveState(); renderAnalysis();
+    };
   }
 
   function stat(k, v) { return '<div class="stat-card"><div class="v">' + v + '</div><div class="k">' + k + '</div></div>'; }
@@ -2715,19 +2758,26 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     for (const r of records) { const k = normMsg(r.msg || r.raw); m[k] = (m[k] || 0) + 1; }
     return Object.keys(m).map((k) => ({ k, n: m[k] })).sort((a, b) => b.n - a.n).slice(0, n);
   }
-  const ISSUE_GROUPS = [
-    ['crash', /fatal exception|tombstone|beginning of crash/i],
-    ['anr', /\banr in |input dispatching timed out/i],
-    ['proc-death', /has died|am_proc_died|force stopping/i],
-    ['connectivity', /connectivityservice|networkmonitor|data_disconnected|wifiservice|deactivatedatacall/i],
-    ['auth', /auth error|auth blocked|authentication failed|token refresh|credential|failed password|password check failed/i],
+  const DEFAULT_ISSUE_GROUPS = [
+    { kind: 'crash', pattern: 'fatal exception|tombstone|beginning of crash', on: true },
+    { kind: 'anr', pattern: '\\banr in |input dispatching timed out', on: true },
+    { kind: 'proc-death', pattern: 'has died|am_proc_died|force stopping', on: true },
+    { kind: 'connectivity', pattern: 'connectivityservice|networkmonitor|data_disconnected|wifiservice|deactivatedatacall', on: true },
+    { kind: 'auth', pattern: 'auth error|auth blocked|authentication failed|token refresh|credential|failed password|password check failed', on: true },
   ];
+  function getIssueGroups() {
+    return (state.issueGroups || DEFAULT_ISSUE_GROUPS).filter((g) => g.on && g.pattern);
+  }
   function issueScan(records) {
     const out = [];
+    const regexes = [];
+    for (const g of getIssueGroups()) {
+      try { regexes.push({ kind: g.kind, re: new RegExp(g.pattern, 'i') }); } catch (e) { /* bad user pattern: skip */ }
+    }
     for (const r of records) {
-      for (const [kind, re] of ISSUE_GROUPS) {
-        if (re.test(r.raw)) {
-          out.push({ kind, snippet: (r.msg || r.raw).slice(0, 110), file: fileDisplayName(r.fileId), lineNo: r.lineNo, seq: r.seq });
+      for (const g of regexes) {
+        if (g.re.test(r.raw)) {
+          out.push({ kind: g.kind, snippet: (r.msg || r.raw).slice(0, 110), file: fileDisplayName(r.fileId), lineNo: r.lineNo, seq: r.seq, rec: r });
           break;
         }
       }
@@ -3055,6 +3105,9 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   /* ---------------- boot ---------------- */
   function boot() {
     loadState();
+    if (!Array.isArray(state.issueGroups)) {
+      state.issueGroups = JSON.parse(JSON.stringify(DEFAULT_ISSUE_GROUPS));
+    }
     if (location.search.indexOf('selftest') >= 0) { runSelfTest(); return; }
 
     const sel = $('theme-sel');
