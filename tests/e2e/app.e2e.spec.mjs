@@ -287,6 +287,37 @@ test('search results use separate file, line and timestamp columns', async () =>
   assert.match(row.text, /ecu=gateway/);
 });
 
+test('search matches scroll horizontally on narrow viewports (no truncation)', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await page.setViewportSize({ width: 420, height: 800 }); // phone-ish width
+  await page.evaluate(() => {
+    document.querySelector('#tabs button[data-tab=search]').click();
+    const q = document.getElementById('rg-pattern');
+    q.value = 'AndroidRuntime';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 10000 });
+  const geo = await page.evaluate(`JSON.stringify((() => {
+    const el = document.getElementById('search-results');
+    const row = document.querySelector('#search-results .sr-row');
+    return {
+      hScroll: el.scrollWidth > el.clientWidth + 1,
+      rowW: row.offsetWidth,
+      cellW: row.querySelector('.srx').offsetWidth,
+      textLen: row.querySelector('.srx').textContent.length
+    };
+  })())`).then(JSON.parse);
+  assert.ok(geo.hScroll, 'results panel gains a horizontal scroll range on narrow screens');
+  assert.ok(geo.cellW > 200, 'match text cell is not squeezed to nothing: ' + geo.cellW);
+  await page.evaluate(() => { document.getElementById('search-results').scrollLeft = 300; });
+  await page.waitForTimeout(150);
+  const sl = await page.evaluate(() => document.getElementById('search-results').scrollLeft);
+  assert.ok(sl > 100, 'panel scrolls horizontally, scrollLeft=' + sl);
+  await page.setViewportSize({ width: 1440, height: 900 });
+});
+
 test('horizontal scrolling works in nowrap mode (long lines widen the scroll area)', async () => {
   await fresh();
   await click('btn-demo');

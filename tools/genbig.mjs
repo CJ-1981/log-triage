@@ -42,9 +42,11 @@ function write() {
   let ok = true;
   while (ok && bytes < target) {
     const sec = (n % 86400);
+    // deterministic rare marker every 100k lines (stress tests jump to these)
+    const rare = (n % 100000 === 9999);
     const line = `08-24 ${pad((sec / 3600 | 0) % 24, 2)}:${pad((sec / 60 | 0) % 60, 2)}:${pad(sec % 60, 2)}.${pad((n % 1000), 3)}` +
-      `  ${pad(1000 + (n % 9000), 4)}  ${pad(100 + (n % 8000), 4)} ${pick(LEVELS)} ${pick(TAGS)}: ` +
-      pick(MSGS).replaceAll('<N>', String(n % 9973)) + '\n';
+      `  ${pad(1000 + (n % 9000), 4)}  ${pad(100 + (n % 8000), 4)} ${rare ? 'W' : pick(LEVELS)} ${rare ? 'RAREMARK' : pick(TAGS)}: ` +
+      (rare ? 'RAREJUMPMARKER deterministic target seq=' + n : pick(MSGS).replaceAll('<N>', String(n % 9973))) + '\n';
     n++;
     bytes += line.length;
     ok = ws.write(line);

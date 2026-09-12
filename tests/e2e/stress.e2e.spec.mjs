@@ -37,6 +37,13 @@ before(async () => {
   page.on('pageerror', (e) => { page.__pageErrors = (page.__pageErrors || []).concat(String(e)); });
 });
 
+/** number of deterministic RAREJUMPMARKER lines in the fixture (n % 100000 === 9999) */
+function expectedMarkers() {
+  let count = 0;
+  for (let n = 9999; n < fixtureLines; n += 100000) count++;
+  return count;
+}
+
 after(async () => {
   if (browser) await browser.close();
   if (server) server.kill();
@@ -132,7 +139,7 @@ test('stress: clicking an instant search result jumps to the line', async () => 
   await page.evaluate(() => {
     document.querySelector('#tabs button[data-tab=search]').click();
     const q = document.getElementById('rg-pattern');
-    q.value = 'ecu=gateway alive seq=1201';
+    q.value = 'RAREJUMPMARKER';
     q.dispatchEvent(new Event('input'));
   });
   await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 30000 });
@@ -142,22 +149,23 @@ test('stress: clicking an instant search result jumps to the line', async () => 
   const after = await state();
   assert.ok(after.scrollTop > 0, 'viewer scrolled to the match');
   const drawer = await page.evaluate(() => document.getElementById('drawer').textContent);
-  assert.match(drawer, /ecu=gateway alive seq=1201/);
+  assert.match(drawer, /RAREJUMPMARKER/);
   const errs = await page.evaluate(() => (window.__errs || []).length);
   assert.strictEqual(errs, 0);
 });
 
 test('stress: deep scan covers the whole file beyond the kept cap', async () => {
-  // rare pattern (~34 hits across 338k lines): deep scan must cover every
-  // line on disk without hitting the result cap, and must find matches the
-  // kept-line cap hides from instant search
+  // the rare RAREJUMPMARKER lines sit at fixed positions: deep scan must
+  // cover every line on disk and find markers the kept-line cap hides
+  const expectMarkers = expectedMarkers();
+  assert.ok(expectMarkers >= 2, 'fixture should contain several markers');
   await page.evaluate(() => { document.getElementById('search-progress').textContent = ''; });
   await page.evaluate(() => {
     const q = document.getElementById('rg-pattern');
-    q.value = 'ecu=gateway alive seq=1201';
+    q.value = 'RAREJUMPMARKER';
     q.dispatchEvent(new Event('input'));
   });
-  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 20000 });
+  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 30000 });
   const instant = await page.evaluate(() => document.getElementById('search-progress').textContent);
   await page.evaluate(() => document.getElementById('btn-deepscan').click());
   await page.waitForFunction(() => /^deep scan: /.test(document.getElementById('search-progress').textContent), null, { timeout: 120000 });
@@ -166,6 +174,7 @@ test('stress: deep scan covers the whole file beyond the kept cap', async () => 
   const scanned = Number(/over (\d+) lines/.exec(deep)[1]);
   assert.strictEqual(scanned, fixtureLines, 'deep scan must cover every line on disk');
   assert.ok(!/capped/.test(deep), 'rare pattern must not hit the result cap');
+  assert.strictEqual(deepN, expectMarkers, 'deep scan must find every marker');
   const instantN = Number(/(\d+) match/.exec(instant)[1]);
   assert.ok(deepN > instantN, 'deep scan ' + deepN + ' must exceed kept-capped instant ' + instantN);
 });
