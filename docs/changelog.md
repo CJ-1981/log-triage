@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.9.0 (2026-09-12)
+- chore: rebuild log-triage.html
+- feat: per-file ✕ removal now purges the file cache entry; duplicate removeFileById declarations merged (cache-aware path restored)
+
 ## 1.8.0 (2026-09-12)
 - chore: rebuild log-triage.html
 - feat: star toggle in viewer toolbar to show only bookmarked lines (with hint when none exist; re-filters live when bookmarks change)
