@@ -6,7 +6,7 @@
 
 **Log Triage** is a privacy-first log triage tool that runs entirely in your browser. Drop one or more log files onto a single self-contained HTML page and get instant format detection, parsing, filtering, ripgrep-style search, PII masking, analysis, and sanitized export — with no server, no uploads, and no telemetry. Your files never leave your machine.
 
-Current release: v1.12.1 (version is bumped automatically by CI from conventional commits).
+Current release: v1.13.0
 
 ## Screenshots
 
@@ -50,10 +50,10 @@ The same viewer in the light **Paper** theme:
 - **Multi-file loading** — sequential streaming ingestion with per-file and overall progress, cancel support, an 8 MB newline valve, and exact per-file counters. Only filtered "kept" lines are retained, under a configurable global cap (default 100,000 lines).
 - **Format autodetection** — Android logcat threadtime, syslog (RFC 3164), Apache CLF, ISO-8601, bare `MM-DD`, and plain text with timestamps normalized to a year-less `MM-DD HH:MM:SS.mmm` form.
 - **Ripgrep-style search** — instant search over kept lines plus a deep-scan mode that re-streams files from disk with `-F` (fixed strings), smart-case default (`-i` / sensitive), `-w` whole word, `-v` invert, `-B`/`-A` context, and normal / `-c` count / `-l` files-with-matches modes. Results are capped (default 10,000), grouped by file as `file:lineNo:` in collapsible per-file groups (Collapse all / Expand all, match counts in headers), and exportable as rg-style text or JSON.
-- **PII masking** — 16 built-in ordered regex rules (VIN, IBAN, credit card, SSN, international and US phone, IMEI, email, device serial `SN-`, MAC with OUI kept, private/public IPv4, IPv6 link-local/ULA, GNSS decimal pairs, subscriberId, hotspot SSID `AndroidShare_`), individually toggleable, plus custom regex-to-template rules. Masking is applied lazily over raw stored text and toggled in the viewer with the `M` key. An extensible `PiiProvider` registry ships with a mock provider; future Presidio and LLM backends are documented but not wired.
+- **PII masking** — 16 built-in ordered regex rules (VIN, IBAN, credit card, SSN, international and US phone, IMEI, email, device serial `SN-`, MAC with OUI kept, private/public IPv4, IPv6 link-local/ULA, GNSS decimal pairs, subscriberId, hotspot SSID `AndroidShare_`), individually toggleable, plus custom regex-to-template rules. Masking is applied lazily over raw stored text and toggled in the viewer with the `M` key. An extensible `PiiProvider` registry ships with a mock provider; external Presidio and LLM backends are designed but not yet wired (planned: FR-25, ADR-0010).
 - **Filter engine** — ordered regex rules of three kinds: include (OR), exclude (subtractive), and highlight (additive), with a case toggle and live hit counters. Dynamic level chips are generated from the levels actually observed in each load, and an inclusive time range narrows the view by timestamp prefix comparison.
 - **Analysis tab** — level bars, top tags, top messages via pattern normalization (numbers/hex/UUIDs stripped to cluster similar lines), a canvas time histogram with y-axis gridlines and value ticks, x-axis time labels, and a hover tooltip (count + time range; device-pixel-ratio aware), issue scanning for crashes/ANRs/process deaths/connectivity/auth problems (the auth group also detects `failed password` and `password check failed`), an issue-scan rule editor (enable, edit kind and case-insensitive pattern, delete, add-rule, restore-defaults; bad patterns skipped safely; saved in state and presets), a PII census, and per-file comparison — all scopeable via a file selector (`All files (N)` or one file), with issue entries that click-jump to the line.
-- **Viewer** — virtualized rendering for 100k+ rows, merged-timeline and per-file views, wrap toggle with a measured-height cache, six themes (Midnight default, Paper, Solarized Dark, Solarized Light, Monokai, High Contrast), severity badges with W/E/F row tint, multiline selection and copy (click anchor, shift-click range, ctrl-click toggle, ctrl+A; copy with optional `file:lineNo:` prefixes), bookmarks with notes persisted by file identity, a sidebar bookmarks panel (entry list, jump-to-line, count pill; collapsible with a drag-resize handle), a ★ Only-bookmarks toolbar toggle (shows a hint when no bookmarks exist; re-filters live), and a detail drawer.
+- **Viewer** — virtualized rendering for 100k+ rows, merged-timeline and per-file views, wrap toggle with a measured-height cache, six themes (Midnight default, Paper, Solarized Dark, Solarized Light, Monokai, High Contrast), severity badges with W/E/F row tint, multiline selection and copy (click anchor, shift-click range, ctrl-click toggle, ctrl+A; copy with optional `file:lineNo:` prefixes), bookmarks with notes persisted by file identity, a sidebar bookmarks panel (entry list, jump-to-line, count pill; collapsible with a drag-resize handle), a ★ only-bookmarks chip in the level-chips row (★ + live bookmarked count; appears when bookmarks exist in scope, click toggles the filter; re-filters live), and a detail drawer.
 - **Export sanitized** — `.log`/`.txt` (with `[Ln]` or `file:lineNo:` prefixes), `.csv`, `.json`, rg search results, bookmarks, and selection-only export. Filenames are timestamped `YYYY-MM-DD_HHmmss`.
 - **Presets** — named filter/mask/search-flag sets persisted in localStorage with JSON import/export.
 - **File removal** — per-file ✕ buttons in the files panel drop a file's lines, counters, and level-chip contribution (clear-all uses the same path); removing a file also clears its bookmarks and purges its cache entry.
@@ -71,7 +71,7 @@ The same viewer in the light **Paper** theme:
 - **100% client-side.** All parsing, searching, masking, analysis, and export happen in the browser tab. There is no backend; log files never leave the machine.
 - **No network by design.** No CDN assets, no external fonts, no analytics, no telemetry of any kind — the tool works fully offline.
 - **Lazy masking.** Raw lines are stored locally; masking is applied only at render/copy/export time, so nothing is rewritten behind your back and unmasked inspection is always explicit.
-- **Future external PII providers are opt-in and off by default.** A localhost Presidio sidecar (still machine-local) or a remote LLM backend is a documented extension point (see `docs/decisions.md`, ADR-0003). Neither is wired in v1; when they arrive, remote analysis will require an explicit opt-in with a clear warning that data would leave the machine.
+- **Future external PII providers are opt-in and off by default.** A localhost Presidio sidecar (still machine-local) or a remote LLM backend is a documented extension point (see `docs/decisions.md`, ADR-0003 and ADR-0010). Neither is wired in v1; when they arrive, remote analysis will require an explicit opt-in with a clear warning that data would leave the machine.
 
 ## Development
 
@@ -116,10 +116,10 @@ log-triage/
 │   └── shots.mjs          # Screenshot capture for docs
 ├── docs/
 │   ├── img/               # README screenshots (generated by tools/shots.mjs)
-│   ├── requirements.md    # FR-1..FR-24, NFR-1..NFR-4, out of scope
+│   ├── requirements.md    # FR-1..FR-25, NFR-1..NFR-4, out of scope
 │   ├── architecture.md    # Module map, build pipeline, data flow, extension points
 │   ├── test-plan.md       # Gates G0–G8, coverage policy, e2e scope, fixtures
-│   ├── decisions.md       # ADR-0001..ADR-0009
+│   ├── decisions.md       # ADR-0001..ADR-0010
 │   └── changelog.md       # Maintained by tools/bump.mjs
 └── .github/
     └── workflows/

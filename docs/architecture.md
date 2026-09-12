@@ -146,3 +146,34 @@ The masking engine is extensible behind a stable interface so new analysis backe
 - **Future Presidio backend (proposed, ADR-0003).** Presidio would run as a localhost sidecar service on the user's machine — text still never leaves the machine, but the tool would talk to `localhost` over HTTP. `local: true`, gated behind an explicit user action.
 - **Future LLM backend (proposed, ADR-0003).** An LLM backend is remote by definition: data would leave the machine. It must be explicit opt-in, off by default, and show a persistent warning whenever active. It is documented in v1 but not wired.
 - **Security stance.** v1 ships with zero network code paths. The registry makes the boundary explicit (`local` flag), so any future remote provider is auditable: if `available()` can return true without the user having opted in, that is a bug.
+
+### Planned: PII Providers tab (FR-25)
+
+Planned for v1.14.0 — design documented here and in ADR-0010; requirements in FR-25. The tab adds a provider dropdown (Local regex engine — default, always available / Presidio sidecar / LLM API), per-provider settings, a "Test connection" button, and a red warning banner whenever a remote (non-local) provider is active.
+
+Request flow:
+
+```
+UI (PII Providers tab)
+  → provider adapter (registry; one adapter per backend)
+    → Presidio REST  /analyze  or  LLM REST /chat/completions
+    → (optional) CORS proxy prefix — browsers cannot call APIs lacking CORS headers directly;
+      Presidio on localhost typically needs no proxy, remote LLM APIs usually do
+  → findings normalized to { line, start, end, type, score }
+  → merged into the PII census and available to masking
+```
+
+Config JSON shape (persisted in `log_triage_state_v1`):
+
+```js
+{
+  provider: "presidio" | "llm",
+  presidio: { url, language, scoreThreshold, entities[] },
+  llm:      { url, model, promptTemplate, maxLinesPerRequest },  // temperature 0
+  proxy:    { enabled, url }
+}
+// The API key is entered password-style, stored in localStorage only, and deliberately
+// absent from this shape — Config-tab exports never include it.
+```
+
+Presidio settings: service URL (default `http://127.0.0.1:3000`), analyze endpoint path, language, score threshold (0–1), entity-type filter list, request timeout. LLM settings: endpoint URL, model, prompt template with a `{lines}` placeholder, max lines per request.

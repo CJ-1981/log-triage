@@ -211,6 +211,20 @@ Status: implemented (v1.12.1).
 - AC-2: Import validates the JSON and applies it per section, reporting the outcome in a status line.
 - AC-3: Current-setup cards show what will be exported/applied before confirming.
 
+### FR-25 — External PII analysis providers (Presidio / LLM)
+
+Status: **planned** (v1.14.0 target) — design documented (ADR-0010), not yet implemented.
+
+A "PII Providers" tab (or section) routes PII analysis beyond the built-in local regex engine to a Presidio sidecar or an LLM API, with the privacy safeguards from ADR-0003/ADR-0010.
+
+- AC-1: A provider dropdown offers Local regex engine (default, always available, fully offline) / Presidio sidecar / LLM API; switching providers is instant and applies per load.
+- AC-2: Presidio settings: service URL (default `http://127.0.0.1:3000`), analyze endpoint path, language, score threshold (0–1), entity-type filter list, and request timeout.
+- AC-3: LLM settings: endpoint URL (e.g. `https://api.openai.com/v1/chat/completions`), API key (password-style input, stored in localStorage, never exported in config files), model name, prompt template with a `{lines}` placeholder, max lines per request, and temperature 0.
+- AC-4: A proxy mode toggle with a proxy base URL: when enabled, provider HTTP requests go through the configured proxy prefix to avoid browser CORS errors (Presidio on localhost typically needs no proxy; remote LLM APIs usually do unless they allow browser origins).
+- AC-5: A "Test connection" button per provider with a status display; an explicit red warning banner appears whenever a remote (non-local) provider is active — data leaves the machine; config export never includes the API key.
+- AC-6: Findings from the active provider use the shape `{line, start, end, type, score}` and merge into the PII census and can drive masking.
+- AC-7: Invalid endpoints and timeouts surface readable errors; the local regex engine remains the default and works fully offline.
+
 ## Non-functional requirements
 
 ### NFR-1 — Performance

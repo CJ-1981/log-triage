@@ -2,9 +2,12 @@
 
 ## Unreleased
 
+- Planned: PII Providers tab (Presidio sidecar / LLM) — design documented (ADR-0010, FR-25)
+
 ## 1.14.0 (2026-09-12)
 - feat: star badge chip in the chips row for only-bookmarks filtering with live count (replaces toolbar button)
 - docs: add missing v1.12.x feature bullets (issue editor, Config tab, file cache) to changelog
+- Planned: PII Providers tab (Presidio sidecar / LLM) — design documented (ADR-0010, FR-25)
 
 ## 1.13.0 (2026-09-12)
 - chore: rebuild log-triage.html
