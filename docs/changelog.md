@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.14.0 (2026-09-12)
+- feat: star badge chip in the chips row for only-bookmarks filtering with live count (replaces toolbar button)
+- docs: add missing v1.12.x feature bullets (issue editor, Config tab, file cache) to changelog
+
 ## 1.13.0 (2026-09-12)
 - chore: rebuild log-triage.html
 - feat: Config tab — export/import filter, mask and issue-scan configuration as JSON with validation and setup summary
