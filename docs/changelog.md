@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.8.0 (2026-09-12)
+- chore: rebuild log-triage.html
+- feat: star toggle in viewer toolbar to show only bookmarked lines (with hint when none exist; re-filters live when bookmarks change)
+
 ## 1.7.0 (2026-09-12)
 - chore: rebuild log-triage.html
 - feat: bookmarks panel in the sidebar under Files (entry list, jump-to-line, count pill; replaces the drawer-based panel)
