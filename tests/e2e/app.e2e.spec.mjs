@@ -116,13 +116,18 @@ test('ripgrep search: instant results and deep scan agree on small files', async
   });
   const instant = await page.evaluate(() => document.getElementById('search-progress').textContent);
   assert.match(instant, /3 match/);
+  await page.evaluate(() => document.getElementById('search-progress').textContent = '');
   await click('btn-deepscan');
-  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('deep scan'));
+  await page.waitForFunction(() => /^deep scan: /.test(document.getElementById('search-progress').textContent));
   const deep = await page.evaluate(() => document.getElementById('search-progress').textContent);
   assert.match(deep, /3 match/);
-  // grouped results with rg-style prefix
-  const first = await page.evaluate(() => (document.querySelector('#search-results .sr-row .ln') || { textContent: '' }).textContent);
-  assert.match(first, /demo\.log:\d+:/);
+  // grouped results with file name, line number and timestamp columns
+  const first = await page.evaluate(`JSON.stringify((() => {
+    const r = document.querySelector('#search-results .sr-row');
+    return { file: r.querySelector('.srf').textContent, ln: r.querySelector('.srl').textContent };
+  })())`).then(JSON.parse);
+  assert.strictEqual(first.file, 'demo.log');
+  assert.match(first.ln, /^\d+$/);
 });
 
 test('theme switch persists across reload', async () => {
@@ -165,4 +170,90 @@ test('export produces a downloadable txt with masked content', async () => {
   const content = fs.readFileSync(path, 'utf8');
   assert.ok(content.includes('YV4**********4567'), 'exported text is masked');
   assert.ok(!content.includes('YV4AB9CD12EF34567'), 'exported text contains no raw VIN');
+});
+
+test('files panel is collapsible and state persists', async () => {
+  await fresh();
+  const visible = () => page.evaluate(() => document.getElementById('sidebar').offsetWidth > 0);
+  assert.ok(await visible(), 'sidebar starts visible');
+  await click('btn-side');
+  assert.ok(!(await visible()), 'sidebar hidden after toggle');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  assert.ok(!(await visible()), 'collapsed state persists across reload');
+  await click('btn-side');
+  assert.ok(await visible(), 'sidebar expands again');
+});
+
+test('a newly loaded file is visible in the viewer even in per-file mode', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  // select per-file view bound to demo.log
+  await page.evaluate(() => {
+    document.querySelector('.file-item').click();
+    const sel = document.getElementById('view-mode');
+    sel.value = 'file';
+    sel.dispatchEvent(new Event('change'));
+  });
+  await page.waitForTimeout(200);
+  // load a second file while per-file mode points at demo.log
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'syslog.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = 'sshd';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForTimeout(250);
+  const shown = await page.evaluate(() => Number(document.getElementById('st-shown').textContent));
+  assert.ok(shown > 0, 'new file lines are visible after load, got ' + shown);
+});
+
+test('wrap mode renders scrolled pages at their true position', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await click('btn-wrap');
+  await page.waitForTimeout(300); // wrap heights re-measured, spacer resized
+  const scrolled = await page.evaluate(() => {
+    const el = document.getElementById('viewer');
+    el.scrollTop = el.scrollHeight; // jump to the bottom (scroll event re-renders)
+    return el.scrollTop;
+  });
+  await page.waitForTimeout(300);
+  assert.ok(scrolled > 0, 'wrap mode is scrollable');
+  const rowInfo = await page.evaluate(`JSON.stringify((() => {
+    const el = document.getElementById('viewer');
+    const vr = el.getBoundingClientRect();
+    const cy = vr.top + vr.height / 2;
+    let centerLn = null;
+    document.querySelectorAll('.vrow').forEach((row) => {
+      const r = row.getBoundingClientRect();
+      if (r.top <= cy && r.bottom >= cy) centerLn = Number(row.querySelector('.ln').textContent);
+    });
+    return { centerLn, count: document.querySelectorAll('.vrow').length };
+  })())`).then(JSON.parse);
+  assert.ok(rowInfo.centerLn && rowInfo.centerLn > 20, 'the viewport center shows a line near the end of the file, got ' + JSON.stringify(rowInfo));
+  await click('btn-wrap');
+});
+
+test('search results use separate file, line and timestamp columns', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await page.evaluate(() => {
+    document.querySelector('#tabs button[data-tab=search]').click();
+    const q = document.getElementById('rg-pattern');
+    q.value = 'ecu=gateway';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 10000 });
+  const row = await page.evaluate(`JSON.stringify((() => {
+    const r = document.querySelector('#search-results .sr-row');
+    return { file: r.querySelector('.srf').textContent, ln: r.querySelector('.srl').textContent, ts: r.querySelector('.srt').textContent, text: r.querySelector('.srx').textContent };
+  })())`).then(JSON.parse);
+  assert.strictEqual(row.file, 'demo.log');
+  assert.match(row.ln, /^\d+$/);
+  assert.match(row.ts, /^\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/);
+  assert.match(row.text, /ecu=gateway/);
 });

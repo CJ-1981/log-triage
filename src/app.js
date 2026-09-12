@@ -12,7 +12,7 @@
     theme: LT.DEFAULT_THEME || 'midnight',
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
-    timeFrom: '', timeTo: '',
+    timeFrom: '', timeTo: '', sideHidden: false,
     bookmarks: null, levels: [], rg: { fixed: false, word: false, invert: false, caseMode: 'smart', before: 0, after: 0 },
   });
   let state = defaults();
@@ -151,6 +151,9 @@
 
   async function loadFiles(fileList) {
     ingestAbort = false;
+    // a fresh load shows everything: drop any stale per-file selection
+    state.activeFile = null;
+    saveState();
     let i = 0;
     for (const f of fileList) {
       const entry = { id: 'f' + Date.now() + '_' + (i++), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
@@ -195,6 +198,13 @@
   }
 
   function rebuildView() {
+    // stale per-file selection (file removed / new load): fall back to merged
+    if (state.activeFile && !files.some((f) => f.id === state.activeFile)) {
+      state.activeFile = null;
+      state.viewMode = 'merged';
+      const sel = $('view-mode');
+      if (sel) sel.value = 'merged';
+    }
     let arr = store.kept.filter((r) => filter.evaluate(r).kept);
     if (state.viewMode === 'file' && state.activeFile) {
       arr = arr.filter((r) => r.fileId === state.activeFile);
@@ -272,7 +282,8 @@
       measureEl.style.cssText = 'position:absolute;visibility:hidden;white-space:pre-wrap;word-break:break-all;font-family:var(--mono);font-size:12.5px;left:-9999px;top:0;';
       document.body.appendChild(measureEl);
     }
-    measureEl.style.width = (viewer().clientWidth - 130) + 'px';
+    measureEl.style.width = Math.max(200, viewer().clientWidth -
+      (110 + (state.viewMode === 'merged' ? 140 : 0))) + 'px';
     for (let i = 0; i < n; i++) {
       const t = displayText(view[i]);
       measureEl.textContent = t;
@@ -305,10 +316,17 @@
     const h = v.clientHeight;
     const start = Math.max(0, findIndexAtOffset(top) - 5);
     const end = Math.min(view.length, findIndexAtOffset(top + h) + 5);
-    const frag = document.createDocumentFragment();
 
-    // reuse a single positioned container per render
-    spacer.innerHTML = '';
+    // Windowed rows are stacked inside one offset block so they appear at
+    // their true scroll position (wrap rows have variable heights).
+    const inner = document.createElement('div');
+    if (state.wrapOn) {
+      measureWrap();
+      inner.style.transform = 'translateY(' + (heightSum[start] || 0) + 'px)';
+    } else {
+      inner.style.transform = 'translateY(' + (start * ROW_H) + 'px)';
+    }
+
     const wrapCls = state.wrapOn ? ' wrap' : '';
     for (let i = start; i < end; i++) {
       const rec = view[i];
@@ -319,8 +337,6 @@
       else if (rec.level === 'E') cls += ' tint-e';
       else if (rec.level === 'F') cls += ' tint-f';
       row.className = cls;
-      if (state.wrapOn) { row.style.minHeight = rowHeight(i) + 'px'; row.style.position = 'static'; }
-      else row.style.transform = 'translateY(' + (i * ROW_H) + 'px)';
       const bmk = bookmarksStore.has(bookmarkKeyFor(rec.fileId), rec.lineNo);
       const text = displayText(rec);
       const hl = quickSpans(text);
@@ -331,9 +347,10 @@
         (rec.level ? '<div class="vcell lv lvl-' + esc(rec.level) + '">' + esc(rec.level) + '</div>' : '<div class="vcell lv"></div>') +
         '<div class="vcell" style="white-space:inherit">' + (hl || esc(text)) + '</div>';
       row.dataset.idx = i;
-      frag.appendChild(row);
+      inner.appendChild(row);
     }
-    spacer.appendChild(frag);
+    spacer.innerHTML = '';
+    spacer.appendChild(inner);
   }
 
   function fileDisplayName(fileId) {
@@ -526,19 +543,21 @@
     for (const r of res.rows.slice(0, 10000)) {
       const rec = store.kept[r.idx];
       const name = nameOf(rec.fileId);
-      (byFile[name] = byFile[name] || []).push({ lineNo: rec.lineNo, text: displayText(rec), spans: r.spans });
+      (byFile[name] = byFile[name] || []).push({ lineNo: rec.lineNo, ts: rec.ts, text: displayText(rec) });
     }
     out.innerHTML = Object.keys(byFile).map((f) =>
       '<div class="sr-file">' + esc(f) + ' (' + byFile[f].length + ')</div>' +
-      byFile[f].map((r) => srRow(f, r.lineNo, r.text, true, null)).join('')).join('') ||
+      byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true)).join('')).join('') ||
       '<div class="muted" style="padding:20px">no matches</div>';
   }
 
-  function srRow(file, lineNo, text, isMatch, seq) {
+  function srRow(file, lineNo, ts, text, isMatch) {
     const cls = isMatch ? 'hit' : 'ctx';
-    const pre = isMatch ? ':' : '-';
-    return '<div class="sr-row ' + cls + '" data-seq="' + seq + '" data-file="' + esc(file) + '" data-ln="' + lineNo + '">' +
-      '<span class="ln">' + esc(file) + pre + lineNo + pre + '</span><span>' + esc(text) + '</span></div>';
+    return '<div class="sr-row ' + cls + '" data-file="' + esc(file) + '" data-ln="' + lineNo + '">' +
+      '<span class="srf" title="' + esc(file) + '">' + esc(file) + '</span>' +
+      '<span class="srl">' + lineNo + '</span>' +
+      '<span class="srt">' + esc(ts || '—') + '</span>' +
+      '<span class="srx">' + esc(text) + '</span></div>';
   }
 
   let deepAbort = false;
@@ -568,12 +587,12 @@
         scanned++;
         const masked = state.maskOn ? engine.maskLine(line) : line;
         if (LT.matchLine(s, line)) {
-          for (const r of ring) results.push({ file: entry.name, lineNo: r.lineNo, text: state.maskOn ? engine.maskLine(r.text) : r.text, isMatch: false });
+          for (const r of ring) results.push({ file: entry.name, lineNo: r.lineNo, ts: LT.detectTs(r.text), text: state.maskOn ? engine.maskLine(r.text) : r.text, isMatch: false });
           ring.length = 0;
-          results.push({ file: entry.name, lineNo, text: masked, isMatch: true });
+          results.push({ file: entry.name, lineNo, ts: LT.detectTs(line), text: masked, isMatch: true });
           afterLeft = after;
         } else if (afterLeft > 0) {
-          results.push({ file: entry.name, lineNo, text: masked, isMatch: false });
+          results.push({ file: entry.name, lineNo, ts: LT.detectTs(line), text: masked, isMatch: false });
           afterLeft--;
         } else {
           ring.push({ lineNo, text: line });
@@ -600,7 +619,7 @@
     }
     out.innerHTML = Object.keys(byFile).map((f) =>
       '<div class="sr-file">' + esc(f) + '</div>' +
-      byFile[f].map((r) => srRow(f, r.lineNo, r.text, r.isMatch, null)).join('')).join('');
+      byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch)).join('')).join('');
   }
 
   /* ---------------- filters panel ---------------- */
@@ -870,7 +889,7 @@
   function exportRg() {
     const rows = [];
     document.querySelectorAll('#search-results .sr-row').forEach((el) => {
-      rows.push({ file: el.dataset.file, lineNo: Number(el.dataset.ln), text: el.children[1].textContent, isMatch: el.classList.contains('hit') });
+      rows.push({ file: el.dataset.file, lineNo: Number(el.dataset.ln), text: el.querySelector('.srx').textContent, isMatch: el.classList.contains('hit') });
     });
     if (!rows.length) { $('exp-note').textContent = 'no search results on screen to export'; return; }
     download(new Blob([LT.toRgText(rows)], { type: 'text/plain' }), LT.timestampedName(new Date(), 'log-triage-search', 'txt'));
@@ -920,7 +939,7 @@
     d.className = 'open';
     d.innerHTML = '<h3>' + esc(file) + ':' + esc(lineNo) +
       ' <small class="muted">(beyond kept-line cap)</small><button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
-      '<dl><div><dt>text</dt><dd>' + esc(row.textContent.replace(/^[^ ]+ /, '')) + '</dd></div></dl>' +
+      '<dl><div><dt>text</dt><dd>' + esc(row.querySelector('.srx').textContent) + '</dd></div></dl>' +
       '<p class="muted">This line was released from memory (kept-line cap). Deep scan re-read the file from disk to find it.</p>';
   }
 
@@ -1005,6 +1024,13 @@
     sel.value = state.theme;
     document.body.dataset.theme = state.theme;
     sel.onchange = () => { state.theme = sel.value; document.body.dataset.theme = sel.value; saveState(); };
+
+    const applySide = () => {
+      document.getElementById('main').classList.toggle('side-hidden', !!state.sideHidden);
+      $('btn-side').classList.toggle('on', !state.sideHidden);
+    };
+    $('btn-side').onclick = () => { state.sideHidden = !state.sideHidden; applySide(); saveState(); invalidateHeights(); renderRows(); };
+    applySide();
 
     document.querySelectorAll('#tabs button').forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
 

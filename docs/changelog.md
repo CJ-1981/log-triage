@@ -1,9 +1,17 @@
 # Changelog
 
 ## Unreleased
+
+- Files panel is collapsible via the header "☰ Files" toggle (state persisted; wrapped line heights re-measured on toggle)
+- Fix: newly loaded files are visible immediately — loading no longer leaves the viewer stuck on a previous file's per-file selection, and a stale per-file selection falls back to the merged view
+- Fix: wrap mode positions rendered pages at their true scroll offset (previously all windowed rows stacked at the container top, so long wrapped logs appeared as a single page)
+- Fix: search results use dedicated file / line number / timestamp / text columns (deep-scan rows extract the timestamp from each line) — the file name no longer overlaps the timestamp
+- Search-result click-to-line jump, go-to-line control, and the stress e2e suite (wheel scroll, line jumps, deep-scan full coverage, wrap/chip stress); deep scan reports scanned lines on completion
+- e2e suite now 20 specs (12 app + 8 stress)
+
 ## 1.1.0 (2026-09-12)
+
 - feat: search-result click-to-line jump, go-to-line control, stress e2e suite (wheel scroll, line jumps, deep-scan full coverage, wrap/chip stress); deep-scan completion message reports scanned lines
-# Changelog
 
 ## 1.0.0 (2026-09-11)
 
@@ -15,11 +23,4 @@
 - G5: kept-line store (streaming ingestion, 8 MB valve, 100k cap with FIFO trim, exact per-file counters), merged timeline, virtualized viewer, selection model, bookmarks
 - G6: sanitized exporters (.log/.txt, .csv, .json, rg results, bookmarks) and tools/bump.mjs version tooling
 - G7: six themes (Midnight, Paper, Solarized Dark/Light, Monokai, High Contrast) and full UI assembly
-- G8: Playwright e2e suite (8 specs), 300 MB big-file verification, review fixes (build token replacer P0, quick-regex cache, amortized trim, MessageChannel yield)
-
-## Unreleased
-
-- Clicking an instant-search result now jumps to the line in the viewer (auto-switches tab, selects and opens the detail drawer); results referencing lines beyond the kept-line cap show the matched text with an explanatory note instead
-- New "go to line" control in the viewer toolbar (type a line number, press Enter); lines outside the current view are reported with the reason (filtered out or released by the kept-line cap)
-- Stress e2e suite (tests/e2e/stress.e2e.spec.mjs, `npm run e2e:stress`): 30 MB / ~338k-line ingest timing + exact counters vs the fixture on disk, real mouse-wheel scrolling of the virtualized viewer, go-to-line inside and outside the kept window, search-result line jump, uncapped deep-scan full-file coverage assertion, wrap-toggle responsiveness over the full kept set, and rapid chip toggling
-- Deep-scan progress message now reports the number of lines scanned when the scan completes (`deep scan: N match(es) over M lines`)
+- G8: Playwright e2e suite, 300 MB big-file verification, review fixes (build token replacer P0, quick-regex cache, amortized trim, MessageChannel yield)
