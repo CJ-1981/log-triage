@@ -4,7 +4,7 @@
 (function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  const LT = typeof module === 'object' && module.exports ? null : (root.LT || {});
+  const LT = typeof module === 'object' && module.exports ? null : (typeof self !== 'undefined' ? self.LT : {});
   const U = LT ? LT : require('./util.js');
 
   class BookmarkStore {

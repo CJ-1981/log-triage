@@ -8,7 +8,7 @@
     "test": "node --test tests/core.test.js tests/scaffold.test.js tests/bump.test.js",
     "test:gate": "node tools/coverage-gate.mjs",
     "build": "node build.js",
-    "e2e": "node --test tests/e2e/",
+    "e2e": "node --test tests/e2e/app.e2e.spec.mjs",
     "bump": "node tools/bump.mjs"
   },
   "devDependencies": {

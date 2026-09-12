@@ -41,7 +41,7 @@ function buildHTML({ version, template, modules, cases, css, demoLog }) {
   // Function replacers are mandatory: string replacements would expand
   // $&, $`, $' sequences inside injected module sources.
   return template
-    .replace('__LT_VERSION__', () => String(version))
+    .replace(/__LT_VERSION__/g, () => String(version))
     .replace('/*__LT_CSS__*/', () => String(css || ''))
     .replace('/*__LT_MODULES__*/', () => modules.join('\n'))
     .replace('/*__LT_CASES__*/', () => String(cases || ''))

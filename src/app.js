@@ -88,38 +88,60 @@
   }
 
   async function ingestFile(entry) {
-    const sample = [];
+    const DETECT_AFTER = 1000;
+    let sample = [];
     let format = 'plain';
     let detected = false;
     let lineNo = 0;
     const progress = (msg) => { $('st-progress').textContent = msg; };
     const onBytes = (n) => { entry.read += n; progress(entry.name + ': ' + LT.fmtBytes(entry.read) + ' / ' + LT.fmtBytes(entry.size)); };
+    const parseAndAdd = (line, fastPath) => {
+      const rec = LT.parseLine(line, format);
+      const kept = fastPath ? true : filter.evaluate({ raw: line, ts: rec.ts, level: rec.level }).kept;
+      store.add(entry.id, lineNo, line, rec, kept);
+    };
     entry.read = 0;
     store.setFileInfo(entry.id, entry.name, entry.size);
+    const fastPath = !filter.rules.some((r) => r.enabled) && !filter.quick &&
+      !state.levels.length && !filter.timeFrom && !filter.timeTo;
     for await (const line of streamLines(entry.file, onBytes)) {
       if (ingestAbort) { entry.status = 'cancelled'; return; }
       lineNo++;
       if (!detected) {
         sample.push(line);
-        if (sample.length >= 1000) {
+        if (sample.length >= DETECT_AFTER) {
           format = LT.detectFormat(sample).format;
           entry.format = format;
           detected = true;
+          for (const l of sample) { parseAndAdd(l, fastPath); }
+          sample = null;
           renderFiles();
         }
+        continue;
       }
-      const rec = LT.parseLine(line, detected ? format : 'plain');
-      const verdict = filter.evaluate({ raw: line, ts: rec.ts, level: rec.level });
-      store.add(entry.id, lineNo, line, rec, verdict.kept);
+      parseAndAdd(line, fastPath);
       if ((lineNo & 0x3fff) === 0) await tick(); // yield to UI periodically
     }
-    if (!detected) { entry.format = LT.detectFormat(sample).format; }
+    if (!detected && sample) {
+      // small file: detection happens at end of stream, then buffered lines parse
+      format = LT.detectFormat(sample).format;
+      entry.format = format;
+      for (const l of sample) { parseAndAdd(l, fastPath); }
+    }
     entry.status = 'done';
     entry.lines = lineNo;
     progress('');
   }
 
-  function tick() { return new Promise((r) => setTimeout(r, 0)); }
+  function tick() {
+    // MessageChannel yield: hands control back to the event loop without the
+    // timer clamping that hidden/background tabs apply to setTimeout().
+    return new Promise((r) => {
+      const ch = new MessageChannel();
+      ch.port1.onmessage = () => { ch.port1.close(); r(); };
+      ch.port2.postMessage(0);
+    });
+  }
 
   async function loadFiles(fileList) {
     ingestAbort = false;
@@ -166,7 +188,7 @@
   }
 
   function rebuildView() {
-    let arr = store.kept;
+    let arr = store.kept.filter((r) => filter.evaluate(r).kept);
     if (state.viewMode === 'file' && state.activeFile) {
       arr = arr.filter((r) => r.fileId === state.activeFile);
     }
@@ -290,11 +312,11 @@
       row.className = cls;
       if (state.wrapOn) { row.style.minHeight = rowHeight(i) + 'px'; row.style.position = 'static'; }
       else row.style.transform = 'translateY(' + (i * ROW_H) + 'px)';
-      const bm = bookmarksStore.has(currentFileKey(), rec.lineNo) && (!state.activeFile || rec.fileId === state.activeFile);
+      const bmk = bookmarksStore.has(bookmarkKeyFor(rec.fileId), rec.lineNo);
       const text = displayText(rec);
       const hl = quickSpans(text);
       row.innerHTML =
-        '<div class="vcell bm' + (bm ? ' marked' : '') + '" data-bm="' + i + '">' + (bm ? '★' : '☆') + '</div>' +
+        '<div class="vcell bm' + (bmk ? ' marked' : '') + '" data-bm="' + i + '">' + (bmk ? '★' : '☆') + '</div>' +
         '<div class="vcell ln">' + rec.lineNo + '</div>' +
         (state.viewMode === 'merged' ? '<div class="vcell fl" title="' + esc(fileDisplayName(rec.fileId)) + '">' + esc(fileDisplayName(rec.fileId)) + '</div>' : '') +
         (rec.level ? '<div class="vcell lv lvl-' + esc(rec.level) + '">' + esc(rec.level) + '</div>' : '<div class="vcell lv"></div>') +
@@ -322,7 +344,18 @@
 
   function quickSpans(text) {
     if (!filter._quickRe) return null;
-    const spans = LT.matchSpans(filter._quickRe, text);
+    // the quick regex is compiled non-global; clone it with /g for span scanning
+    const src = filter._quickRe;
+    const re = src.global ? src : new RegExp(src.source, src.flags + 'g');
+    const spans = [];
+    let m;
+    re.lastIndex = 0;
+    while ((m = re.exec(text)) !== null) {
+      if (m[0].length === 0) { re.lastIndex++; continue; }
+      spans.push([m.index, m.index + m[0].length]);
+      if (spans.length >= 100) break;
+    }
+    if (!src.global) re.lastIndex = 0;
     if (!spans.length) return null;
     let out = '', pos = 0;
     for (const [a, b] of spans) {
@@ -388,9 +421,11 @@
 
   function toggleBookmark(idx) {
     const rec = view[idx];
-    const key = LT.bookmarkFileKey(fileDisplayName(rec.fileId), fileSizeOf(rec.fileId), firstLineOf(files.find((x) => x.id === rec.fileId)));
-    bookmarksStore.toggle(key, rec.lineNo, { snippet: displayText(rec).slice(0, 200), ts: rec.ts, fileId: rec.fileId });
+    bookmarksStore.toggle(bookmarkKeyFor(rec.fileId), rec.lineNo, { snippet: displayText(rec).slice(0, 200), ts: rec.ts, fileId: rec.fileId });
     updateStatus(); renderRows(); saveState();
+  }
+  function bookmarkKeyFor(fileId) {
+    return LT.bookmarkFileKey(fileDisplayName(fileId), fileSizeOf(fileId), firstLineOf(files.find((x) => x.id === fileId)));
   }
   function fileSizeOf(fileId) {
     const f = files.find((x) => x.id === fileId);
@@ -1060,6 +1095,9 @@
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
+
+  // test/automation hook: programmatic file loading (used by manual big-file checks)
+  if (typeof window !== 'undefined') window.LT_INGEST = (files) => loadFiles(files);
 
   return { boot, runSelfTest };
 }));
