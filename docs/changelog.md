@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.12.0 (2026-09-12)
+- chore: rebuild log-triage.html
+- feat: analysis tab file selector scopes every section to one file or all; auth issue scan detects failed password lines
+
 ## 1.11.1 (2026-09-12)
 - chore: rebuild log-triage.html
 - fix: search-result and bookmark clicks auto-switch the per-file selection and clear hiding filters before jumping; file list active highlight refreshes on programmatic view switches (regression specs)
