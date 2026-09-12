@@ -22,8 +22,20 @@
     }
 
     _file(id) {
-      if (!this._files[id]) this._files[id] = { name: id, size: 0, total: 0, kept: 0, dropped: 0, bytes: 0 };
+      if (!this._files[id]) this._files[id] = { name: id, size: 0, total: 0, kept: 0, dropped: 0, bytes: 0, levelCounts: {} };
       return this._files[id];
+    }
+
+    removeFile(fileId) {
+      const f = this._files[fileId];
+      if (!f) return;
+      const inMem = this.kept.filter((e) => e.fileId === fileId);
+      this.kept = this.kept.filter((e) => e.fileId !== fileId);
+      this._keptTotal -= inMem.length;
+      for (const key of Object.keys(f.levelCounts || {})) {
+        this.tally.remove(key === 'null' ? null : key, f.levelCounts[key]);
+      }
+      delete this._files[fileId];
     }
 
     setFileInfo(id, name, size) {
@@ -41,7 +53,9 @@
       const f = this._file(fileId);
       const r = rec || {};
       f.total++;
-      this.tally.add(r.level != null ? r.level : null);
+      const lvlKey = r.level != null ? r.level : null;
+      this.tally.add(lvlKey);
+      f.levelCounts[lvlKey == null ? 'null' : lvlKey] = (f.levelCounts[lvlKey == null ? 'null' : lvlKey] || 0) + 1;
       if (!kept) { f.dropped++; return; }
       f.kept++;
       this._keptTotal++;

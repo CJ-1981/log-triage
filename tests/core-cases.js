@@ -960,5 +960,47 @@
     eq(r.hits.logcat, r.hits.mmdd, 'both patterns match — order decides');
   });
 
+  /* ============================== per-file removal ============================== */
+
+  T('store', 'removeFile drops lines, stats and its tally contribution', () => {
+    const s = new SRC.Store(100);
+    s.add('a', 1, 'x', { level: 'I' }, true);
+    s.add('a', 2, 'y', { level: 'E' }, true);
+    s.add('a', 3, 'z', { level: 'W' }, false); // dropped, but was scanned -> tallied
+    s.add('b', 1, 'q', { level: 'E' }, true);
+    s.removeFile('a');
+    const st = s.stats();
+    eq(st.totalLines, 1);
+    eq(st.keptTotal, 1);
+    eq(st.keptInMemory, 1);
+    eq(st.files.b.total, 1);
+    ok(!st.files.a, 'removed file gone from stats');
+    deepEq(s.tally.counts(), { E: 1 });
+    eq(s.kept[0].fileId, 'b');
+    s.removeFile('nope'); // unknown id is a no-op
+    eq(s.stats().totalLines, 1);
+  });
+
+  T('levels', 'remove subtracts counts and drops empty buckets', () => {
+    const t = new SRC.LevelTally();
+    ['I', 'I', 'W'].forEach((l) => t.add(l));
+    t.remove('I', 2);
+    t.remove('W', 1);
+    deepEq(t.counts(), {});
+    deepEq(t.chipList(), []);
+  });
+
+  T('levels', 'remove defaults to one and never goes negative', () => {
+    const t = new SRC.LevelTally();
+    t.add('D');
+    t.add('D');
+    t.remove('D'); // n omitted -> subtract 1
+    eq(t.counts().D, 1);
+    t.remove('D', 5); // over-removal clamps: bucket disappears
+    deepEq(t.counts(), {});
+    t.remove(null, 3); // unknown bucket key
+    deepEq(t.counts(), {});
+  });
+
   return { CASES, eq, deepEq, ok };
 }));

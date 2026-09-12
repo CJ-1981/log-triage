@@ -49,8 +49,10 @@ header h1 span { color: var(--accent); }
 #btn-side.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 #sidebar .side-head { padding: 8px 10px; font-weight: 600; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
 #file-list { overflow-y: auto; flex: 1; min-height: 0; }
-.file-item { padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.file-item { position: relative; padding: 7px 10px; padding-right: 26px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .file-item:hover { background: var(--surface2); }
+.file-item .fx { position: absolute; top: 6px; right: 6px; background: transparent; border: none; color: var(--muted); padding: 0 3px; font-size: 12px; cursor: pointer; }
+.file-item .fx:hover { color: var(--err); }
 .file-item.active { box-shadow: inset 3px 0 0 var(--accent); background: var(--surface2); }
 .file-item .fname { font-size: 12.5px; word-break: break-all; }
 .file-item .fmeta { font-size: 11px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
@@ -974,6 +976,12 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       this._counts[key] = (this._counts[key] || 0) + 1;
     }
 
+    remove(level, n) {
+      const key = level == null ? UNKNOWN_KEY : level;
+      this._counts[key] = (this._counts[key] || 0) - (n || 0);
+      if (this._counts[key] <= 0) delete this._counts[key];
+    }
+
     counts() {
       return Object.assign({}, this._counts);
     }
@@ -1124,8 +1132,20 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     }
 
     _file(id) {
-      if (!this._files[id]) this._files[id] = { name: id, size: 0, total: 0, kept: 0, dropped: 0, bytes: 0 };
+      if (!this._files[id]) this._files[id] = { name: id, size: 0, total: 0, kept: 0, dropped: 0, bytes: 0, levelCounts: {} };
       return this._files[id];
+    }
+
+    removeFile(fileId) {
+      const f = this._files[fileId];
+      if (!f) return;
+      const inMem = this.kept.filter((e) => e.fileId === fileId);
+      this.kept = this.kept.filter((e) => e.fileId !== fileId);
+      this._keptTotal -= inMem.length;
+      for (const key of Object.keys(f.levelCounts || {})) {
+        this.tally.remove(key === 'null' ? null : key, f.levelCounts[key]);
+      }
+      delete this._files[fileId];
     }
 
     setFileInfo(id, name, size) {
@@ -1143,7 +1163,9 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       const f = this._file(fileId);
       const r = rec || {};
       f.total++;
-      this.tally.add(r.level != null ? r.level : null);
+      const lvlKey = r.level != null ? r.level : null;
+      this.tally.add(lvlKey);
+      f.levelCounts[lvlKey == null ? 'null' : lvlKey] = (f.levelCounts[lvlKey == null ? 'null' : lvlKey] || 0) + 1;
       if (!kept) { f.dropped++; return; }
       f.kept++;
       this._keptTotal++;
@@ -1724,12 +1746,16 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       const st = store.stats().files[f.id] || { total: 0, kept: 0 };
       const div = document.createElement('div');
       div.className = 'file-item' + (state.activeFile === f.id ? ' active' : '');
-      div.innerHTML = '<div class="fname">' + esc(f.name) + '</div>' +
+      div.innerHTML = '<button class="fx" data-remove="' + esc(f.id) + '" title="remove this file">✕</button>' +
+        '<div class="fname">' + esc(f.name) + '</div>' +
         '<div class="fmeta"><span class="badge fmt">' + esc(f.format) + '</span>' +
         '<span>' + LT.fmtBytes(f.size) + '</span><span>' + st.total + ' lines</span>' +
         '<span>' + st.kept + ' kept</span></div>';
-      div.onclick = () => {
-        // clicking the selected file deselects it and returns to the merged view
+      div.onclick = (e) => {
+        if (e.target.dataset && e.target.dataset.remove !== undefined) {
+          removeFileById(e.target.dataset.remove);
+          return;
+        }
         state.activeFile = state.activeFile === f.id ? null : f.id;
         state.viewMode = state.activeFile ? 'file' : 'merged';
         const sel = $('view-mode');
@@ -1738,6 +1764,17 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       };
       el.appendChild(div);
     }
+  }
+
+  function removeFileById(fileId) {
+    const idx = files.findIndex((f) => f.id === fileId);
+    if (idx >= 0) files.splice(idx, 1);
+    store.removeFile(fileId);
+    if (state.activeFile === fileId) { state.activeFile = null; state.viewMode = 'merged'; }
+    displayCache = new Map();
+    onKeptChanged();
+    renderFiles();
+    saveState();
   }
 
   /* ---------------- view model ---------------- */
@@ -2657,7 +2694,12 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       if (!t.trim()) return;
       loadFiles([new File([t], 'pasted.log', { type: 'text/plain' })]);
     };
-    $('clear-files').onclick = () => { files.length = 0; store.kept.length = 0; onKeptChanged(); renderFiles(); };
+    $('clear-files').onclick = () => {
+      files.slice().forEach((f) => store.removeFile(f.id));
+      files.length = 0;
+      state.activeFile = null;
+      onKeptChanged(); renderFiles(); saveState();
+    };
     const dz = $('dropzone');
     ;['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('drag'); }));
     ;['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('drag'); }));
@@ -3774,6 +3816,36 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     const r = SRC.detectFormat(lines);
     eq(r.format, 'logcat');
     eq(r.hits.logcat, r.hits.mmdd, 'both patterns match — order decides');
+  });
+
+  /* ============================== per-file removal ============================== */
+
+  T('store', 'removeFile drops lines, stats and its tally contribution', () => {
+    const s = new SRC.Store(100);
+    s.add('a', 1, 'x', { level: 'I' }, true);
+    s.add('a', 2, 'y', { level: 'E' }, true);
+    s.add('a', 3, 'z', { level: 'W' }, false); // dropped, but was scanned -> tallied
+    s.add('b', 1, 'q', { level: 'E' }, true);
+    s.removeFile('a');
+    const st = s.stats();
+    eq(st.totalLines, 1);
+    eq(st.keptTotal, 1);
+    eq(st.keptInMemory, 1);
+    eq(st.files.b.total, 1);
+    ok(!st.files.a, 'removed file gone from stats');
+    deepEq(s.tally.counts(), { E: 1 });
+    eq(s.kept[0].fileId, 'b');
+    s.removeFile('nope'); // unknown id is a no-op
+    eq(s.stats().totalLines, 1);
+  });
+
+  T('levels', 'remove subtracts counts and drops empty buckets', () => {
+    const t = new SRC.LevelTally();
+    ['I', 'I', 'W'].forEach((l) => t.add(l));
+    t.remove('I', 2);
+    t.remove('W', 1);
+    deepEq(t.counts(), {});
+    deepEq(t.chipList(), []);
   });
 
   return { CASES, eq, deepEq, ok };

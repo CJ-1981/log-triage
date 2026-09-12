@@ -179,12 +179,16 @@
       const st = store.stats().files[f.id] || { total: 0, kept: 0 };
       const div = document.createElement('div');
       div.className = 'file-item' + (state.activeFile === f.id ? ' active' : '');
-      div.innerHTML = '<div class="fname">' + esc(f.name) + '</div>' +
+      div.innerHTML = '<button class="fx" data-remove="' + esc(f.id) + '" title="remove this file">✕</button>' +
+        '<div class="fname">' + esc(f.name) + '</div>' +
         '<div class="fmeta"><span class="badge fmt">' + esc(f.format) + '</span>' +
         '<span>' + LT.fmtBytes(f.size) + '</span><span>' + st.total + ' lines</span>' +
         '<span>' + st.kept + ' kept</span></div>';
-      div.onclick = () => {
-        // clicking the selected file deselects it and returns to the merged view
+      div.onclick = (e) => {
+        if (e.target.dataset && e.target.dataset.remove !== undefined) {
+          removeFileById(e.target.dataset.remove);
+          return;
+        }
         state.activeFile = state.activeFile === f.id ? null : f.id;
         state.viewMode = state.activeFile ? 'file' : 'merged';
         const sel = $('view-mode');
@@ -193,6 +197,17 @@
       };
       el.appendChild(div);
     }
+  }
+
+  function removeFileById(fileId) {
+    const idx = files.findIndex((f) => f.id === fileId);
+    if (idx >= 0) files.splice(idx, 1);
+    store.removeFile(fileId);
+    if (state.activeFile === fileId) { state.activeFile = null; state.viewMode = 'merged'; }
+    displayCache = new Map();
+    onKeptChanged();
+    renderFiles();
+    saveState();
   }
 
   /* ---------------- view model ---------------- */
@@ -1112,7 +1127,12 @@
       if (!t.trim()) return;
       loadFiles([new File([t], 'pasted.log', { type: 'text/plain' })]);
     };
-    $('clear-files').onclick = () => { files.length = 0; store.kept.length = 0; onKeptChanged(); renderFiles(); };
+    $('clear-files').onclick = () => {
+      files.slice().forEach((f) => store.removeFile(f.id));
+      files.length = 0;
+      state.activeFile = null;
+      onKeptChanged(); renderFiles(); saveState();
+    };
     const dz = $('dropzone');
     ;['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('drag'); }));
     ;['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('drag'); }));

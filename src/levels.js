@@ -18,6 +18,12 @@
       this._counts[key] = (this._counts[key] || 0) + 1;
     }
 
+    remove(level, n) {
+      const key = level == null ? UNKNOWN_KEY : level;
+      this._counts[key] = (this._counts[key] || 0) - (n || 1);
+      if (this._counts[key] <= 0) delete this._counts[key];
+    }
+
     counts() {
       return Object.assign({}, this._counts);
     }

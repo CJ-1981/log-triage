@@ -378,6 +378,39 @@ test('search matches scroll horizontally on narrow viewports (no truncation)', a
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
+test('per-file ✕ removes that file only (lines, counters, chips)', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'demo.log'),
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+  ]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
+  // remove the syslog file via its ✕ button
+  await page.evaluate(() => document.querySelectorAll('.file-item .fx')[1].click());
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  const st = await page.evaluate(`JSON.stringify((() => {
+    return {
+      items: document.querySelectorAll('.file-item').length,
+      names: Array.from(document.querySelectorAll('.file-item .fname')).map((n) => n.textContent),
+      kept: document.getElementById('st-kept').textContent,
+      errs: window.__errs || []
+    };
+  })())`).then(JSON.parse);
+  assert.strictEqual(st.items, 1);
+  assert.deepStrictEqual(st.names, ['demo.log']);
+  assert.strictEqual(st.kept, '44', 'demo kept lines remain');
+  assert.strictEqual(st.errs.length, 0);
+  // remove the last file: viewer empties cleanly
+  await page.evaluate(() => document.querySelectorAll('.file-item .fx')[0].click());
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '0', null, { timeout: 8000 });
+  const empty = await page.evaluate(`JSON.stringify({
+    chips: document.getElementById('chips-row').textContent,
+    files: document.querySelectorAll('.file-item').length
+  })`).then(JSON.parse);
+  assert.strictEqual(empty.files, 0);
+  assert.match(empty.chips, /appear after loading/);
+});
+
 test('mobile layout: page fits width, files panel is an overlay drawer, mask cards stack', async () => {
   await page.setViewportSize({ width: 390, height: 844 });
   await fresh();
