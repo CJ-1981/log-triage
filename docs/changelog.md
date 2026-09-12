@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.4.0 (2026-09-12)
+- feat: collapsible per-file search result groups with collapse-all/expand-all
+- chore: rebuild log-triage.html at current version
+- docs: update README and docs to v1.3.0 state (new features, FR-15..FR-19, ADR-0007 session-scoped filters, test counts and evidence)
+
 ## 1.3.1 (2026-09-12)
 - chore: rebuild log-triage.html
 - fix: file-item click switches viewer (undefined refreshView handler); selection drag no longer sticks; retrospective R1/R2 — afterEach page-error assertions and interaction control map
