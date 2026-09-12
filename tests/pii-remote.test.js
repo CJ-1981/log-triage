@@ -6,32 +6,15 @@ const pr = require('../src/pii-remote.js');
 const LINES = ['alpha line', 'beta has PII here', 'gamma'];
 const SETTINGS = { url: 'http://p.test', path: '/analyze', language: 'en', threshold: 0.3 };
 
-test('buildPresidioRequest builds url, body and per-line offsets', () => {
-  const r = pr.buildPresidioRequest(LINES, SETTINGS);
-  assert.strictEqual(r.url, 'http://p.test/analyze');
-  assert.strictEqual(r.method, 'POST');
-  assert.strictEqual(r.headers['Content-Type'], 'application/json');
-  const body = JSON.parse(r.body);
-  assert.strictEqual(body.text, 'alpha line\nbeta has PII here\ngamma');
-  assert.strictEqual(body.language, 'en');
-  assert.strictEqual(body.score_threshold, 0.3);
-  assert.deepStrictEqual(r.offsets.map((o) => o.start), [0, 11, 29]);
-  assert.deepStrictEqual(r.offsets.map((o) => o.len), [10, 17, 5]);
+// --- withProxy ---
+
+test('withProxy rewrites when enabled and url set', () => {
+  assert.strictEqual(pr.withProxy('http://api', { enabled: true, url: 'http://proxy:8080' }), 'http://proxy:8080/http://api');
+  assert.strictEqual(pr.withProxy('http://api', { enabled: false, url: 'http://proxy:8080' }), 'http://api');
+  assert.strictEqual(pr.withProxy('http://api', {}), 'http://api');
 });
 
-test('parsePresidioResponse maps absolute offsets back to lines', () => {
-  const offsets = pr.buildPresidioRequest(LINES, SETTINGS).offsets;
-  // 'beta has PII here' starts at 11; 'PII' sits at 20..23 absolute
-  const body = JSON.stringify([{ start: 20, end: 23, entityType: 'EMAIL_ADDRESS', score: 0.9 }]);
-  const findings = pr.parsePresidioResponse(body, offsets);
-  assert.strictEqual(findings.length, 1);
-  assert.deepStrictEqual(findings[0], { line: 1, start: 9, end: 12, type: 'EMAIL_ADDRESS', score: 0.9 });
-});
-
-test('parsePresidioResponse returns [] on malformed or empty input', () => {
-  assert.deepStrictEqual(pr.parsePresidioResponse('not json', []), []);
-  assert.deepStrictEqual(pr.parsePresidioResponse('[]', []), []);
-});
+// --- buildLlmRequest ---
 
 test('buildLlmRequest injects prompt, auth header and model', () => {
   const s = {
@@ -52,6 +35,8 @@ test('buildLlmRequest without apiKey omits Authorization header', () => {
   assert.strictEqual(r.headers.Authorization, undefined);
 });
 
+// --- parseLlmContent ---
+
 test('parseLlmContent extracts findings from fenced JSON', () => {
   const findings = pr.parseLlmContent('noise\n```json\n[{"line":1,"start":3,"end":7,"type":"EMAIL_ADDRESS","score":0.9}]\n```\n');
   assert.strictEqual(findings.length, 1);
@@ -62,11 +47,15 @@ test('parseLlmContent returns [] for text without JSON arrays', () => {
   assert.deepStrictEqual(pr.parseLlmContent('no json at all'), []);
 });
 
+// --- withProxy edge cases ---
+
 test('withProxy only rewrites when enabled and url set', () => {
   assert.strictEqual(pr.withProxy('http://api', { enabled: true, url: 'http://proxy:8080' }), 'http://proxy:8080/http://api');
   assert.strictEqual(pr.withProxy('http://api', { enabled: false, url: 'http://proxy:8080' }), 'http://api');
   assert.strictEqual(pr.withProxy('http://api', {}), 'http://api');
 });
+
+// --- createRemoteAnalyzer ---
 
 test('createRemoteAnalyzer llm uses stub fetch and reports findings', async () => {
   const calls = [];
@@ -86,15 +75,16 @@ test('createRemoteAnalyzer llm uses stub fetch and reports findings', async () =
 test('createRemoteAnalyzer presidio aggregates mapped findings', async () => {
   const fetchImpl = async (url, opts) => {
     const body = JSON.parse(opts.body);
+    const lines = body.text.split('\n');
     const results = [];
     let pos = 0;
-    for (const part of body.text.split('\n')) {
-      results.push({ start: pos, end: pos + part.length, entityType: 'PERSON', score: 0.99 });
-      pos += part.length + 1;
+    for (const line of lines) {
+      results.push({ start: pos, end: pos + line.length, entityType: 'PERSON', score: 0.99 });
+      pos += line.length + 1;
     }
     return { ok: true, status: 200, text: async () => JSON.stringify(results) };
   };
-  const p = pr.createRemoteAnalyzer('presidio', { url: 'http://p.test', path: '/analyze' }, { fetchImpl });
+  const p = pr.createRemoteAnalyzer('presidio', { url: 'http://p.test' }, { fetchImpl });
   const findings = await p.analyze(['ann', 'bob']);
   assert.strictEqual(findings.length, 2);
   assert.ok(findings.every((f) => f.type === 'PERSON'));
@@ -106,6 +96,12 @@ test('createRemoteAnalyzer surfaces HTTP failures as readable errors', async () 
   await assert.rejects(() => p.analyze(['x']), /HTTP 500/);
 });
 
+test('createRemoteAnalyzer unknown kind throws', async () => {
+  assert.throws(() => pr.createRemoteAnalyzer('bogus', {}, { fetchImpl: async () => ({}) }), /unknown/);
+});
+
+// --- testConnection ---
+
 test('testConnection reports reachability for presidio and llm', async () => {
   const okFetch = async () => ({ ok: true, status: 200 });
   const presidio = await pr.testConnection({ kind: 'presidio', url: 'http://p.test', path: '/analyze' }, { enabled: false }, okFetch);
@@ -115,4 +111,128 @@ test('testConnection reports reachability for presidio and llm', async () => {
   assert.strictEqual(bad.ok, false);
   const llm = await pr.testConnection({ kind: 'llm', url: 'http://llm.test/v1/chat/completions', apiKey: 'k' }, { enabled: false }, okFetch);
   assert.strictEqual(llm.ok, true);
+  const unknown = await pr.testConnection({ kind: 'bogus', url: 'http://x' }, { enabled: false }, okFetch);
+  assert.strictEqual(unknown.ok, false);
+});
+
+test('joinUrl handles trailing slashes and empty path', () => {
+  assert.strictEqual(pr.joinUrl('http://a.test', '/api'), 'http://a.test/api');
+  assert.strictEqual(pr.joinUrl('http://a.test/', 'api'), 'http://a.test/api');
+  assert.strictEqual(pr.joinUrl('http://a.test', ''), 'http://a.test/');
+});
+
+test('buildLlmRequest defaults model and temperature', () => {
+  const r = pr.buildLlmRequest(LINES, { url: 'http://llm.test' });
+  const body = JSON.parse(r.body);
+  assert.strictEqual(body.model, 'gpt-4o-mini');
+  assert.strictEqual(body.temperature, 0);
+});
+
+test('parseLlmContent skips entries missing required fields', () => {
+  const text = '[{"line":"notnum","type":"X"},{},"text",{"line":2,"type":"OK"}]';
+  const findings = pr.parseLlmContent(text);
+  assert.strictEqual(findings.length, 1);
+  assert.strictEqual(findings[0].type, 'OK');
+});
+
+test('createRemoteAnalyzer unknown kind throws', () => {
+  assert.throws(() => pr.createRemoteAnalyzer('bogus', {}, { fetchImpl: async () => ({}) }), /unknown/);
+});
+
+test('parsePresidioResponse skips entries missing start or end', () => {
+  const body = JSON.stringify([{ start: 0, entityType: 'X' }, { end: 5, entityType: 'Y' }, { start: 1, end: 3, entityType: 'Z' }]);
+  const offsets = [{ line: 0, start: 0, len: 10 }];
+  const f = pr.parsePresidioResponse(body, offsets);
+  assert.strictEqual(f.length, 1);
+});
+// --- extra branch coverage ---
+
+test('buildPresidioRequest defaults language and threshold', () => {
+  const r = pr.buildPresidioRequest(LINES, { url: 'http://p.test' });
+  const body = JSON.parse(r.body);
+  assert.strictEqual(body.language, 'en');
+  assert.strictEqual(body.score_threshold, 0.4);
+});
+
+test('parsePresidioResponse skips entries missing start or end', () => {
+  const body = JSON.stringify([{ start: 0, entityType: 'X' }, { end: 5, entityType: 'Y' }, { start: 1, end: 3, entityType: 'Z' }]);
+  const offsets = [{ line: 0, start: 0, len: 10 }];
+  const f = pr.parsePresidioResponse(body, offsets);
+  assert.strictEqual(f.length, 1);
+});
+
+test('parseLlmContent skips entries missing required fields', () => {
+  const text = '[{"line":"notnum","type":"X"},{},"text",{"line":2,"type":"OK"}]';
+  const findings = pr.parseLlmContent(text);
+  assert.strictEqual(findings.length, 1);
+  assert.strictEqual(findings[0].type, 'OK');
+});
+
+test('createRemoteAnalyzer throws for unknown kind', () => {
+  assert.throws(() => pr.createRemoteAnalyzer('bogus', {}, { fetchImpl: async () => ({}) }), /unknown/);
+});
+
+test('joinUrl handles trailing slashes and empty path', () => {
+  assert.strictEqual(pr.joinUrl('http://a.test', '/api'), 'http://a.test/api');
+  assert.strictEqual(pr.joinUrl('http://a.test/', 'api'), 'http://a.test/api');
+  assert.strictEqual(pr.joinUrl('http://a.test', ''), 'http://a.test/');
+});
+
+test('buildPresidioRequest defaults language and threshold', () => {
+  const r = pr.buildPresidioRequest(LINES, { url: 'http://p.test' });
+  const body = JSON.parse(r.body);
+  assert.strictEqual(body.language, 'en');
+  assert.strictEqual(body.score_threshold, 0.4);
+});
+
+test('parsePresidioResponse skips entries missing start or end', () => {
+  const body = JSON.stringify([{ start: 0, entityType: 'X' }, { end: 5, entityType: 'Y' }, { start: 1, end: 3, entityType: 'Z' }]);
+  const offsets = [{ line: 0, start: 0, len: 10 }];
+  const f = pr.parsePresidioResponse(body, offsets);
+  assert.strictEqual(f.length, 1);
+});
+
+test('parseLlmContent skips entries missing required fields', () => {
+  const text = '[{"line":"notnum","type":"X"},{},"text",{"line":2,"type":"OK"}]';
+  const findings = pr.parseLlmContent(text);
+  assert.strictEqual(findings.length, 1);
+  assert.strictEqual(findings[0].type, 'OK');
+});
+
+test('createRemoteAnalyzer throws for unknown kind', () => {
+  assert.throws(() => pr.createRemoteAnalyzer('bogus', {}, { fetchImpl: async () => ({}) }), /unknown/);
+});
+
+test('joinUrl handles trailing slashes and empty path', () => {
+  assert.strictEqual(pr.joinUrl('http://a.test', '/api'), 'http://a.test/api');
+  assert.strictEqual(pr.joinUrl('http://a.test/', 'api'), 'http://a.test/api');
+  assert.strictEqual(pr.joinUrl('http://a.test', ''), 'http://a.test/');
+});
+
+// --- buildPresidioRequest / parsePresidioResponse ---
+
+test('buildPresidioRequest builds url, body and per-line offsets', () => {
+  const r = pr.buildPresidioRequest(LINES, SETTINGS);
+  assert.strictEqual(r.url, 'http://p.test/analyze');
+  assert.strictEqual(r.method, 'POST');
+  assert.strictEqual(r.headers['Content-Type'], 'application/json');
+  const body = JSON.parse(r.body);
+  assert.strictEqual(body.text, 'alpha line\nbeta has PII here\ngamma');
+  assert.strictEqual(body.language, 'en');
+  assert.strictEqual(body.score_threshold, 0.3);
+  assert.deepStrictEqual(r.offsets.map((o) => o.start), [0, 11, 29]);
+  assert.deepStrictEqual(r.offsets.map((o) => o.len), [10, 17, 5]);
+});
+
+test('parsePresidioResponse maps absolute offsets back to lines', () => {
+  const offsets = pr.buildPresidioRequest(LINES, SETTINGS).offsets;
+  const body = JSON.stringify([{ start: 20, end: 23, entityType: 'EMAIL_ADDRESS', score: 0.9 }]);
+  const findings = pr.parsePresidioResponse(body, offsets);
+  assert.strictEqual(findings.length, 1);
+  assert.deepStrictEqual(findings[0], { line: 1, start: 9, end: 12, type: 'EMAIL_ADDRESS', score: 0.9 });
+});
+
+test('parsePresidioResponse returns [] on malformed or empty input', () => {
+  assert.deepStrictEqual(pr.parsePresidioResponse('not json', []), []);
+  assert.deepStrictEqual(pr.parsePresidioResponse('[]', []), []);
 });
