@@ -2,9 +2,13 @@
 
 ## Unreleased
 
+<<<<<<< HEAD
 ## 1.10.0 (2026-09-12)
 - chore: rebuild log-triage.html
 - feat: collapsible bookmarks panel section in sidebar with drag-resize handle; per-file removal clears that file's bookmarks
+=======
+- Analysis tab: the time histogram now has y-axis gridlines with value ticks and x-axis time tick labels, plus a hover tooltip showing the line count and time range of the hovered bucket (device-pixel-ratio aware rendering)
+>>>>>>> aa61923 (feat: time histogram axes — y gridlines with value ticks, x time tick labels, hover tooltip with count and time range (DPR-aware canvas))
 
 ## 1.9.0 (2026-09-12)
 - chore: rebuild log-triage.html
