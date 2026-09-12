@@ -919,42 +919,69 @@
   function renderAnalysis() {
     const p = $('analysis-panel');
     const st = store.stats();
-    const levels = tally.chipList();
+    const sel = state.analysisFile || '';
+    const selStats = sel ? (st.files[sel] || { total: 0, kept: 0, dropped: 0, bytes: 0 }) : null;
+    const recs = sel ? store.kept.filter((r) => r.fileId === sel) : store.kept;
+    const fileOpts = '<option value=""' + (sel ? '' : ' selected') + '>All files (' + files.length + ')</option>' +
+      files.map((f) => '<option value="' + esc(f.id) + '"' + (sel === f.id ? ' selected' : '') + '>' + esc(f.name) + '</option>').join('');
+
+    // level chips for the scope: per-file uses scanned level counts
+    let levels;
+    if (sel) {
+      const lt = new LT.LevelTally();
+      const lc = selStats.levelCounts || {};
+      for (const key of Object.keys(lc)) {
+        const lvl = key === 'null' ? null : key;
+        for (let i = 0; i < lc[key]; i++) lt.add(lvl);
+      }
+      levels = lt.chipList();
+    } else {
+      levels = tally.chipList();
+    }
     const maxL = Math.max(1, ...levels.map((l) => l.count));
-    const tags = topBy((r) => r.tag, 12);
-    const msgs = topMessages(12);
-    const issues = issueScan();
-    const census = piiCensus();
+    const tags = topBy(recs, (r) => r.tag, 12);
+    const msgs = topMessages(recs, 12);
+    const issues = issueScan(recs);
+    const census = piiCensus(recs);
+
+    const cards = sel
+      ? stat('Lines', selStats.total) + stat('Kept', selStats.kept) + stat('Dropped', selStats.dropped) +
+        stat('In memory', recs.length) + stat('Bytes', LT.fmtBytes(selStats.bytes))
+      : stat('Files', files.length) + stat('Lines', st.totalLines) + stat('Kept', st.keptTotal) +
+        stat('Dropped', st.dropped) + stat('In memory', st.keptInMemory) + stat('Bytes', LT.fmtBytes(st.bytes));
 
     p.innerHTML =
-      '<h2>Overview</h2>' +
-      '<div class="card-row">' +
-      stat('Files', files.length) + stat('Lines', st.totalLines) + stat('Kept', st.keptTotal) +
-      stat('Dropped', st.dropped) + stat('In memory', st.keptInMemory) + stat('Bytes', LT.fmtBytes(st.bytes)) +
-      '</div>' +
+      '<h2>Overview' + (sel ? ' — ' + esc(fileDisplayName(sel)) : '') + '</h2>' +
+      '<div class="rowline"><label class="muted">file: <select id="analysis-file">' + fileOpts + '</select></label>' +
+      '<span class="muted">scopes every section below</span></div>' +
+      '<div class="card-row">' + cards + '</div>' +
       '<div class="two-col"><div>' +
-      '<h2>Levels (all scanned lines)</h2>' +
+      '<h2>Levels (scanned lines)</h2>' +
       levels.map((l) => '<div class="hbar"><span style="min-width:18px">' + (l.id === '__' ? '—' : l.id) + '</span><div class="bar" style="width:' + (l.count / maxL * 70) + '%"></div>' + l.count + '</div>').join('') +
       '<h2>Time histogram (kept lines)</h2><canvas id="histo" width="600" height="120"></canvas>' +
       '</div><div>' +
-      '<h2>Top tags</h2>' + tags.map((t) => '<div class="hbar"><span style="min-width:120px">' + esc(t.k) + '</span><div class="bar" style="width:' + (t.n / tags[0].n * 50) + '%"></div>' + t.n + '</div>').join('') +
-      '<h2>Top message shapes</h2>' + msgs.map((t) => '<div class="hbar"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(t.k) + '</span><b>' + t.n + '</b></div>').join('') +
+      '<h2>Top tags</h2>' + (tags.length ? tags.map((t) => '<div class="hbar"><span style="min-width:120px">' + esc(t.k) + '</span><div class="bar" style="width:' + (t.n / tags[0].n * 50) + '%"></div>' + t.n + '</div>').join('') : '<span class="muted">none</span>') +
+      '<h2>Top message shapes</h2>' + (msgs.length ? msgs.map((t) => '<div class="hbar"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(t.k) + '</span><b>' + t.n + '</b></div>').join('') : '<span class="muted">none</span>') +
       '</div></div>' +
       '<h2>Issue scan</h2>' +
       (issues.length ? issues.map((i) => '<div class="issue" data-seq="' + i.seq + '"><span><b>' + i.kind + '</b> — ' + esc(i.snippet) + '</span><span class="muted">' + esc(i.file) + ':' + i.lineNo + '</span></div>').join('') : '<span class="muted">no issue keywords found</span>') +
       '<h2>PII census (kept lines, sample)</h2>' +
       '<div class="card-row">' + Object.keys(census).map((k) => '<div class="stat-card"><div class="v">' + census[k] + '</div><div class="k">' + esc(k) + '</div></div>').join('') + '</div>';
 
-    drawHistogram();
+    const fileSel = p.querySelector('#analysis-file');
+    fileSel.value = sel;
+    fileSel.onchange = () => { state.analysisFile = fileSel.value; renderAnalysis(); };
+
+    drawHistogram(recs);
     p.querySelectorAll('.issue').forEach((el) => {
       el.onclick = () => { const seq = Number(el.dataset.seq); if (seqToIdx.has(seq)) { jumpTo(seqToIdx.get(seq)); } };
     });
   }
 
   function stat(k, v) { return '<div class="stat-card"><div class="v">' + v + '</div><div class="k">' + k + '</div></div>'; }
-  function topBy(getter, n) {
+  function topBy(records, getter, n) {
     const m = {};
-    for (const r of store.kept) { const k = getter(r); if (!k) continue; m[k] = (m[k] || 0) + 1; }
+    for (const r of records) { const k = getter(r); if (!k) continue; m[k] = (m[k] || 0) + 1; }
     return Object.keys(m).map((k) => ({ k, n: m[k] })).sort((a, b) => b.n - a.n).slice(0, n);
   }
   function normMsg(msg) {
@@ -965,9 +992,9 @@
       .replace(/"[^"]*"/g, '<str>')
       .replace(/\s+/g, ' ').trim().slice(0, 90);
   }
-  function topMessages(n) {
+  function topMessages(records, n) {
     const m = {};
-    for (const r of store.kept) { const k = normMsg(r.msg || r.raw); m[k] = (m[k] || 0) + 1; }
+    for (const r of records) { const k = normMsg(r.msg || r.raw); m[k] = (m[k] || 0) + 1; }
     return Object.keys(m).map((k) => ({ k, n: m[k] })).sort((a, b) => b.n - a.n).slice(0, n);
   }
   const ISSUE_GROUPS = [
@@ -975,11 +1002,11 @@
     ['anr', /\banr in |input dispatching timed out/i],
     ['proc-death', /has died|am_proc_died|force stopping/i],
     ['connectivity', /connectivityservice|networkmonitor|data_disconnected|wifiservice|deactivatedatacall/i],
-    ['auth', /auth error|auth blocked|authentication failed|token refresh|credential/i],
+    ['auth', /auth error|auth blocked|authentication failed|token refresh|credential|failed password|password check failed/i],
   ];
-  function issueScan() {
+  function issueScan(records) {
     const out = [];
-    for (const r of store.kept) {
+    for (const r of records) {
       for (const [kind, re] of ISSUE_GROUPS) {
         if (re.test(r.raw)) {
           out.push({ kind, snippet: (r.msg || r.raw).slice(0, 110), file: fileDisplayName(r.fileId), lineNo: r.lineNo, seq: r.seq });
@@ -990,13 +1017,13 @@
     }
     return out;
   }
-  function piiCensus() {
+  function piiCensus(records) {
     const eng = new LT.MaskEngine();
-    const sample = store.kept.slice(0, 50000);
+    const sample = records.slice(0, 50000);
     eng.maskLines(sample.map((r) => r.raw));
     return eng.hitCounts();
   }
-  function drawHistogram() {
+  function drawHistogram(recs) {
     const cv = document.getElementById('histo');
     if (!cv) return;
     const css = getComputedStyle(document.body);
@@ -1014,7 +1041,7 @@
     const ctx = cv.getContext('2d');
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-    const tsRecs = store.kept.filter((r) => r.ts);
+    const tsRecs = (recs || store.kept).filter((r) => r.ts);
     if (tsRecs.length < 2) {
       ctx.font = '11px sans-serif';
       ctx.fillStyle = cMuted;

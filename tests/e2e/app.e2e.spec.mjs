@@ -662,6 +662,49 @@ test('file cache: previous session is listed after reload, cached file reloads, 
   }
 });
 
+test('analysis file selector scopes every section to one file', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'demo.log'),
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+  ]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => document.querySelectorAll('#analysis-panel .stat-card').length > 0, null, { timeout: 5000 });
+  const opts = await page.evaluate(() => Array.from(document.querySelectorAll('#analysis-file option')).map((o) => o.textContent));
+  assert.deepStrictEqual(opts, ['All files (2)', 'demo.log', 'syslog.log']);
+  // pick syslog: overview lines drop to 8 and issue scan only cites syslog
+  await page.evaluate(() => {
+    const s = document.getElementById('analysis-file');
+    const opt = Array.from(s.options).find((o) => o.textContent === 'syslog.log');
+    s.value = opt.value;
+    s.dispatchEvent(new Event('change'));
+  });
+  await page.waitForFunction(() => {
+    const cards = Array.from(document.querySelectorAll('#analysis-panel .stat-card'));
+    const lines = cards.find((c) => c.querySelector('.k').textContent === 'Lines');
+    return lines && lines.querySelector('.v').textContent === '8';
+  }, null, { timeout: 5000 });
+  const issues = await page.evaluate(() => Array.from(document.querySelectorAll('#analysis-panel .issue .muted')).map((x) => x.textContent));
+  const diag = await page.evaluate(() => JSON.stringify({
+    selValue: document.getElementById('analysis-file') ? document.getElementById('analysis-file').value : 'gone',
+    issues: Array.from(document.querySelectorAll('#analysis-panel .issue .muted')).map((x) => x.textContent).slice(0, 5),
+    linesCard: (Array.from(document.querySelectorAll('#analysis-panel .stat-card')).find((c) => c.querySelector('.k').textContent === 'Lines') || { querySelector: () => ({ textContent: '?' }) }).querySelector('.v').textContent
+  }));
+  assert.ok(issues.length > 0 && issues.every((t) => t.startsWith('syslog.log')), 'issue scan scoped to syslog: ' + diag);
+  // back to all files: totals return
+  await page.evaluate(() => {
+    const s = document.getElementById('analysis-file');
+    s.value = '';
+    s.dispatchEvent(new Event('change'));
+  });
+  await page.waitForFunction(() => {
+    const cards = Array.from(document.querySelectorAll('#analysis-panel .stat-card'));
+    const lines = cards.find((c) => c.querySelector('.k').textContent === 'Lines');
+    return lines && lines.querySelector('.v').textContent === '52';
+  }, null, { timeout: 5000 });
+});
+
 test('search results panel scrolls when content exceeds the viewport', async () => {
   await fresh();
   await click('btn-demo');
