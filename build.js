@@ -15,6 +15,10 @@ const MODULE_ORDER = [
   'filters.js',
   'levels.js',
   'search.js',
+  'store.js',
+  'timeline.js',
+  'selection.js',
+  'bookmarks.js',
   // appended by later gates in dependency order
 ];
 

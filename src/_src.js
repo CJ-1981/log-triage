@@ -11,6 +11,10 @@ module.exports = Object.assign({},
   require('./filters.js'),
   require('./levels.js'),
   require('./search.js'),
+  require('./store.js'),
+  require('./timeline.js'),
+  require('./selection.js'),
+  require('./bookmarks.js'),
 );
 
 // Register the built-in local provider on load (idempotent).

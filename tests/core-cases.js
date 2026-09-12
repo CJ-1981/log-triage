@@ -628,5 +628,204 @@
     deepEq(rows.map((x) => x.idx), [0, 2]);
   });
 
+  /* ============================== G5: store / timeline / selection / bookmarks ============================== */
+
+  T('store', 'cap trims FIFO but counters stay exact', () => {
+    const s = new SRC.Store(3);
+    s.add('f1', 1, 'line1', { level: 'I' }, true);
+    s.add('f1', 2, 'line2', { level: 'W' }, true);
+    s.add('f1', 3, 'line3', { level: 'E' }, true);
+    s.add('f1', 4, 'line4', { level: 'I' }, true);
+    eq(s.kept.length, 3);
+    eq(s.kept[0].lineNo, 2, 'oldest trimmed first');
+    const st = s.stats();
+    eq(st.keptTotal, 4);
+    eq(st.trimmed, 1);
+    eq(st.files.f1.total, 4);
+    eq(st.files.f1.kept, 4);
+    eq(st.files.f1.dropped, 0);
+  });
+
+  T('store', 'dropped lines counted, tally counts all scanned levels', () => {
+    const s = new SRC.Store(100);
+    s.add('a', 1, 'x', { level: 'I' }, true);
+    s.add('a', 2, 'y', { level: 'E' }, false);
+    s.add('b', 1, 'z', { level: null }, true);
+    const st = s.stats();
+    eq(st.files.a.kept, 1);
+    eq(st.files.a.dropped, 1);
+    deepEq(s.tally.counts(), { I: 1, E: 1, __: 1 });
+  });
+
+  T('store', 'bytes accumulate per file', () => {
+    const s = new SRC.Store(100);
+    s.addBytes('a', 10);
+    s.addBytes('a', 5);
+    s.addBytes('b', 7);
+    eq(s.stats().files.a.bytes, 15);
+    eq(s.stats().files.b.bytes, 7);
+  });
+
+  T('timeline', 'null-ts stack traces attach to preceding line in same file', () => {
+    const recs = [
+      { fileId: 'f', seq: 0, ts: '08-24 15:37:07.000', raw: 'E boom' },
+      { fileId: 'f', seq: 1, ts: null, raw: '    at Foo.bar(Foo.java:1)' },
+      { fileId: 'f', seq: 2, ts: null, raw: '    at Baz.qux(Baz.java:2)' },
+    ];
+    const merged = SRC.mergeTimeline(recs);
+    deepEq(merged.map((r) => r.effTs), ['08-24 15:37:07.000', '08-24 15:37:07.000', '08-24 15:37:07.000']);
+  });
+
+  T('timeline', 'leading null-ts lines sort within their file block, first', () => {
+    const recs = [
+      { fileId: 'f', seq: 0, ts: null, raw: 'header line' },
+      { fileId: 'f', seq: 1, ts: '08-24 15:37:07.000', raw: 'first parsed' },
+    ];
+    const merged = SRC.mergeTimeline(recs);
+    deepEq(merged.map((r) => r.raw), ['header line', 'first parsed']);
+  });
+
+  T('timeline', 'merges interleaved files by timestamp', () => {
+    const recs = [
+      { fileId: 'a', seq: 0, ts: '08-24 15:37:01.000', raw: 'a1' },
+      { fileId: 'b', seq: 1, ts: '08-24 15:37:01.500', raw: 'b1' },
+      { fileId: 'a', seq: 2, ts: '08-24 15:37:02.000', raw: 'a2' },
+      { fileId: 'b', seq: 3, ts: '08-24 15:37:01.200', raw: 'b0' },
+    ];
+    const merged = SRC.mergeTimeline(recs);
+    deepEq(merged.map((r) => r.raw), ['a1', 'b0', 'b1', 'a2']);
+  });
+
+  T('timeline', 'equal timestamps break ties by file order then insertion', () => {
+    const recs = [
+      { fileId: 'b', seq: 0, ts: '08-24 15:37:01.000', raw: 'b-first-seen' },
+      { fileId: 'a', seq: 1, ts: '08-24 15:37:01.000', raw: 'a-second' },
+      { fileId: 'b', seq: 2, ts: '08-24 15:37:01.000', raw: 'b-third' },
+    ];
+    const merged = SRC.mergeTimeline(recs);
+    deepEq(merged.map((r) => r.raw), ['b-first-seen', 'b-third', 'a-second']);
+  });
+
+  T('store', 'setFileInfo, default msg fallback, keptInMemory', () => {
+    const s = new SRC.Store(100);
+    s.setFileInfo('f', 'demo.log', 4096);
+    s.add('f', 1, 'raw line', { level: 'I' }, true); // no msg -> raw
+    eq(s.kept[0].msg, 'raw line');
+    const st = s.stats();
+    eq(st.files.f.name, 'demo.log');
+    eq(st.files.f.size, 4096);
+    eq(st.keptInMemory, 1);
+  });
+
+  T('store', 'defaults: cap default, unnamed file info, null rec, full rec', () => {
+    const s = new SRC.Store();
+    s.setFileInfo('f', 'x.log'); // size omitted -> 0
+    s.add('f', 1, 'r1', null, true); // null record
+    s.add('f', 2, 'r2', { ts: '', tag: 'T', pid: '9', msg: 'm' }, true); // empty ts -> null
+    eq(s.kept[0].level, null);
+    eq(s.kept[0].msg, 'r1');
+    eq(s.kept[1].ts, null);
+    eq(s.kept[1].tag, 'T');
+    eq(s.kept[1].pid, '9');
+    eq(s.kept[1].msg, 'm');
+    eq(s.stats().files.f.size, 0);
+    s.addBytes('f', 1);
+    eq(s.stats().files.f.bytes, 1);
+  });
+
+  T('timeline', 'records without seq stay stable', () => {
+    const recs = [
+      { fileId: 'a', ts: '08-24 15:37:01.000', raw: 'a1' },
+      { fileId: 'a', ts: '08-24 15:37:01.000', raw: 'a2' },
+    ];
+    const merged = SRC.mergeTimeline(recs);
+    deepEq(merged.map((r) => r.raw), ['a1', 'a2']);
+  });
+
+  T('selection', 'click anchors, shift extends range, ctrl toggles', () => {
+    const sel = new SRC.SelectionModel();
+    sel.click(5);
+    deepEq(sel.indices(), [5]);
+    sel.shiftClick(8);
+    deepEq(sel.indices(), [5, 6, 7, 8]);
+    sel.ctrlClick(6);
+    deepEq(sel.indices(), [5, 7, 8]);
+    sel.ctrlClick(6);
+    deepEq(sel.indices(), [5, 6, 7, 8], 'second ctrl-click toggles back on');
+  });
+
+  T('selection', 'shift back above anchor, selectAll, clear', () => {
+    const sel = new SRC.SelectionModel();
+    sel.click(5);
+    sel.shiftClick(2);
+    deepEq(sel.indices(), [2, 3, 4, 5]);
+    sel.selectAll(7);
+    eq(sel.count, 7);
+    sel.clear();
+    eq(sel.count, 0);
+  });
+
+  T('selection', 'shift-click from toggled anchor extends from last anchor', () => {
+    const sel = new SRC.SelectionModel();
+    sel.click(1);
+    sel.ctrlClick(4);
+    sel.shiftClick(6);
+    deepEq(sel.indices(), [1, 4, 5, 6]);
+  });
+
+  T('bookmarks', 'toggle, has, note, remove', () => {
+    const bm = new SRC.BookmarkStore();
+    eq(bm.toggle('k', 10, { snippet: 's' }), true);
+    eq(bm.has('k', 10), true);
+    eq(bm.toggle('k', 10), false);
+    eq(bm.has('k', 10), false);
+    bm.toggle('k', 11, { snippet: 's2' });
+    bm.setNote('k', 11, 'check this');
+    eq(bm.list('k')[0].note, 'check this');
+    bm.remove('k', 11);
+    eq(bm.list('k').length, 0);
+  });
+
+  T('bookmarks', 'JSON round trip preserves entries and notes', () => {
+    const bm = new SRC.BookmarkStore();
+    bm.toggle('f1', 3, { snippet: 'a', ts: '08-24 15:37:01.000' });
+    bm.toggle('f1', 9, { snippet: 'b' });
+    bm.toggle('f2', 1, { snippet: 'c' });
+    bm.setNote('f1', 9, 'note');
+    const bm2 = new SRC.BookmarkStore();
+    bm2.fromJSON(bm.toJSON());
+    eq(bm2.all().length, 3);
+    eq(bm2.list('f1').length, 2);
+    eq(bm2.list('f1')[1].note, 'note');
+  });
+
+  T('bookmarks', 'file identity key is stable and size-sensitive', () => {
+    const k1 = SRC.bookmarkFileKey('logcat.txt', 1234, '08-24 15:37:01.123 first');
+    const k2 = SRC.bookmarkFileKey('logcat.txt', 1234, '08-24 15:37:01.123 first');
+    const k3 = SRC.bookmarkFileKey('logcat.txt', 1235, '08-24 15:37:01.123 first');
+    const k4 = SRC.bookmarkFileKey('other.txt', 1234, '08-24 15:37:01.123 first');
+    eq(k1, k2);
+    ok(k1 !== k3);
+    ok(k1 !== k4);
+  });
+
+  T('bookmarks', 'edge branches: no-meta toggle, unknown key ops, defensive fromJSON', () => {
+    const bm = new SRC.BookmarkStore();
+    eq(bm.has('nokey', 1), false); // unknown key
+    bm.setNote('nokey', 1, 'ignored'); // unknown key, no throw
+    bm.toggle('k', 1); // no meta
+    eq(bm.list('k')[0].meta && Object.keys(bm.list('k')[0].meta).length, 0);
+    deepEq(bm.list('never'), []);
+    bm.setNote('k', 999, 'ignored'); // entry does not exist
+    bm.setNote('k', 1, 'ok');
+    eq(bm.list('k')[0].note, 'ok');
+    const bm2 = new SRC.BookmarkStore();
+    bm2.fromJSON(null); // must not throw
+    bm2.fromJSON({ k: [{ lineNo: 2 }, null, { broken: true }, { lineNo: 3, meta: { a: 1 }, note: 'n' }] });
+    eq(bm2.list('k').length, 2);
+    eq(bm2.list('k')[0].meta && Object.keys(bm2.list('k')[0].meta).length, 0);
+    eq(bm2.list('k')[1].note, 'n');
+  });
+
   return { CASES, eq, deepEq, ok };
 }));
