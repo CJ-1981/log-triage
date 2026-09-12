@@ -966,7 +966,7 @@
     const s = new SRC.Store(100);
     s.add('a', 1, 'x', { level: 'I' }, true);
     s.add('a', 2, 'y', { level: 'E' }, true);
-    s.add('a', 3, 'z', { level: 'W' }, false); // dropped, but was scanned -> tallied
+    s.add('a', 3, 'z', {}, false); // dropped, null level -> '__' tallied
     s.add('b', 1, 'q', { level: 'E' }, true);
     s.removeFile('a');
     const st = s.stats();
@@ -1007,11 +1007,12 @@
     s.add('a', 1, 'x', { level: 'I' }, true);
     s.add('a', 2, 'y', { level: 'W' }, true);
     s.add('a', 3, 'z', { level: 'W' }, false); // dropped lines count too
+    s.add('a', 4, 'c', {}, true);              // null level -> '__' bucket
     s.add('b', 1, 'q', { level: 'E' }, true);
-    deepEq(s.tallyFor('a').counts(), { I: 1, W: 2 });
+    deepEq(s.tallyFor('a').counts(), { I: 1, W: 2, __: 1 });
     deepEq(s.tallyFor('b').counts(), { E: 1 });
     deepEq(s.tallyFor('zz').counts(), {});
-    deepEq(s.tallyFor('a').chipList().map((c) => c.id), ['I', 'W']);
+    deepEq(s.tallyFor('a').chipList().map((c) => c.id), ['I', 'W', '__']);
   });
 
   return { CASES, eq, deepEq, ok };
