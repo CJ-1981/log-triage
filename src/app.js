@@ -339,6 +339,22 @@
       row.innerHTML = '<span class="muted" id="chips-hint">Level chips appear after loading</span>';
       return;
     }
+    // bookmark scope: lines bookmarked within the currently shown file(s)
+    const scope = (state.viewMode === 'file' && state.activeFile)
+      ? store.kept.filter((r) => r.fileId === state.activeFile)
+      : store.kept;
+    const bmInView = scope.reduce((n, r) => n + (bookmarksStore.has(bookmarkKeyFor(r.fileId), r.lineNo) ? 1 : 0), 0);
+    if (bmInView > 0 || state.showOnlyBookmarked) {
+      const b = document.createElement('button');
+      b.className = 'chip' + (state.showOnlyBookmarked ? ' sel' : '');
+      b.title = 'show only bookmarked lines';
+      b.innerHTML = '<span style="color:var(--warn)">★</span><span class="n">' + bmInView + '</span>';
+      b.onclick = () => {
+        if (bmInView === 0) { flash('no bookmarks in this view'); return; }
+        setBmOnly(!state.showOnlyBookmarked);
+      };
+      row.appendChild(b);
+    }
     for (const c of chips) {
       const label = c.id === '__' ? '—' : c.id;
       const b = document.createElement('button');
@@ -589,7 +605,7 @@
   function toggleBookmark(idx) {
     const rec = view[idx];
     bookmarksStore.toggle(bookmarkKeyFor(rec.fileId), rec.lineNo, { snippet: displayText(rec).slice(0, 200), ts: rec.ts, fileId: rec.fileId });
-    renderBookmarks();
+    renderBookmarks(); renderChips();
     if (state.showOnlyBookmarked) rebuildView(); else { updateStatus(); renderRows(); }
     saveState();
   }
@@ -1348,8 +1364,6 @@
       }
       if (state.showOnlyBookmarked && !bookmarksStore.has(bookmarkKeyFor(rec.fileId), rec.lineNo)) {
         state.showOnlyBookmarked = false;
-        $('btn-bmonly').textContent = '★ Only bookmarks: OFF';
-        $('btn-bmonly').classList.remove('on');
         changed = true;
       }
       if (state.quick) { state.quick = ''; $('quick').value = ''; filter.quick = null; changed = true; }
@@ -1427,8 +1441,6 @@
 
   function setBmOnly(on) {
     state.showOnlyBookmarked = on;
-    $('btn-bmonly').textContent = '★ Only bookmarks: ' + (on ? 'ON' : 'OFF');
-    $('btn-bmonly').classList.toggle('on', on);
     saveState(); rebuildView();
   }
 
@@ -1570,13 +1582,6 @@
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
-    $('btn-bmonly').onclick = () => {
-      if (!state.showOnlyBookmarked) {
-        const any = store.kept.some((r) => bookmarksStore.has(bookmarkKeyFor(r.fileId), r.lineNo));
-        if (!any) { flash('no bookmarks yet — click ☆ in the gutter or press B'); return; }
-      }
-      setBmOnly(!state.showOnlyBookmarked);
-    };
     $('view-mode').onchange = () => { state.viewMode = $('view-mode').value; saveState(); rebuildView(); };
     $('btn-copy').onclick = copySelection;
     $('bookmark-list').addEventListener('click', (e) => {

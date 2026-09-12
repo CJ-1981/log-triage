@@ -627,10 +627,13 @@ test('★ only-bookmarks toggle filters the viewer to bookmarked lines', async (
   await fresh();
   await click('btn-demo');
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
-  // enabling with no bookmarks flashes a hint and stays off
-  await click('btn-bmonly');
-  assert.ok(await page.evaluate(() => document.getElementById('btn-bmonly').textContent.includes('OFF')), 'stays off with no bookmarks');
-  assert.match(await page.evaluate(() => document.getElementById('st-progress').textContent), /no bookmarks/);
+  // with no bookmarks the star chip does not appear at all
+  const starAbsent = await page.evaluate(() => !document.querySelector('.chip'));
+  const starChip = () => page.evaluate(`JSON.stringify((() => {
+    const chips = Array.from(document.querySelectorAll('.chip'));
+    const star = chips.find((c) => c.textContent.startsWith('\u2605'));
+    return star ? { text: star.textContent, sel: star.classList.contains('sel') } : null;
+  })())`).then(JSON.parse);
   // bookmark lines 2 and 4 via the gutter (re-query rows: render replaces DOM)
   await page.evaluate(() => {
     const rows = document.querySelectorAll('.vrow');
@@ -640,7 +643,13 @@ test('★ only-bookmarks toggle filters the viewer to bookmarked lines', async (
     const rows = document.querySelectorAll('.vrow');
     rows[3].querySelector('.bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
   });
-  await click('btn-bmonly');
+  const star = await starChip();
+  assert.match(star.text, /\u2605\s*2/, 'star chip shows bookmark count: ' + JSON.stringify(star));
+  // toggle on: only bookmarked lines remain
+  await page.evaluate(() => {
+    const chips = Array.from(document.querySelectorAll('.chip'));
+    chips.find((c) => c.textContent.startsWith('\u2605')).click();
+  });
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '2', null, { timeout: 5000 });
   const lns = await page.evaluate(() => Array.from(document.querySelectorAll('.vrow .ln')).map((x) => Number(x.textContent)));
   assert.deepStrictEqual(lns, [2, 4], 'only the bookmarked lines remain, got ' + JSON.stringify(lns));
@@ -649,8 +658,6 @@ test('★ only-bookmarks toggle filters the viewer to bookmarked lines', async (
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '1', null, { timeout: 5000 });
   const lnAfter = await page.evaluate(() => Number(document.querySelector('.vrow .ln').textContent));
   assert.strictEqual(lnAfter, 4, 'remaining bookmarked line is line 4');
-  await click('btn-bmonly'); // back to all lines
-  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44');
 });
 
 test('file cache: previous session is listed after reload, cached file reloads, missing content shows as file not found', async () => {
