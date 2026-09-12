@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+
+## 1.1.2 (2026-09-12)
+- fix: release-bot changelog insertion now folds Unreleased bullets into the new version section with a single header (regression-tested)
+
 ## 1.1.1 (2026-09-12)
 - fix: wrap mode renders scrolled windows at true offset; new files visible after per-file selection; collapsible files panel; search results in file/line/timestamp/text columns; changelog structure fix in bump flow; e2e 20 specs
 - docs: add screenshots (viewer dark/light, masks, analysis, search) to README; refresh stale project tree and script list
