@@ -286,3 +286,26 @@ test('search results use separate file, line and timestamp columns', async () =>
   assert.match(row.ts, /^\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}$/);
   assert.match(row.text, /ecu=gateway/);
 });
+
+test('search results panel scrolls when content exceeds the viewport', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await page.evaluate(() => {
+    document.querySelector('#tabs button[data-tab=search]').click();
+    const q = document.getElementById('rg-pattern');
+    q.value = '.'; // matches nearly every line
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 10000 });
+  const geo = await page.evaluate(`JSON.stringify((() => {
+    const el = document.getElementById('search-results');
+    return { scrollH: el.scrollHeight, clientH: el.clientHeight };
+  })())`).then(JSON.parse);
+  assert.ok(geo.scrollH > geo.clientH, 'content overflows the results panel');
+  const top = await page.evaluate(() => { document.getElementById('search-results').scrollTop = 400; return document.getElementById('search-results').scrollTop; });
+  await page.waitForTimeout(150);
+  const after = await page.evaluate(() => document.getElementById('search-results').scrollTop);
+  assert.ok(top > 0, 'panel accepts vertical scroll');
+  assert.strictEqual(after, top, 'scroll position holds (panel is the scroll container)');
+});
