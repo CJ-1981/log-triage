@@ -1,6 +1,6 @@
 # Requirements
 
-Version reference: v1.0.0 (release). Requirements are numbered and testable; each functional requirement (FR) carries acceptance criteria (AC) that map directly to the shared test suite (`tests/core-cases.js`) and the Playwright e2e scope (see `docs/test-plan.md`). All requirements are implemented in the v1.0.0 release.
+Version reference: v1.3.0 (release). Requirements are numbered and testable; each functional requirement (FR) carries acceptance criteria (AC) that map directly to the shared test suite (`tests/core-cases.js`) and the Playwright e2e scope (see `docs/test-plan.md`). All requirements are implemented as of the v1.3.0 release.
 
 ## Functional requirements
 
@@ -76,6 +76,7 @@ Status: implemented (v1.0.0).
 - AC-2: Unparseable lines display as "—" and bypass level filters.
 - AC-3: An inclusive time range filters by prefix comparison on normalized timestamps.
 - Note (deviation from the original requirement): chips reflect the parsed severity ladder (logcat V/D/I/W/E/F, syslog severities mapped, CLF mapped to I/W/E via status, "—" for unparseable) rather than raw CLF status classes 2xx–5xx.
+- Note (v1.3.0 deviation): transient filters (quick search, level chips, time range) are session-scoped and no longer persisted across sessions — a restored stale filter made freshly loaded files appear invisible (see ADR-0007). Only themes, mask/rule config, presets, and bookmarks survive a reload.
 
 ### FR-9 — Analysis tab
 
@@ -128,6 +129,44 @@ Status: implemented (v1.0.0).
 - AC-1: Opening the app with `?selftest` runs the shared case suite (`tests/core-cases.js`) — the same suite executed by `node --test`.
 - AC-2: The page reports pass/fail counts and lists failing cases.
 - AC-3: Browser and Node results agree (one shared suite, no divergence).
+
+### FR-15 — Responsive/mobile layout
+
+Status: implemented (v1.3.0).
+
+- AC-1: No page-level horizontal overflow at a 390 px viewport width.
+- AC-2: At ≤ 760 px the files panel becomes an overlay drawer (auto-collapsed on narrow screens until toggled); the header wraps and tabs scroll horizontally.
+- AC-3: Mask cards stack in a single column on narrow screens.
+
+### FR-16 — Search-match horizontal scrolling
+
+Status: implemented (v1.3.0).
+
+- AC-1: Search-match rows use dedicated file / line / timestamp / text columns.
+- AC-2: On narrow viewports the row scrolls horizontally so the full text is reachable — no ellipsis truncation.
+
+### FR-17 — Debounced text inputs
+
+Status: implemented (v1.3.0).
+
+- AC-1: Instant-search matching is debounced 250 ms and runs after typing pauses.
+- AC-2: The viewer quick filter is debounced 200 ms.
+
+### FR-18 — Go-to-line and search-result click-to-jump
+
+Status: implemented (v1.3.0).
+
+- AC-1: A go-to-line box in the viewer toolbar accepts a line number; Enter jumps to it.
+- AC-2: Clicking an instant-search result switches to the viewer and jumps to that line (selection + detail drawer).
+- AC-3: Jumping to a line released by the kept-line cap reports a clear explanatory status instead of failing silently.
+
+### FR-19 — Collapsible files panel
+
+Status: implemented (v1.3.0).
+
+- AC-1: The files panel toggles via the header "☰ Files" button; the collapsed state persists.
+- AC-2: The panel auto-collapses on narrow screens until toggled.
+- AC-3: Clicking a file in the list switches the viewer to that file.
 
 ## Non-functional requirements
 
