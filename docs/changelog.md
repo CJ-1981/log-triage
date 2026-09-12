@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.3.1 (2026-09-12)
+- chore: rebuild log-triage.html
+- fix: file-item click switches viewer (undefined refreshView handler); selection drag no longer sticks; retrospective R1/R2 — afterEach page-error assertions and interaction control map
+
 ## 1.3.0 (2026-09-12)
 - chore: rebuild log-triage.html
 - feat: debounce search and quick-filter inputs (250ms/200ms) so matching starts after typing pauses
