@@ -61,6 +61,16 @@ export function changelogEntry(version, dateStr, commits) {
   return lines.join('\n');
 }
 
+export function updateChangelog(old, entry) {
+  // drop the header and the Unreleased heading; whatever was listed under
+  // Unreleased belongs to the release being cut
+  let body = String(old == null ? '' : old)
+    .replace(/^#\s*Changelog\s*\r?\n+/, '')
+    .replace(/^##\s*Unreleased\s*\r?\n+/, '')
+    .replace(/^(#\s*Changelog\s*\r?\n+)+/, '');
+  return `# Changelog\n\n## Unreleased\n\n${entry}\n\n${body}`.replace(/\n{3,}/g, '\n\n');
+}
+
 function lastTag(runGit) {
   const git = runGit || ((cmd) => execSync(cmd, { encoding: 'utf8' }));
   try {
@@ -103,8 +113,7 @@ function main() {
   if (existsSync(changelogPath)) {
     const today = new Date().toISOString().slice(0, 10);
     const old = readFileSync(changelogPath, 'utf8');
-    const stripped = old.replace(/^## Unreleased\r?\n?/, '');
-    writeFileSync(changelogPath, `# Changelog\n\n## Unreleased\n${changelogEntry(next, today, commits)}\n${stripped}`.replace(/\n{3,}/g, '\n\n'));
+    writeFileSync(changelogPath, updateChangelog(old, changelogEntry(next, today, commits)));
   }
   console.log(`bump: ${pkg.version && next} -> ${next} (${parseBumpType(commits)}) from ${commits.length} commit(s) since ${tag || 'start'}`);
 }

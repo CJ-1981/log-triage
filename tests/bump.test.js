@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseBumpType, nextVersion, updateReadme, changelogEntry, commitsSince } = require('../tools/bump.mjs');
+const { parseBumpType, nextVersion, updateReadme, changelogEntry, commitsSince, updateChangelog } = require('../tools/bump.mjs');
 
 test('parseBumpType: feat minor, fix patch, breaking major, chore none', () => {
   assert.strictEqual(parseBumpType(['feat: add x']), 'minor');
@@ -37,6 +37,25 @@ test('changelogEntry renders version, date and commit subjects', () => {
   assert.ok(entry.includes('- feat: a'));
   assert.ok(entry.includes('- fix: b'));
   assert.ok(!entry.includes('body'));
+});
+
+test('updateChangelog folds Unreleased bullets into the new release, exactly one header', () => {
+  const old = [
+    '# Changelog',
+    '',
+    '## Unreleased',
+    '',
+    '- feat: ui polish',
+    '',
+    '## 1.1.0 (2026-09-12)',
+    '- feat: jump',
+  ].join('\n');
+  const out = updateChangelog(old, changelogEntry('1.2.0', '2026-09-13', ['feat: next']));
+  assert.ok(out.startsWith('# Changelog\n\n## Unreleased\n\n## 1.2.0 (2026-09-13)'));
+  assert.ok(out.includes('- feat: ui polish'), 'unreleased bullets fold into the release section');
+  assert.ok(out.includes('## 1.1.0 (2026-09-12)'));
+  assert.strictEqual(out.split('# Changelog').length - 1, 1, 'exactly one file header');
+  assert.match(out, /## 1\.2\.0[\s\S]*## 1\.1\.0/, 'newest section first');
 });
 
 test('commitsSince uses the injected git runner', () => {
