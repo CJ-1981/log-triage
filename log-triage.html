@@ -129,6 +129,12 @@ canvas#histo { width: 100%; height: 120px; background: var(--surface); border: 1
 /* search */
 #search-results { flex: 1; min-height: 0; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
 .sr-file { position: sticky; top: 0; width: max-content; min-width: 100%; background: var(--surface2); padding: 4px 10px; font-weight: 700; border-top: 1px solid var(--border); }
+details.sr-group { border-bottom: 1px solid var(--border); }
+details.sr-group > summary.sr-file { cursor: pointer; user-select: none; list-style: none; }
+details.sr-group > summary.sr-file::-webkit-details-marker { display: none; }
+details.sr-group > summary.sr-file::before { content: '▸'; display: inline-block; margin-right: 6px; color: var(--muted); transition: transform .12s; }
+details.sr-group[open] > summary.sr-file::before { transform: rotate(90deg); }
+details.sr-group > summary.sr-file .count-pill { margin-left: 8px; }
 .sr-row { display: flex; align-items: baseline; white-space: pre; padding: 0 10px; width: max-content; min-width: 100%; }
 .sr-row:hover { background: var(--surface2); }
 .sr-row.ctx { color: var(--muted); }
@@ -252,6 +258,8 @@ table.rules { min-width: 620px; }
           <label>-B<input type="text" id="rg-before" value="0" style="width:36px"></label>
           <label>-A<input type="text" id="rg-after" value="0" style="width:36px"></label>
           <button id="btn-deepscan" class="primary">Deep scan files</button>
+          <button id="btn-rg-collapse" title="collapse all file groups">Collapse all</button>
+          <button id="btn-rg-expand" title="expand all file groups">Expand all</button>
           <button id="btn-rg-export">Export results</button>
         </div>
         <div id="search-progress"></div>
@@ -2112,6 +2120,12 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     renderSearchRows(res, mode, performance.now() - t0);
   }
 
+  /** collapsible per-file group: <details><summary>file (count)</summary>rows</details> */
+  function groupHtml(file, rowsHtml, matchCount) {
+    return '<details class="sr-group" open><summary class="sr-file" title="click to collapse/expand">' +
+      esc(file) + ' <span class="count-pill">' + matchCount + '</span></summary>' + rowsHtml + '</details>';
+  }
+
   function renderSearchRows(res, mode, ms) {
     const out = $('search-results');
     $('search-progress').textContent = res.total + ' match(es) over kept lines in ' + ms.toFixed(0) + ' ms';
@@ -2133,8 +2147,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       (byFile[name] = byFile[name] || []).push({ lineNo: rec.lineNo, ts: rec.ts, text: displayText(rec) });
     }
     out.innerHTML = Object.keys(byFile).map((f) =>
-      '<div class="sr-file">' + esc(f) + ' (' + byFile[f].length + ')</div>' +
-      byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true)).join('')).join('') ||
+      groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true)).join(''), byFile[f].length)).join('') ||
       '<div class="muted" style="padding:20px">no matches</div>';
   }
 
@@ -2204,9 +2217,10 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       out.innerHTML = Object.keys(byFile).map((f) => '<div class="sr-file">' + esc(f) + '</div>').join('');
       return;
     }
-    out.innerHTML = Object.keys(byFile).map((f) =>
-      '<div class="sr-file">' + esc(f) + '</div>' +
-      byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch)).join('')).join('');
+    out.innerHTML = Object.keys(byFile).map((f) => {
+      const matches = byFile[f].filter((r) => r.isMatch).length;
+      return groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch)).join(''), matches);
+    }).join('') || '<div class="muted" style="padding:20px">no matches</div>';
   }
 
   /* ---------------- filters panel ---------------- */
@@ -2699,6 +2713,11 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     });
     $('btn-deepscan').onclick = deepScan;
     $('btn-rg-export').onclick = exportRg;
+    const setAllGroups = (open) => {
+      document.querySelectorAll('#search-results details.sr-group').forEach((d) => { d.open = open; });
+    };
+    $('btn-rg-collapse').onclick = () => setAllGroups(false);
+    $('btn-rg-expand').onclick = () => setAllGroups(true);
     $('search-results').addEventListener('click', (e) => {
       const row = e.target.closest('.sr-row');
       if (row) jumpFromSearch(row);

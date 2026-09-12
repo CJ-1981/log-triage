@@ -123,6 +123,12 @@ canvas#histo { width: 100%; height: 120px; background: var(--surface); border: 1
 /* search */
 #search-results { flex: 1; min-height: 0; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
 .sr-file { position: sticky; top: 0; width: max-content; min-width: 100%; background: var(--surface2); padding: 4px 10px; font-weight: 700; border-top: 1px solid var(--border); }
+details.sr-group { border-bottom: 1px solid var(--border); }
+details.sr-group > summary.sr-file { cursor: pointer; user-select: none; list-style: none; }
+details.sr-group > summary.sr-file::-webkit-details-marker { display: none; }
+details.sr-group > summary.sr-file::before { content: '▸'; display: inline-block; margin-right: 6px; color: var(--muted); transition: transform .12s; }
+details.sr-group[open] > summary.sr-file::before { transform: rotate(90deg); }
+details.sr-group > summary.sr-file .count-pill { margin-left: 8px; }
 .sr-row { display: flex; align-items: baseline; white-space: pre; padding: 0 10px; width: max-content; min-width: 100%; }
 .sr-row:hover { background: var(--surface2); }
 .sr-row.ctx { color: var(--muted); }
@@ -246,6 +252,8 @@ table.rules { min-width: 620px; }
           <label>-B<input type="text" id="rg-before" value="0" style="width:36px"></label>
           <label>-A<input type="text" id="rg-after" value="0" style="width:36px"></label>
           <button id="btn-deepscan" class="primary">Deep scan files</button>
+          <button id="btn-rg-collapse" title="collapse all file groups">Collapse all</button>
+          <button id="btn-rg-expand" title="expand all file groups">Expand all</button>
           <button id="btn-rg-export">Export results</button>
         </div>
         <div id="search-progress"></div>

@@ -447,3 +447,45 @@ test('search results panel scrolls when content exceeds the viewport', async () 
   assert.ok(top > 0, 'panel accepts vertical scroll');
   assert.strictEqual(after, top, 'scroll position holds (panel is the scroll container)');
 });
+
+test('search result file groups are collapsible (multi-file)', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'demo.log'),
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+  ]);
+  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 2, null, { timeout: 8000 });
+  await page.evaluate(() => {
+    document.querySelector('#tabs button[data-tab=search]').click();
+    const q = document.getElementById('rg-pattern');
+    q.value = '.';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.querySelectorAll('#search-results details.sr-group').length === 2, null, { timeout: 10000 });
+  const groups = () => page.evaluate(`JSON.stringify((() => {
+    const ds = Array.from(document.querySelectorAll('#search-results details.sr-group'));
+    return { open: ds.map((d) => d.open), files: ds.map((d) => d.querySelector('.srf').textContent) };
+  })())`).then(JSON.parse);
+  let g = await groups();
+  assert.deepStrictEqual(g.open, [true, true], 'groups start open');
+  assert.deepStrictEqual(g.files, ['demo.log', 'syslog.log']);
+  await page.evaluate(() => document.querySelector('#search-results details.sr-group > summary').click());
+  await page.waitForTimeout(100);
+  g = await groups();
+  assert.deepStrictEqual(g.open, [false, true], 'first group collapsed, second untouched');
+  await click('btn-rg-collapse');
+  await page.waitForTimeout(100);
+  const allClosed = await page.evaluate(() => Array.from(document.querySelectorAll('#search-results details.sr-group')).every((d) => !d.open));
+  assert.ok(allClosed, 'collapse-all closes every group');
+  await click('btn-rg-expand');
+  await page.waitForTimeout(100);
+  const allOpen = await page.evaluate(() => Array.from(document.querySelectorAll('#search-results details.sr-group')).every((d) => d.open));
+  assert.ok(allOpen, 'expand-all opens every group');
+  // rows inside an open group still jump to the line
+  await page.evaluate(() => document.querySelector('#search-results details.sr-group[open] .sr-row').click());
+  await page.waitForTimeout(250);
+  const drawer = await page.evaluate(() => document.getElementById('drawer').textContent);
+  assert.ok(drawer.length > 10, 'clicking a row inside a group jumps to the line (drawer opened)');
+  await click('btn-rg-collapse');
+  await click('btn-rg-expand');
+});

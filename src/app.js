@@ -575,6 +575,12 @@
     renderSearchRows(res, mode, performance.now() - t0);
   }
 
+  /** collapsible per-file group: <details><summary>file (count)</summary>rows</details> */
+  function groupHtml(file, rowsHtml, matchCount) {
+    return '<details class="sr-group" open><summary class="sr-file" title="click to collapse/expand">' +
+      esc(file) + ' <span class="count-pill">' + matchCount + '</span></summary>' + rowsHtml + '</details>';
+  }
+
   function renderSearchRows(res, mode, ms) {
     const out = $('search-results');
     $('search-progress').textContent = res.total + ' match(es) over kept lines in ' + ms.toFixed(0) + ' ms';
@@ -596,8 +602,7 @@
       (byFile[name] = byFile[name] || []).push({ lineNo: rec.lineNo, ts: rec.ts, text: displayText(rec) });
     }
     out.innerHTML = Object.keys(byFile).map((f) =>
-      '<div class="sr-file">' + esc(f) + ' (' + byFile[f].length + ')</div>' +
-      byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true)).join('')).join('') ||
+      groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true)).join(''), byFile[f].length)).join('') ||
       '<div class="muted" style="padding:20px">no matches</div>';
   }
 
@@ -667,9 +672,10 @@
       out.innerHTML = Object.keys(byFile).map((f) => '<div class="sr-file">' + esc(f) + '</div>').join('');
       return;
     }
-    out.innerHTML = Object.keys(byFile).map((f) =>
-      '<div class="sr-file">' + esc(f) + '</div>' +
-      byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch)).join('')).join('');
+    out.innerHTML = Object.keys(byFile).map((f) => {
+      const matches = byFile[f].filter((r) => r.isMatch).length;
+      return groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch)).join(''), matches);
+    }).join('') || '<div class="muted" style="padding:20px">no matches</div>';
   }
 
   /* ---------------- filters panel ---------------- */
@@ -1162,6 +1168,11 @@
     });
     $('btn-deepscan').onclick = deepScan;
     $('btn-rg-export').onclick = exportRg;
+    const setAllGroups = (open) => {
+      document.querySelectorAll('#search-results details.sr-group').forEach((d) => { d.open = open; });
+    };
+    $('btn-rg-collapse').onclick = () => setAllGroups(false);
+    $('btn-rg-expand').onclick = () => setAllGroups(true);
     $('search-results').addEventListener('click', (e) => {
       const row = e.target.closest('.sr-row');
       if (row) jumpFromSearch(row);
