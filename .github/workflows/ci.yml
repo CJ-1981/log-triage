@@ -51,6 +51,9 @@ jobs:
       - name: Assemble site (index.html)
         run: mkdir -p site && cp log-triage.html site/index.html
       - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
       - id: deployment
         uses: actions/deploy-pages@v4
 
