@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.7.0 (2026-09-12)
+- chore: rebuild log-triage.html
+- feat: bookmarks panel in the sidebar under Files (entry list, jump-to-line, count pill; replaces the drawer-based panel)
+
 ## 1.6.0 (2026-09-12)
 - chore: rebuild log-triage.html at current version
 - feat: level chips rescope to the active file in per-file view (store.tallyFor); merged view keeps the all-files sum
