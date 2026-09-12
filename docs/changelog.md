@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.1.3 (2026-09-12)
+- chore: rebuild log-triage.html at v1.1.2
+- fix: wrap mode actually wraps long lines (spacer width root cause) with true-offset windowed rendering; refresh README screenshots; clean changelog after v1.1.1
+
 - Fix: wrap mode now actually wraps long lines — the row container previously stretched to the longest single line (no wrapping, mostly-empty scroll area); windowed pages are also positioned at their true scroll offset
 
 ## 1.1.2 (2026-09-12)
