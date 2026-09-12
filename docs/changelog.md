@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.2.0 (2026-09-12)
+- feat: responsive mobile layout — header wraps with scrollable tabs, files panel becomes an overlay drawer (auto-collapsed on narrow screens), single-column mask grid, scrollable rules table, dynamic viewport height
+- chore: rebuild log-triage.html
+- test: deterministic RAREJUMPMARKER lines in the stress fixture — fixes the flaky instant-search jump spec (random fixture could hold zero kept-window hits)
+
 ## 1.1.5 (2026-09-12)
 - fix: horizontal scrolling in nowrap viewer — size the scroll range from the longest line in the view (regression spec added)
 
