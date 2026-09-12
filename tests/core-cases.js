@@ -1015,5 +1015,23 @@
     deepEq(s.tallyFor('a').chipList().map((c) => c.id), ['I', 'W', '__']);
   });
 
+  T('bookmarks', 'removeFile drops every entry of that file', () => {
+    const bm = new SRC.BookmarkStore();
+    bm.toggle('a|100|hash1', 1, {});
+    bm.toggle('a|100|hash1', 2, {});
+    bm.toggle('b|100|hash1', 3, {});
+    bm.removeFile('a|100|hash1');
+    eq(bm.list('a|100|hash1').length, 0);
+    eq(bm.list('b|100|hash1').length, 1);
+  });
+
+  T('bookmarks', 'removeAll clears every entry', () => {
+    const bm = new SRC.BookmarkStore();
+    bm.toggle('a', 1, {});
+    bm.toggle('b', 2, {});
+    bm.removeAll();
+    eq(bm.all().length, 0);
+  });
+
   return { CASES, eq, deepEq, ok };
 }));

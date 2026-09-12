@@ -48,6 +48,21 @@
       return out;
     }
 
+    removeFile(key) {
+      delete this._byKey[key];
+    }
+
+    /** removes every file entry whose key starts with the given prefix */
+    removeByKeyPrefix(prefix) {
+      for (const key of Object.keys(this._byKey)) {
+        if (key.startsWith(prefix)) delete this._byKey[key];
+      }
+    }
+
+    removeAll() {
+      this._byKey = {};
+    }
+
     toJSON() {
       const out = {};
       for (const key of Object.keys(this._byKey)) {

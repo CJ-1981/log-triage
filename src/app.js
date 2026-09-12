@@ -12,7 +12,7 @@
     theme: LT.DEFAULT_THEME || 'midnight',
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
-    timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false,
+    timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200,
     bookmarks: null, levels: [], rg: { fixed: false, word: false, invert: false, caseMode: 'smart', before: 0, after: 0 },
   });
   let state = defaults();
@@ -258,14 +258,16 @@
     const idx = files.findIndex((f) => f.id === id);
     if (idx < 0) return;
     const f = files[idx];
+    const keyPrefix = f.name + '|' + f.size + '|';
     files.splice(idx, 1);
     store.removeFile(id);
+    bookmarksStore.removeByKeyPrefix(keyPrefix); // removed file: drop its bookmarks too
     if (state.activeFile === id) { state.activeFile = null; state.viewMode = 'merged'; }
     const matches = cacheEntries.filter((c) => c.name === f.name && c.size === f.size);
     for (const c of matches) LT.cacheDelete(c.id);
     cacheEntries = cacheEntries.filter((c) => !matches.includes(c));
     displayCache = new Map();
-    onKeptChanged(); renderFiles(); saveState();
+    onKeptChanged(); renderBookmarks(); renderFiles(); saveState();
   }
 
   /* ---------------- view model ---------------- */
@@ -1205,6 +1207,33 @@
       document.getElementById('main').classList.toggle('side-hidden', !!state.sideHidden);
       $('btn-side').classList.toggle('on', !state.sideHidden);
     };
+    applySide();
+
+    // drag handle between the Files and Bookmarks panels
+    const dragEl = $('side-drag');
+    const bmSection = $('bm-section');
+    if (state.bmPanelH) bmSection.style.height = state.bmPanelH + 'px';
+    dragEl.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startH = bmSection.offsetHeight;
+      dragEl.classList.add('active');
+      dragEl.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        const maxH = Math.max(120, document.getElementById('sidebar').clientHeight - 190);
+        const h = Math.max(80, Math.min(startH + (startY - ev.clientY), maxH));
+        state.bmPanelH = h;
+        bmSection.style.height = h + 'px';
+      };
+      const up = () => {
+        dragEl.classList.remove('active');
+        dragEl.removeEventListener('pointermove', move);
+        dragEl.removeEventListener('pointerup', up);
+        saveState();
+      };
+      dragEl.addEventListener('pointermove', move);
+      dragEl.addEventListener('pointerup', up);
+    });
     // narrow screens start with the files panel collapsed (it opens as an overlay drawer)
     if (window.innerWidth <= 760 && !state.sideTouched) state.sideHidden = true;
     $('btn-side').onclick = () => {
@@ -1235,8 +1264,9 @@
       files.length = 0;
       cacheEntries = [];
       await LT.cacheClear();
+      bookmarksStore.removeAll();
       state.activeFile = null;
-      onKeptChanged(); renderFiles(); saveState();
+      onKeptChanged(); renderBookmarks(); renderFiles(); saveState();
     };
     const dz = $('dropzone');
     ;['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('drag'); }));

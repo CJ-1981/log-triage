@@ -48,8 +48,13 @@ header h1 span { color: var(--accent); }
 #sidebar { width: 260px; min-width: 180px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
 #btn-side.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 #sidebar .side-head { padding: 8px 10px; font-weight: 600; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-#file-list { overflow-y: auto; flex: 1 1 55%; min-height: 70px; }
-#bookmark-list { overflow-y: auto; flex: 1 1 45%; min-height: 70px; }
+#file-list { overflow-y: auto; flex: 1 1 auto; min-height: 60px; }
+#bookmark-list { overflow-y: auto; flex: 1 1 auto; min-height: 60px; }
+.side-section { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+#files-section { flex: 1 1 auto; }
+#bm-section { flex: 0 0 auto; height: 200px; }
+#side-drag { flex: none; height: 7px; cursor: ns-resize; background: var(--surface2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+#side-drag:hover, #side-drag.active { background: var(--accent); }
 .bm-entry { padding: 6px 10px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12px; }
 .bm-entry:hover { background: var(--surface2); }
 .bm-entry .snippet { font-family: var(--mono); font-size: 11px; word-break: break-all; white-space: pre-wrap; }
@@ -215,15 +220,20 @@ table.rules { min-width: 620px; }
 
   <div id="main">
     <aside id="sidebar">
-      <div class="side-head">Files <button id="clear-files" title="remove all files">✕</button></div>
-      <div id="file-list"></div>
-      <div id="dropzone">drop log files here<br>or</div>
-      <div id="side-actions">
-        <button id="btn-pick" class="primary">Load files…</button>
-        <button id="btn-demo">Demo log</button>
+      <div id="files-section" class="side-section">
+        <div class="side-head">Files <button id="clear-files" title="remove all files">✕</button></div>
+        <div id="file-list"></div>
+        <div id="dropzone">drop log files here<br>or</div>
+        <div id="side-actions">
+          <button id="btn-pick" class="primary">Load files…</button>
+          <button id="btn-demo">Demo log</button>
+        </div>
       </div>
-      <div class="side-head">Bookmarks <span id="bm-count" class="count-pill">0</span></div>
-      <div id="bookmark-list"></div>
+      <div id="side-drag" title="drag to resize panels"></div>
+      <div id="bm-section" class="side-section">
+        <div class="side-head">Bookmarks <span id="bm-count" class="count-pill">0</span></div>
+        <div id="bookmark-list"></div>
+      </div>
       <input type="file" id="file-input" multiple class="hidden">
       <textarea id="paste-area" class="hidden" placeholder="paste log text here"></textarea>
       <button id="btn-paste" class="hidden" title="load pasted text">Load pasted text</button>
@@ -1360,6 +1370,21 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       return out;
     }
 
+    removeFile(key) {
+      delete this._byKey[key];
+    }
+
+    /** removes every file entry whose key starts with the given prefix */
+    removeByKeyPrefix(prefix) {
+      for (const key of Object.keys(this._byKey)) {
+        if (key.startsWith(prefix)) delete this._byKey[key];
+      }
+    }
+
+    removeAll() {
+      this._byKey = {};
+    }
+
     toJSON() {
       const out = {};
       for (const key of Object.keys(this._byKey)) {
@@ -1705,7 +1730,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     theme: LT.DEFAULT_THEME || 'midnight',
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
-    timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false,
+    timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200,
     bookmarks: null, levels: [], rg: { fixed: false, word: false, invert: false, caseMode: 'smart', before: 0, after: 0 },
   });
   let state = defaults();
@@ -1951,14 +1976,16 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     const idx = files.findIndex((f) => f.id === id);
     if (idx < 0) return;
     const f = files[idx];
+    const keyPrefix = f.name + '|' + f.size + '|';
     files.splice(idx, 1);
     store.removeFile(id);
+    bookmarksStore.removeByKeyPrefix(keyPrefix); // removed file: drop its bookmarks too
     if (state.activeFile === id) { state.activeFile = null; state.viewMode = 'merged'; }
     const matches = cacheEntries.filter((c) => c.name === f.name && c.size === f.size);
     for (const c of matches) LT.cacheDelete(c.id);
     cacheEntries = cacheEntries.filter((c) => !matches.includes(c));
     displayCache = new Map();
-    onKeptChanged(); renderFiles(); saveState();
+    onKeptChanged(); renderBookmarks(); renderFiles(); saveState();
   }
 
   /* ---------------- view model ---------------- */
@@ -2898,6 +2925,33 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       document.getElementById('main').classList.toggle('side-hidden', !!state.sideHidden);
       $('btn-side').classList.toggle('on', !state.sideHidden);
     };
+    applySide();
+
+    // drag handle between the Files and Bookmarks panels
+    const dragEl = $('side-drag');
+    const bmSection = $('bm-section');
+    if (state.bmPanelH) bmSection.style.height = state.bmPanelH + 'px';
+    dragEl.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      const startY = e.clientY;
+      const startH = bmSection.offsetHeight;
+      dragEl.classList.add('active');
+      dragEl.setPointerCapture(e.pointerId);
+      const move = (ev) => {
+        const maxH = Math.max(120, document.getElementById('sidebar').clientHeight - 190);
+        const h = Math.max(80, Math.min(startH + (startY - ev.clientY), maxH));
+        state.bmPanelH = h;
+        bmSection.style.height = h + 'px';
+      };
+      const up = () => {
+        dragEl.classList.remove('active');
+        dragEl.removeEventListener('pointermove', move);
+        dragEl.removeEventListener('pointerup', up);
+        saveState();
+      };
+      dragEl.addEventListener('pointermove', move);
+      dragEl.addEventListener('pointerup', up);
+    });
     // narrow screens start with the files panel collapsed (it opens as an overlay drawer)
     if (window.innerWidth <= 760 && !state.sideTouched) state.sideHidden = true;
     $('btn-side').onclick = () => {
@@ -2928,8 +2982,9 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       files.length = 0;
       cacheEntries = [];
       await LT.cacheClear();
+      bookmarksStore.removeAll();
       state.activeFile = null;
-      onKeptChanged(); renderFiles(); saveState();
+      onKeptChanged(); renderBookmarks(); renderFiles(); saveState();
     };
     const dz = $('dropzone');
     ;['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('drag'); }));
@@ -4105,6 +4160,24 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     deepEq(s.tallyFor('b').counts(), { E: 1 });
     deepEq(s.tallyFor('zz').counts(), {});
     deepEq(s.tallyFor('a').chipList().map((c) => c.id), ['I', 'W', '__']);
+  });
+
+  T('bookmarks', 'removeFile drops every entry of that file', () => {
+    const bm = new SRC.BookmarkStore();
+    bm.toggle('a|100|hash1', 1, {});
+    bm.toggle('a|100|hash1', 2, {});
+    bm.toggle('b|100|hash1', 3, {});
+    bm.removeFile('a|100|hash1');
+    eq(bm.list('a|100|hash1').length, 0);
+    eq(bm.list('b|100|hash1').length, 1);
+  });
+
+  T('bookmarks', 'removeAll clears every entry', () => {
+    const bm = new SRC.BookmarkStore();
+    bm.toggle('a', 1, {});
+    bm.toggle('b', 2, {});
+    bm.removeAll();
+    eq(bm.all().length, 0);
   });
 
   return { CASES, eq, deepEq, ok };

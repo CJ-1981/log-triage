@@ -427,6 +427,14 @@ test('per-file ✕ removes that file only (lines, counters, chips)', async () =>
     join(root, 'tests', 'fixtures', 'syslog.log'),
   ]);
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
+  // per-file view of demo.log, then bookmark a demo line (rows[0] is demo here)
+  await page.evaluate(() => document.querySelectorAll('.file-item')[0].click());
+  await page.waitForFunction(() => document.getElementById('view-mode').value === 'file', null, { timeout: 5000 });
+  await page.evaluate(() => {
+    const rows = document.querySelectorAll('.vrow');
+    rows[0].querySelector('.bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+  await page.waitForFunction(() => document.getElementById('bm-count').textContent === '1', null, { timeout: 5000 });
   // remove the syslog file via its ✕ button
   await page.evaluate(() => document.querySelectorAll('.file-item .fx')[1].click());
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
@@ -435,22 +443,57 @@ test('per-file ✕ removes that file only (lines, counters, chips)', async () =>
       items: document.querySelectorAll('.file-item').length,
       names: Array.from(document.querySelectorAll('.file-item .fname')).map((n) => n.textContent),
       kept: document.getElementById('st-kept').textContent,
+      bm: document.getElementById('bm-count').textContent,
       errs: window.__errs || []
     };
   })())`).then(JSON.parse);
   assert.strictEqual(st.items, 1);
   assert.deepStrictEqual(st.names, ['demo.log']);
   assert.strictEqual(st.kept, '44', 'demo kept lines remain');
+  assert.strictEqual(st.bm, '1', 'demo bookmark survives removing the other file');
   assert.strictEqual(st.errs.length, 0);
-  // remove the last file: viewer empties cleanly
+  // remove the last file: viewer empties cleanly and bookmarks are cleared
   await page.evaluate(() => document.querySelectorAll('.file-item .fx')[0].click());
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '0', null, { timeout: 8000 });
   const empty = await page.evaluate(`JSON.stringify({
     chips: document.getElementById('chips-row').textContent,
-    files: document.querySelectorAll('.file-item').length
+    files: document.querySelectorAll('.file-item').length,
+    bm: document.getElementById('bm-count').textContent
   })`).then(JSON.parse);
   assert.strictEqual(empty.files, 0);
   assert.match(empty.chips, /appear after loading/);
+  assert.strictEqual(empty.bm, '0', 'bookmarks cleared with their file');
+});
+
+test('drag handle resizes the bookmarks panel', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  const handlePos = () => page.evaluate(() => {
+    const r = document.getElementById('side-drag').getBoundingClientRect();
+    return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+  });
+  const before = await page.evaluate(() => document.getElementById('bm-section').offsetHeight);
+  // drag the handle up: bookmarks panel grows
+  let pos = await handlePos();
+  await page.mouse.move(pos.x, pos.y);
+  await page.mouse.down();
+  await page.mouse.move(pos.x, pos.y - 120, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  const grown = await page.evaluate(() => document.getElementById('bm-section').offsetHeight);
+  assert.ok(grown > before + 60, 'dragging up grows the bookmarks panel: ' + before + ' -> ' + grown);
+  const viewerRows = await page.evaluate(() => document.querySelectorAll('.vrow').length);
+  assert.ok(viewerRows > 0, 'viewer rows still render after resize');
+  // drag the handle back down: bookmarks panel shrinks (re-query the moved handle)
+  pos = await handlePos();
+  await page.mouse.move(pos.x, pos.y);
+  await page.mouse.down();
+  await page.mouse.move(pos.x, pos.y + 140, { steps: 8 });
+  await page.mouse.up();
+  await page.waitForTimeout(150);
+  const shrunk = await page.evaluate(() => document.getElementById('bm-section').offsetHeight);
+  assert.ok(shrunk < grown, 'dragging down shrinks the bookmarks panel: ' + grown + ' -> ' + shrunk);
 });
 
 test('mobile layout: page fits width, files panel is an overlay drawer, mask cards stack', async () => {
