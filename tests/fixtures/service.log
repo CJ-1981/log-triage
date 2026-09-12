@@ -1,0 +1,5 @@
+2026-08-24T15:37:01.123Z main INFO service starting, build 2.41.3
+2026-08-24T15:37:01.500+02:00 worker TRACE tick scheduled
+2026-08-24T15:37:02.000Z net ERROR connection refused to 10.20.30.40:514
+2026-08-24T15:37:03.000Z main DEBUG reconnect backoff 2s
+2026-08-24T15:37:04.000Z main INFO ready, handled 0 requests

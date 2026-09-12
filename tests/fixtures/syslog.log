@@ -1,0 +1,8 @@
+<34>Aug 24 15:37:01 gw-01 sshd[2201]: Failed password for admin from 10.44.2.7 port 51022 ssh2
+<38>Aug 24 15:37:02 gw-01 sshd[2201]: Received disconnect from 10.44.2.7: 11: Bye Bye
+Aug 24 15:37:03 gw-01 systemd[1]: Started Session c3 of user root.
+<86>Aug 24 15:37:10 gw-01 unix_chkpwd[3300]: password check failed for user (root)
+<13>Aug 24 15:37:15 gw-01 sshd[2210]: Accepted password for admin from 10.44.2.7 port 51024 ssh2
+Sep  9 23:59:59 gw-01 kernel: [UFW BLOCK] IN=eth0 SRC=203.0.113.9 DST=10.44.2.1
+Aug 24 15:38:00 gw-01 cron[410]: (root) CMD (command -v debian-sa1 > /dev/null)
+<133>Aug 24 15:38:11 gw-01 sudo: admin : TTY=pts/0 ; PWD=/root ; COMMAND=/usr/bin/apt update

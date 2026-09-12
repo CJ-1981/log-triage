@@ -8,6 +8,8 @@ const path = require('path');
 
 const MODULE_ORDER = [
   'util.js',
+  'detect.js',
+  'parser.js',
   // appended by later gates in dependency order
 ];
 

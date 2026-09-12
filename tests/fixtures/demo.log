@@ -1,0 +1,44 @@
+08-24 15:37:01.123  1234  5678 I ActivityManager: Start proc 1234:com.lotus.hmi/u0a12 for activity
+08-24 15:37:01.456  1234  5678 D HMI-CAN : VIN read: YV4AB9CD12EF34567 from ECU gateway
+08-24 15:37:01.789  2231  2245 I Netd    : client connected, uid=1027
+08-24 15:37:02.001  4310  4310 D WifiService: associated with AP ssid=AndroidShare_4821 bssid=aa:bb:cc:11:22:33
+08-24 15:37:02.240  4310  4355 I DhcpClient: lease 192.168.1.104/24 gw 192.168.1.1 dns 10.20.30.40
+08-24 15:37:02.512  4310  4355 W NetworkMonitor: validation failed for https://ota.lotus-tech.example, retry 3
+08-24 15:37:03.000  8891  8902 E Auth    : token refresh failed, credential rejected for driver.jung@lotus-tech.example
+08-24 15:37:03.220  8891  8902 E Auth    : subscriberId=410112233445566 not provisioned
+08-24 15:37:03.500  5152  5199 D GNSS    : position fix lat=48.858400 lon=2.294500 acc=3.2m sats=11
+08-24 15:37:03.700  5152  5199 D GNSS    : position fix lat=48.858412°N, 2.294511°E acc=2.9m sats=12
+08-24 15:37:04.000  1201  1201 I Zygote  : Forked child process 9876
+08-24 15:37:04.100  9876  9876 D BT      : bonded device CC:DD:EE:FF:00:11 type LE
+08-24 15:37:05.000  9877  9900 I Modem   : IMEI reported 350774129305118, card state READY
+08-24 15:37:06.000  1234  5700 W View    : requestLayout() improperly called
+08-24 15:37:07.000  1234  5700 E CR_OTA  : download stalled url=https://ota.example/pkg v2.41.3
+08-24 15:37:08.000  1234  5710 E AndroidRuntime: FATAL EXCEPTION: main
+08-24 15:37:08.000  1234  5710 E AndroidRuntime: Process: com.lotus.hmi, PID: 1234
+08-24 15:37:08.000  1234  5710 E AndroidRuntime: java.lang.NullPointerException: attempt to invoke virtual method on a null object reference
+08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at com.lotus.hmi.MainActivity.renderCluster(MainActivity.java:312)
+08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at com.lotus.hmi.ClusterView.onDraw(ClusterView.java:88)
+08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at android.view.View.draw(View.java:20340)
+08-24 15:37:08.100  1234  1234 I Process : Sending signal. PID: 1234 SIG: 9
+08-24 15:37:08.500  1000  1000 I ActivityManager: Process com.lotus.hmi has died
+08-24 15:37:09.000  1000  1000 W ActivityManager: Force stopping com.lotus.hmi appid=10112
+08-24 15:37:10.000  1000  1420 E am_proc_died: [0,10112,com.lotus.hmi]
+08-24 15:37:11.000  1000  1420 I ActivityManager: ANR in com.lotus.cluster (com.lotus.cluster/.ClusterService)
+08-24 15:37:11.100  1000  1420 E ActivityManager: Input dispatching timed out (Waiting to send key event because the focused window has not finished)
+08-24 15:37:12.000  2001  2100 D CarServ : vehicleId=YV4ZZZ9CD12EF34567 paired to phone +46 70 123 45 67
+08-24 15:37:12.300  2001  2100 D CarServ : finance contract DE89370400440532013000 validated
+08-24 15:37:12.600  2001  2100 W CarServ : card 4111 1111 1111 1111 declined by payment provider
+08-24 15:37:13.000  2001  2100 I CarServ : owner ssn 123-45-6789 verified against registry
+08-24 15:37:14.000  2001  2100 D Telematics: post to https://telematics.example/v2 retry left=2
+08-24 15:37:14.500  2001  2100 E Telematics: socket timeout after 30000ms host 203.0.113.77
+08-24 15:37:15.000  3333  3344 D SensorHub: calibration done, serial SN-A1B2C3D4E5F6 stored
+08-24 15:37:16.000  3333  3344 W SensorHub: watchdog, miss=1
+08-24 15:37:17.000  1234  5678 D HMI-CAN : heartbeat ecu=gateway alive seq=1201
+08-24 15:37:18.000  1234  5678 I HMI-CAN : heartbeat ecu=tcam alive seq=878
+08-24 15:37:19.000  1234  5678 W HMI-CAN : heartbeat ecu=tcam missed seq=879
+08-24 15:37:20.000  1234  5678 E HMI-CAN : heartbeat ecu=tcam lost, reconnecting
+08-24 15:37:21.000  4310  4355 I WifiService: CONNECTED bssid=aa:bb:cc:11:22:33 rssi=-52
+08-24 15:37:22.000  4310  4355 D IpManager: probing link, ipv6 fe80::7a8b:cafe:1234:5678%wlan0
+08-24 15:37:23.000  9999  9999 V RenderThread: 60fps jank=0.8ms
+08-24 15:37:24.000  9999  9999 D ClusterGL: frame 12345 drawn in 6.2ms
+08-24 15:37:25.000  1234  5678 I BootReceiver: boot completed at uptime 42s
