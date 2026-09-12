@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.11.0 (2026-09-12)
+- chore: rebuild log-triage.html at current version
+- feat: time histogram axes — y gridlines with value ticks, x time tick labels, hover tooltip with count and time range (DPR-aware canvas)
+
 <<<<<<< HEAD
 ## 1.10.0 (2026-09-12)
 - chore: rebuild log-triage.html
