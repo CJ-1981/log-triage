@@ -1,6 +1,15 @@
 # Changelog
 
 ## Unreleased
+## 1.1.1 (2026-09-12)
+- fix: wrap mode renders scrolled windows at true offset; new files visible after per-file selection; collapsible files panel; search results in file/line/timestamp/text columns; changelog structure fix in bump flow; e2e 20 specs
+- docs: add screenshots (viewer dark/light, masks, analysis, search) to README; refresh stale project tree and script list
+- docs: add live GitHub Pages link to README
+- ci: upload site directory as the github-pages artifact (fixes deploy-pages finding no artifact)
+- ci: deploy the built single-file app to GitHub Pages on main (actions/deploy-pages, served as index.html)
+# Changelog
+
+## Unreleased
 
 - Files panel is collapsible via the header "☰ Files" toggle (state persisted; wrapped line heights re-measured on toggle)
 - Fix: newly loaded files are visible immediately — loading no longer leaves the viewer stuck on a previous file's per-file selection, and a stale per-file selection falls back to the merged view
