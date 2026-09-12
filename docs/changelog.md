@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.6.0 (2026-09-12)
+- chore: rebuild log-triage.html at current version
+- feat: level chips rescope to the active file in per-file view (store.tallyFor); merged view keeps the all-files sum
+- feat: level chips rescope to the active file in per-file view (store.tallyFor); merged view keeps the all-files sum
+
 ## 1.5.0 (2026-09-12)
 - chore: rebuild log-triage.html
 - feat: per-file ✕ remove buttons in the files panel (drops lines, counters and tally contribution; clear-all uses the same path); level tally remove/clamp
