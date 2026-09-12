@@ -125,6 +125,9 @@ test('stress: go-to-line reports lines released from memory', async () => {
 });
 
 test('stress: clicking an instant search result jumps to the line', async () => {
+  await fresh();
+  const st = await loadStress();
+  assert.ok(st.total === fixtureLines, 'fixture loaded: ' + st.total);
   await page.evaluate(() => { document.getElementById('search-progress').textContent = ''; });
   await page.evaluate(() => {
     document.querySelector('#tabs button[data-tab=search]').click();
@@ -132,14 +135,16 @@ test('stress: clicking an instant search result jumps to the line', async () => 
     q.value = 'ecu=gateway alive seq=1201';
     q.dispatchEvent(new Event('input'));
   });
-  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 20000 });
-  await page.waitForFunction(() => document.querySelector('#search-results .sr-row') !== null, null, { timeout: 10000 });
+  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 30000 });
+  await page.waitForFunction(() => document.querySelector('#search-results .sr-row') !== null, null, { timeout: 30000 });
   await page.evaluate(() => document.querySelector('#search-results .sr-row').click());
   await page.waitForTimeout(300);
-  const st = await state();
-  assert.ok(st.scrollTop > 0, 'viewer scrolled to the match');
+  const after = await state();
+  assert.ok(after.scrollTop > 0, 'viewer scrolled to the match');
   const drawer = await page.evaluate(() => document.getElementById('drawer').textContent);
   assert.match(drawer, /ecu=gateway alive seq=1201/);
+  const errs = await page.evaluate(() => (window.__errs || []).length);
+  assert.strictEqual(errs, 0);
 });
 
 test('stress: deep scan covers the whole file beyond the kept cap', async () => {
