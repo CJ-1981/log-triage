@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.15.0 (2026-09-12)
+- feat: per-file ✕ removal with cache purge; collapsible search groups; issue-scan editor; analysis file scoping; ★ bookmark badge chip; auto-switch on search/bookmark jump; responsive mobile layout; config tab; coverage gate per-file overrides
+- feat: collapsible per-file search result groups; analysis tab file selector scoping; per-file bookmark cleanup on file removal; stress suite port-detection and server-lifecycle fixes
+- docs: v1.13.0 state and plan for PII Providers tab (Presidio/LLM) — FR-25, ADR-0010, proxy-mode design, future test areas
+
 - Planned: PII Providers tab (Presidio sidecar / LLM) — design documented (ADR-0010, FR-25)
 
 ## 1.14.0 (2026-09-12)
