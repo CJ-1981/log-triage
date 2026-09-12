@@ -157,11 +157,23 @@ test('bookmark survives reload via file-identity persistence', async () => {
   await page.evaluate(() => document.querySelector('.vrow .bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
   const marked = await page.evaluate(() => document.querySelector('.vrow .bm').classList.contains('marked'));
   assert.ok(marked);
+  // sidebar bookmarks panel lists the entry
+  const listed = await page.evaluate(() => ({
+    count: document.getElementById('bm-count').textContent,
+    entries: document.querySelectorAll('#bookmark-list .bm-entry').length
+  }));
+  assert.strictEqual(listed.count, '1');
+  assert.strictEqual(listed.entries, 1);
   await page.reload({ waitUntil: 'domcontentloaded' });
   await click('btn-demo');
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
   const markedAfter = await page.evaluate(() => document.querySelector('.vrow .bm').classList.contains('marked'));
   assert.ok(markedAfter, 'bookmark restored after reload');
+  // clicking the sidebar entry jumps to the bookmarked line
+  await page.evaluate(() => document.querySelector('#bookmark-list .bm-entry').click());
+  await page.waitForTimeout(250);
+  const drawer = await page.evaluate(() => document.getElementById('drawer').textContent);
+  assert.ok(drawer.length > 10, 'sidebar bookmark click jumps (drawer opened)');
 });
 
 test('export produces a downloadable txt with masked content', async () => {

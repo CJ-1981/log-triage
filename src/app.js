@@ -456,6 +456,8 @@
     $('st-shown').textContent = filteredCount;
     $('st-sel').textContent = selection.count;
     $('st-bm').textContent = bookmarksStore.all().length;
+    const bmCount = $('bm-count');
+    if (bmCount) bmCount.textContent = bookmarksStore.all().length;
     const trim = $('st-trim');
     if (st.trimmed > 0) {
       trim.classList.remove('hidden');
@@ -517,7 +519,24 @@
   function toggleBookmark(idx) {
     const rec = view[idx];
     bookmarksStore.toggle(bookmarkKeyFor(rec.fileId), rec.lineNo, { snippet: displayText(rec).slice(0, 200), ts: rec.ts, fileId: rec.fileId });
+    renderBookmarks();
     updateStatus(); renderRows(); saveState();
+  }
+  function renderBookmarks() {
+    const list = $('bookmark-list');
+    if (!list) return;
+    const all = bookmarksStore.all();
+    $('bm-count').textContent = all.length;
+    if (!all.length) {
+      list.innerHTML = '<div class="muted" style="padding:8px 10px">no bookmarks yet — click ☆ in the gutter or press B</div>';
+      return;
+    }
+    list.innerHTML = all.map((b) => {
+      const fname = b.key.split('|')[0];
+      return '<div class="bm-entry" data-key="' + esc(b.key) + '" data-ln="' + b.lineNo + '">' +
+        '<div class="snippet">' + esc(b.meta.snippet || '') + '</div>' +
+        '<div class="meta">' + esc(fname) + ':' + b.lineNo + (b.note ? ' — <b>' + esc(b.note) + '</b>' : '') + '</div></div>';
+    }).join('');
   }
   function bookmarkKeyFor(fileId) {
     return LT.bookmarkFileKey(fileDisplayName(fileId), fileSizeOf(fileId), firstLineOf(files.find((x) => x.id === fileId)));
@@ -1162,19 +1181,14 @@
     $('btn-follow').onclick = () => setFollow(!state.follow);
     $('view-mode').onchange = () => { state.viewMode = $('view-mode').value; saveState(); rebuildView(); };
     $('btn-copy').onclick = copySelection;
-    $('btn-bookmarks').onclick = () => {
-      const all = bookmarksStore.all();
-      const d = $('drawer');
-      d.className = 'open';
-      d.innerHTML = '<h3>Bookmarks (' + all.length + ')<button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
-        (all.length ? all.map((b) => '<div class="issue" data-key="' + esc(b.key) + '" data-ln="' + b.lineNo + '"><span>' + esc(b.meta.snippet || '') + (b.note ? ' — <b>' + esc(b.note) + '</b>' : '') + '</span><span class="muted">' + esc(b.key.split('|')[0]) + ':' + b.lineNo + '</span></div>').join('') : '<span class="muted">no bookmarks yet — click the ☆ gutter or press B</span>');
-      d.querySelectorAll('.issue').forEach((el) => {
-        el.onclick = () => {
-          const rec = view.find((r) => r.lineNo === Number(el.dataset.ln) && fileDisplayName(r.fileId) === el.dataset.key.split('|')[0]);
-          if (rec && seqToIdx.has(rec.seq)) jumpTo(seqToIdx.get(rec.seq));
-        };
-      });
-    };
+    $('bookmark-list').addEventListener('click', (e) => {
+      const entry = e.target.closest('.bm-entry');
+      if (!entry) return;
+      const rec = keptLineMap.get(entry.dataset.key.split('|')[0] + ':' + entry.dataset.ln);
+      if (rec && seqToIdx.has(rec.seq)) { jumpTo(seqToIdx.get(rec.seq)); return; }
+      $('st-progress').textContent = 'that file is not loaded right now — bookmark kept for later';
+      setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
+    });
 
     // debounced: start matching only after typing pauses
     let rgTimer = null;
@@ -1265,7 +1279,7 @@
     setWrap(state.wrapOn);
     setFollow(state.follow);
     syncMasksFromState(); syncRgFromState();
-    renderChips(); renderRules(); renderPresets(); renderFiles(); updateStatus();
+    renderChips(); renderRules(); renderPresets(); renderFiles(); renderBookmarks(); updateStatus();
     bindViewer();
     applySide();
 

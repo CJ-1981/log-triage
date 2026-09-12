@@ -48,7 +48,12 @@ header h1 span { color: var(--accent); }
 #sidebar { width: 260px; min-width: 180px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
 #btn-side.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
 #sidebar .side-head { padding: 8px 10px; font-weight: 600; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
-#file-list { overflow-y: auto; flex: 1; min-height: 0; }
+#file-list { overflow-y: auto; flex: 1 1 55%; min-height: 70px; }
+#bookmark-list { overflow-y: auto; flex: 1 1 45%; min-height: 70px; }
+.bm-entry { padding: 6px 10px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12px; }
+.bm-entry:hover { background: var(--surface2); }
+.bm-entry .snippet { font-family: var(--mono); font-size: 11px; word-break: break-all; white-space: pre-wrap; }
+.bm-entry .meta { color: var(--muted); font-size: 11px; }
 .file-item { position: relative; padding: 7px 10px; padding-right: 26px; border-bottom: 1px solid var(--border); cursor: pointer; }
 .file-item:hover { background: var(--surface2); }
 .file-item .fx { position: absolute; top: 6px; right: 6px; background: transparent; border: none; color: var(--muted); padding: 0 3px; font-size: 12px; cursor: pointer; }
@@ -206,13 +211,15 @@ table.rules { min-width: 620px; }
 
   <div id="main">
     <aside id="sidebar">
-      <div class="side-head">Files <button id="clear-files" title="Remove all files">✕</button></div>
+      <div class="side-head">Files <button id="clear-files" title="remove all files">✕</button></div>
       <div id="file-list"></div>
       <div id="dropzone">drop log files here<br>or</div>
       <div id="side-actions">
         <button id="btn-pick" class="primary">Load files…</button>
         <button id="btn-demo">Demo log</button>
       </div>
+      <div class="side-head">Bookmarks <span id="bm-count" class="count-pill">0</span></div>
+      <div id="bookmark-list"></div>
       <input type="file" id="file-input" multiple class="hidden">
       <textarea id="paste-area" class="hidden" placeholder="paste log text here"></textarea>
       <button id="btn-paste" class="hidden" title="load pasted text">Load pasted text</button>
@@ -231,7 +238,6 @@ table.rules { min-width: 620px; }
           <select id="view-mode" title="view"><option value="merged">Merged timeline</option><option value="file">Per file</option></select>
           <button id="btn-copy" title="copy selection (Ctrl+C)">Copy selection</button>
           <select id="copy-prefix" title="copy prefix"><option value="none">plain</option><option value="ln">[Ln]</option><option value="file:line">file:line:</option></select>
-          <button id="btn-bookmarks">Bookmarks</button>
         </div>
         <div id="viewer-wrap">
           <div id="viewer"><div id="vspacer"></div></div>
@@ -2035,6 +2041,8 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     $('st-shown').textContent = filteredCount;
     $('st-sel').textContent = selection.count;
     $('st-bm').textContent = bookmarksStore.all().length;
+    const bmCount = $('bm-count');
+    if (bmCount) bmCount.textContent = bookmarksStore.all().length;
     const trim = $('st-trim');
     if (st.trimmed > 0) {
       trim.classList.remove('hidden');
@@ -2096,7 +2104,24 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   function toggleBookmark(idx) {
     const rec = view[idx];
     bookmarksStore.toggle(bookmarkKeyFor(rec.fileId), rec.lineNo, { snippet: displayText(rec).slice(0, 200), ts: rec.ts, fileId: rec.fileId });
+    renderBookmarks();
     updateStatus(); renderRows(); saveState();
+  }
+  function renderBookmarks() {
+    const list = $('bookmark-list');
+    if (!list) return;
+    const all = bookmarksStore.all();
+    $('bm-count').textContent = all.length;
+    if (!all.length) {
+      list.innerHTML = '<div class="muted" style="padding:8px 10px">no bookmarks yet — click ☆ in the gutter or press B</div>';
+      return;
+    }
+    list.innerHTML = all.map((b) => {
+      const fname = b.key.split('|')[0];
+      return '<div class="bm-entry" data-key="' + esc(b.key) + '" data-ln="' + b.lineNo + '">' +
+        '<div class="snippet">' + esc(b.meta.snippet || '') + '</div>' +
+        '<div class="meta">' + esc(fname) + ':' + b.lineNo + (b.note ? ' — <b>' + esc(b.note) + '</b>' : '') + '</div></div>';
+    }).join('');
   }
   function bookmarkKeyFor(fileId) {
     return LT.bookmarkFileKey(fileDisplayName(fileId), fileSizeOf(fileId), firstLineOf(files.find((x) => x.id === fileId)));
@@ -2741,19 +2766,14 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     $('btn-follow').onclick = () => setFollow(!state.follow);
     $('view-mode').onchange = () => { state.viewMode = $('view-mode').value; saveState(); rebuildView(); };
     $('btn-copy').onclick = copySelection;
-    $('btn-bookmarks').onclick = () => {
-      const all = bookmarksStore.all();
-      const d = $('drawer');
-      d.className = 'open';
-      d.innerHTML = '<h3>Bookmarks (' + all.length + ')<button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
-        (all.length ? all.map((b) => '<div class="issue" data-key="' + esc(b.key) + '" data-ln="' + b.lineNo + '"><span>' + esc(b.meta.snippet || '') + (b.note ? ' — <b>' + esc(b.note) + '</b>' : '') + '</span><span class="muted">' + esc(b.key.split('|')[0]) + ':' + b.lineNo + '</span></div>').join('') : '<span class="muted">no bookmarks yet — click the ☆ gutter or press B</span>');
-      d.querySelectorAll('.issue').forEach((el) => {
-        el.onclick = () => {
-          const rec = view.find((r) => r.lineNo === Number(el.dataset.ln) && fileDisplayName(r.fileId) === el.dataset.key.split('|')[0]);
-          if (rec && seqToIdx.has(rec.seq)) jumpTo(seqToIdx.get(rec.seq));
-        };
-      });
-    };
+    $('bookmark-list').addEventListener('click', (e) => {
+      const entry = e.target.closest('.bm-entry');
+      if (!entry) return;
+      const rec = keptLineMap.get(entry.dataset.key.split('|')[0] + ':' + entry.dataset.ln);
+      if (rec && seqToIdx.has(rec.seq)) { jumpTo(seqToIdx.get(rec.seq)); return; }
+      $('st-progress').textContent = 'that file is not loaded right now — bookmark kept for later';
+      setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
+    });
 
     // debounced: start matching only after typing pauses
     let rgTimer = null;
@@ -2844,7 +2864,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     setWrap(state.wrapOn);
     setFollow(state.follow);
     syncMasksFromState(); syncRgFromState();
-    renderChips(); renderRules(); renderPresets(); renderFiles(); updateStatus();
+    renderChips(); renderRules(); renderPresets(); renderFiles(); renderBookmarks(); updateStatus();
     bindViewer();
     applySide();
 
