@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.5.0 (2026-09-12)
+- chore: rebuild log-triage.html
+- feat: per-file ✕ remove buttons in the files panel (drops lines, counters and tally contribution; clear-all uses the same path); level tally remove/clamp
+
 ## 1.4.0 (2026-09-12)
 - feat: collapsible per-file search result groups with collapse-all/expand-all
 - chore: rebuild log-triage.html at current version
