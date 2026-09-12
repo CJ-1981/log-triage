@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.13.0 (2026-09-12)
+- chore: rebuild log-triage.html
+- feat: Config tab — export/import filter, mask and issue-scan configuration as JSON with validation and setup summary
+
 ## 1.12.1 (2026-09-12)
 - chore: rebuild log-triage.html
 - fix: materialize issue-scan rule groups at boot (analysis tab crashed when state.issueGroups was unset); e2e diagnostics for panel render
