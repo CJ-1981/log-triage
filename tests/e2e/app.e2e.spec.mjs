@@ -318,6 +318,32 @@ test('search matches scroll horizontally on narrow viewports (no truncation)', a
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
+test('mobile layout: page fits width, files panel is an overlay drawer, mask cards stack', async () => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  const pageFits = () => page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1);
+  assert.ok(await pageFits(), 'no page-level horizontal overflow at 390px');
+  const hidden = await page.evaluate(() => document.getElementById('sidebar').offsetWidth === 0);
+  assert.ok(hidden, 'files panel starts collapsed on narrow screens');
+  await click('btn-side');
+  const open = await page.evaluate(`JSON.stringify((() => {
+    const sb = document.getElementById('sidebar');
+    return { visible: sb.offsetWidth > 0, pageFits: document.documentElement.scrollWidth <= window.innerWidth + 1 };
+  })())`).then(JSON.parse);
+  assert.ok(open.visible && open.pageFits, 'drawer overlays content without page overflow');
+  await click('btn-side');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
+  const cards = await page.evaluate(`JSON.stringify((() => {
+    const cards = Array.from(document.querySelectorAll('.mask-card'));
+    const vw = window.innerWidth;
+    return { count: cards.length, stacked: cards.every((c) => c.offsetWidth <= vw), pageFits: document.documentElement.scrollWidth <= window.innerWidth + 1 };
+  })())`).then(JSON.parse);
+  assert.ok(cards.count > 0 && cards.stacked && cards.pageFits, 'mask cards fit the narrow viewport');
+  await page.setViewportSize({ width: 1440, height: 900 });
+});
+
 test('horizontal scrolling works in nowrap mode (long lines widen the scroll area)', async () => {
   await fresh();
   await click('btn-demo');

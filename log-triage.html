@@ -32,7 +32,7 @@ input[type=text]:focus, select:focus { outline: 1px solid var(--accent); }
 input.err { outline: 1px solid var(--err); }
 small.muted, .muted { color: var(--muted); }
 
-#app { display: flex; flex-direction: column; height: 100vh; }
+#app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
 header { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--surface); border-bottom: 1px solid var(--border); }
 header h1 { font-size: 16px; letter-spacing: .3px; white-space: nowrap; }
 header h1 span { color: var(--accent); }
@@ -154,6 +154,27 @@ canvas#histo { width: 100%; height: 120px; background: var(--surface); border: 1
 
 .hidden { display: none !important; }
 kbd { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 11px; }
+
+/* ---------- responsive / mobile ---------- */
+.rules-wrap { overflow-x: auto; }
+table.rules { min-width: 620px; }
+.mask-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); }
+.two-col > div { min-width: min(100%, 300px); }
+@media (max-width: 760px) {
+  header { flex-wrap: wrap; gap: 6px 10px; padding: 6px 10px; }
+  header h1 { font-size: 14px; }
+  #tabs { order: 5; width: 100%; overflow-x: auto; }
+  #tabs button { white-space: nowrap; flex: none; }
+  #hdr-right { gap: 6px; }
+  #main { position: relative; }
+  #main.side-hidden #sidebar { display: none; }
+  #sidebar { position: absolute; z-index: 40; top: 0; bottom: 0; left: 0; width: 86%; max-width: 320px; box-shadow: 0 10px 34px rgba(0,0,0,.45); }
+  #viewer { font-size: 12px; }
+  .stat-card { min-width: 0; flex: 1 1 28%; }
+  .hbar { font-size: 11px; }
+  #drawer { width: calc(100% - 16px); right: 8px; bottom: 8px; max-height: 72%; }
+  .panel { padding: 10px; }
+}
 </style>
 </head>
 <body data-theme="midnight">
@@ -243,8 +264,10 @@ kbd { background: var(--surface2); border: 1px solid var(--border); border-radiu
           <h2>Regex rules</h2>
           <div class="rowline"><button id="btn-add-rule" class="primary">+ Add rule</button>
             <span class="muted">includes OR together · excludes subtract · highlights additive</span></div>
+          <div class="rules-wrap">
           <table class="rules"><thead><tr><th>on</th><th>name</th><th>pattern</th><th>case</th><th>action</th><th>hits</th><th></th></tr></thead>
             <tbody id="rule-rows"></tbody></table>
+          </div>
           <h2>Time range <small class="muted">(inclusive, e.g. 08-24 15:37)</small></h2>
           <div class="rowline">
             <label>from <input type="text" id="time-from" placeholder="08-24 15:37"></label>
@@ -2573,8 +2596,17 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       document.getElementById('main').classList.toggle('side-hidden', !!state.sideHidden);
       $('btn-side').classList.toggle('on', !state.sideHidden);
     };
-    $('btn-side').onclick = () => { state.sideHidden = !state.sideHidden; applySide(); saveState(); invalidateHeights(); renderRows(); };
-    applySide();
+    // narrow screens start with the files panel collapsed (it opens as an overlay drawer)
+    if (window.innerWidth <= 760 && !state.sideTouched) state.sideHidden = true;
+    $('btn-side').onclick = () => {
+      state.sideHidden = !state.sideHidden;
+      state.sideTouched = true;
+      applySide(); saveState(); invalidateHeights(); renderRows();
+    };
+    window.addEventListener('resize', () => {
+      if (window.innerWidth <= 760 && !state.sideTouched) state.sideHidden = true;
+      applySide(); invalidateHeights(); renderRows();
+    });
 
     document.querySelectorAll('#tabs button').forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
 
@@ -2703,6 +2735,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     syncMasksFromState(); syncRgFromState();
     renderChips(); renderRules(); renderPresets(); renderFiles(); updateStatus();
     bindViewer();
+    applySide();
 
     // keyboard
     document.addEventListener('keydown', (e) => {
@@ -2714,7 +2747,6 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c')) { if (selection.count) { copySelection(); e.preventDefault(); } }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'a')) { selection.selectAll(view.length); renderRows(); updateStatus(); e.preventDefault(); }
     });
-    window.addEventListener('resize', () => { invalidateHeights(); renderRows(); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

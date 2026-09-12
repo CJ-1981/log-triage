@@ -1059,8 +1059,17 @@
       document.getElementById('main').classList.toggle('side-hidden', !!state.sideHidden);
       $('btn-side').classList.toggle('on', !state.sideHidden);
     };
-    $('btn-side').onclick = () => { state.sideHidden = !state.sideHidden; applySide(); saveState(); invalidateHeights(); renderRows(); };
-    applySide();
+    // narrow screens start with the files panel collapsed (it opens as an overlay drawer)
+    if (window.innerWidth <= 760 && !state.sideTouched) state.sideHidden = true;
+    $('btn-side').onclick = () => {
+      state.sideHidden = !state.sideHidden;
+      state.sideTouched = true;
+      applySide(); saveState(); invalidateHeights(); renderRows();
+    };
+    window.addEventListener('resize', () => {
+      if (window.innerWidth <= 760 && !state.sideTouched) state.sideHidden = true;
+      applySide(); invalidateHeights(); renderRows();
+    });
 
     document.querySelectorAll('#tabs button').forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
 
@@ -1189,6 +1198,7 @@
     syncMasksFromState(); syncRgFromState();
     renderChips(); renderRules(); renderPresets(); renderFiles(); updateStatus();
     bindViewer();
+    applySide();
 
     // keyboard
     document.addEventListener('keydown', (e) => {
@@ -1200,7 +1210,6 @@
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c')) { if (selection.count) { copySelection(); e.preventDefault(); } }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'a')) { selection.selectAll(view.length); renderRows(); updateStatus(); e.preventDefault(); }
     });
-    window.addEventListener('resize', () => { invalidateHeights(); renderRows(); });
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
