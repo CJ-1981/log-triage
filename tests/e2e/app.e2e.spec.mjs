@@ -9,7 +9,7 @@ import { join, dirname } from 'node:path';
 import { chromium } from 'playwright';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PORT = 8901;
+let PORT = 0; let basePort = PORT; // OS-assigned free port
 let server;
 let browser;
 let page;
@@ -19,7 +19,17 @@ before(async () => {
   server = spawn(process.execPath, [join(root, 'tools', 'serve.mjs')], {
     env: { ...process.env, PORT: String(PORT) },
   });
-  await new Promise((res) => { server.stdout.on('data', res); setTimeout(res, 1500); });
+  // wait until the server reports its bound port (works for OS-assigned ports too)
+  await new Promise((res) => {
+    const onData = (d) => {
+      const m = String(d).match(/SERVER_PORT:(\d+)/);
+      if (m) res(Number(m[1]));
+    };
+    server.stdout.on('data', onData);
+    server.stderr.on('data', onData);
+    setTimeout(res, 3000);
+  }).then((p) => { PORT = p; });
+  await new Promise((res) => { server.stdout.on('data', () => res()); setTimeout(res, 300); });
   browser = await chromium.launch();
   const ctx = await browser.newContext();
   page = await ctx.newPage();

@@ -12,7 +12,7 @@ import { createReadStream } from 'node:fs';
 import { chromium } from 'playwright';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const PORT = 8903;
+let PORT = 0;
 const STRESS_LOG = join(root, 'tests', 'tmp', 'stress.log');
 let server;
 let browser;
@@ -31,7 +31,14 @@ before(async () => {
   server = spawn(process.execPath, [join(root, 'tools', 'serve.mjs')], {
     env: { ...process.env, PORT: String(PORT) },
   });
-  await new Promise((res) => { server.stdout.on('data', res); setTimeout(res, 1500); });
+  // wait until the server reports its bound port
+  PORT = await new Promise((res) => {
+    server.stdout.on('data', (d) => {
+      const m = String(d).match(/SERVER_PORT:(\d+)/);
+      if (m) res(Number(m[1]));
+    });
+    setTimeout(() => res(PORT), 3000);
+  });
   browser = await chromium.launch();
   page = await (await browser.newContext({ viewport: { width: 1440, height: 900 } })).newPage();
   page.on('pageerror', (e) => { page.__pageErrors = (page.__pageErrors || []).concat(String(e)); });

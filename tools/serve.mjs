@@ -26,4 +26,7 @@ createServer(async (req, res) => {
   } catch {
     res.writeHead(404); res.end('not found');
   }
-}).listen(PORT, '127.0.0.1', () => console.log('serving on http://127.0.0.1:' + PORT));
+}).listen(PORT, '127.0.0.1', function () {
+  const addr = this.address();
+  console.log('SERVER_PORT:' + addr.port);
+});

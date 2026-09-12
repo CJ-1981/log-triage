@@ -26,7 +26,7 @@ await page.waitForFunction(() => document.getElementById('st-total').textContent
 
 const dump = (label) => page.evaluate(`JSON.stringify((() => ({
   label: ${JSON.stringify(label)},
-  btn: document.getElementById('btn-bmonly').textContent,
+
   shown: document.getElementById('st-shown').textContent,
   progress: document.getElementById('st-progress').textContent,
   lns: Array.from(document.querySelectorAll('.vrow .ln')).map((x) => Number(x.textContent)).slice(0, 8),
@@ -35,7 +35,7 @@ const dump = (label) => page.evaluate(`JSON.stringify((() => ({
 
 console.log(JSON.stringify(await dump('start')));
 // enable with no bookmarks
-await page.evaluate(() => document.getElementById('btn-bmonly').click());
+
 console.log(JSON.stringify(await dump('enable w/o bookmarks')));
 // bookmark two lines
 await page.evaluate(() => {
@@ -44,7 +44,7 @@ await page.evaluate(() => {
   rows[3].querySelector('.bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
 });
 console.log(JSON.stringify(await dump('after bookmarking')));
-await page.evaluate(() => document.getElementById('btn-bmonly').click());
+
 await page.waitForTimeout(400);
 console.log(JSON.stringify(await dump('after enable with bookmarks')));
 

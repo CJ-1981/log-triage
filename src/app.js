@@ -13,6 +13,12 @@
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
     timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200, issueGroups: null,
+    pii: {
+      active: 'local',
+      presidio: { url: 'http://127.0.0.1:3000', path: '/analyze', language: 'en', threshold: 0.5, entities: '', timeoutMs: 10000 },
+      llm: { url: '', apiKey: '', model: '', promptTemplate: 'Return a JSON array of PII findings [{line, start, end, type, score}] for these lines:\n{lines}', maxLines: 50, temperature: 0, timeoutMs: 30000 },
+      proxy: { enabled: false, url: '' },
+    },
     bookmarks: null, levels: [], rg: { fixed: false, word: false, invert: false, caseMode: 'smart', before: 0, after: 0 },
   });
   let state = defaults();
@@ -1441,7 +1447,11 @@
 
   function setBmOnly(on) {
     state.showOnlyBookmarked = on;
+    try {
+      window.__bmonlyDebug = { on: on, arrLen: store.kept.length, err: null };
+    } catch (e) { window.__bmonlyDebug = { err: String(e) }; }
     saveState(); rebuildView();
+    window.__bmonlyDebug = Object.assign(window.__bmonlyDebug || {}, { shown: filteredCount });
   }
 
   function flash(msg) {
@@ -1493,6 +1503,28 @@
     sel.value = state.theme;
     document.body.dataset.theme = state.theme;
     sel.onchange = () => { state.theme = sel.value; document.body.dataset.theme = sel.value; saveState(); };
+
+  function bindPiiProviderUi() {
+    const sel = $('pii-provider');
+    sel.value = state.pii.active;
+    const applyWarning = () => {
+      const remote = state.pii.active !== 'local';
+      const el = $('pii-remote-warn');
+      if (remote) {
+        el.classList.remove('hidden');
+        el.textContent = 'REMOTE — data leaves this machine';
+      } else {
+        el.classList.add('hidden');
+      }
+    };
+    applyWarning();
+    sel.onchange = () => {
+      state.pii.active = sel.value;
+      applyWarning(); saveState();
+    };
+  }
+
+  bindPiiProviderUi();
 
     const applySide = () => {
       document.getElementById('main').classList.toggle('side-hidden', !!state.sideHidden);

@@ -203,6 +203,7 @@ table.rules { min-width: 620px; }
       <button data-tab="search">Search</button>
       <button data-tab="filters">Filters</button>
       <button data-tab="masks">Masks</button>
+      <button data-tab="pii">PII</button>
       <button data-tab="analysis">Analysis</button>
       <button data-tab="export">Export</button>
       <button data-tab="config">Config</button>
@@ -355,6 +356,54 @@ table.rules { min-width: 620px; }
           <p class="muted" id="exp-note"></p>
           <h2>Privacy</h2>
           <p class="muted">Exports are generated in your browser via Blob download. Nothing is uploaded — ever. External PII providers (Presidio/LLM) are <b>not</b> active in this build; the default engine is the local regex engine.</p>
+        </div>
+      </div>
+      <!-- PII PROVIDERS -->
+      <div class="tab" id="tab-pii">
+        <div class="panel">
+          <h2>PII analysis provider</h2>
+          <div class="rowline">
+            <select id="pii-provider">
+              <option value="local">Local regex engine (offline, default)</option>
+              <option value="presidio">Presidio sidecar (localhost service)</option>
+              <option value="llm">LLM API (remote — data leaves this machine)</option>
+            </select>
+            <span id="pii-remote-warn" class="badge miss hidden">REMOTE — data leaves this machine</span>
+          </div>
+          <div id="pii-presidio-box" class="pii-box hidden">
+            <h3 style="margin:0 0 6px">Presidio sidecar settings</h3>
+            <div class="rowline"><label>service URL <input id="pii-presidio-url" style="flex:1;min-width:200px;font-family:var(--mono)"></label></div>
+            <div class="rowline"><label>analyze path <input id="pii-presidio-path" style="width:120px;font-family:var(--mono)"></label>
+              <label>language <input id="pii-presidio-lang" style="width:60px"></label>
+              <label>score ≥ <input id="pii-presidio-threshold" style="width:60px"></label>
+              <label>timeout ms <input id="pii-presidio-timeout" style="width:90px"></label></div>
+          </div>
+          <div id="pii-llm-box" class="pii-box hidden">
+            <h3 style="margin:0 0 6px">LLM API settings</h3>
+            <div class="rowline"><label>endpoint URL <input id="pii-llm-url" style="flex:1;min-width:200px;font-family:var(--mono)"></label>
+              <label>model <input id="pii-llm-model" style="width:160px"></label></div>
+            <div class="rowline"><label>API key <input id="pii-llm-key" type="password" style="width:240px"></label>
+              <label>max lines/request <input id="pii-llm-max" style="width:80px"></label>
+              <label>temperature <input id="pii-llm-temp" style="width:60px"></label></div>
+            <div class="rowline"><label class="muted" style="flex:1">prompt template (use {lines} for the numbered lines)<textarea id="pii-llm-prompt" rows="3" style="flex:1;font-family:var(--mono)"></textarea></label></div>
+          </div>
+          <div class="pii-box">
+            <h3 style="margin:0 0 6px">CORS proxy</h3>
+            <div class="rowline"><label><input type="checkbox" class="toggle" id="pii-proxy-on"> route provider calls through proxy</label>
+              <label>proxy base <input id="pii-proxy-url" placeholder="http://127.0.0.1:8080" style="flex:1;min-width:160px;font-family:var(--mono)"></label></div>
+            <p class="muted" style="margin:4px 0 0">Final request = {proxy-base}/{target-url}. Needed when the target API does not send CORS headers.</p>
+          </div>
+          <div class="rowline">
+            <button id="btn-pii-test" class="primary">Test connection</button>
+            <span id="pii-test-status"></span>
+          </div>
+          <h2>Scan kept lines with this provider</h2>
+          <div class="rowline">
+            <label>sample <input id="pii-scan-sample" value="2000" style="width:80px"></label>
+            <button id="btn-pii-scan" class="primary">Scan</button>
+          </div>
+          <div id="pii-findings" class="card-row"></div>
+          <p class="muted">Findings are informational (census) in this version — they do not drive masking. The default local regex engine keeps everything on this machine.</p>
         </div>
       </div>
       <!-- CONFIG -->
