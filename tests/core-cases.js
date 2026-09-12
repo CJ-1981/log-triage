@@ -231,5 +231,172 @@
     eq(r.msg, 'worker ERROR boom');
   });
 
+  /* ============================== G2: masks + providers ============================== */
+
+  T('mask', 'VIN keeps first 3 and last 4', () => {
+    eq(SRC.maskLine('VIN read: YV4AB9CD12EF34567 from ECU'), 'VIN read: YV4**********4567 from ECU');
+    eq(SRC.maskLine('"vehicleId":"YV4ZZZCD12EF34567"'), '"vehicleId":"YV4**********4567"');
+  });
+
+  T('mask', 'IBAN keeps country+check digits', () => {
+    eq(SRC.maskLine('contract DE89370400440532013000 validated'), 'contract DE89********** validated');
+  });
+
+  T('mask', 'credit card becomes [card]', () => {
+    eq(SRC.maskLine('card 4111 1111 1111 1111 declined'), 'card [card] declined');
+    eq(SRC.maskLine('card 4111-1111-1111-1111 declined'), 'card [card] declined');
+  });
+
+  T('mask', 'SSN keeps area number', () => {
+    eq(SRC.maskLine('owner ssn 123-45-6789 verified'), 'owner ssn 123-**-**** verified');
+  });
+
+  T('mask', 'international phone keeps country code', () => {
+    eq(SRC.maskLine('paired to phone +46 70 123 45 67 today'), 'paired to phone +46 *** today');
+  });
+
+  T('mask', 'US phone keeps area code', () => {
+    eq(SRC.maskLine('call (555) 123-4567 now'), 'call (555) ***-**** now');
+  });
+
+  T('mask', 'IMEI exact 15 digits; epoch ms survives', () => {
+    eq(SRC.maskLine('IMEI reported 350774129305118 ok'), 'IMEI reported [IMEI] ok');
+    eq(SRC.maskLine('ts 1787611054935 ok'), 'ts 1787611054935 ok');
+  });
+
+  T('mask', 'email keeps first local char and TLD', () => {
+    eq(SRC.maskLine('rejected for driver.jung@lotus-tech.example'), 'rejected for d***@***.example');
+  });
+
+  T('mask', 'device serial keeps SN- prefix', () => {
+    eq(SRC.maskLine('serial SN-A1B2C3D4E5F6 stored'), 'serial SN-*** stored');
+  });
+
+  T('mask', 'MAC keeps OUI', () => {
+    eq(SRC.maskLine('bssid=aa:bb:cc:11:22:33 rssi=-52'), 'bssid=aa:bb:cc:**:**:** rssi=-52');
+  });
+
+  T('mask', 'private IPv4 before public IPv4', () => {
+    eq(SRC.maskLine('lease 192.168.1.104/24'), 'lease 192.168.1.x/24');
+    eq(SRC.maskLine('dns 10.20.30.40 ok'), 'dns 10.20.30.x ok');
+    eq(SRC.maskLine('host 172.25.10.3 up'), 'host 172.25.10.x up');
+    eq(SRC.maskLine('timeout host 203.0.113.77'), 'timeout host 203.0.x.x');
+  });
+
+  T('mask', 'IPv6 link-local/ULA masked, multicast untouched', () => {
+    eq(SRC.maskLine('ipv6 fe80::7a8b:cafe:1234:5678%wlan0'), 'ipv6 IPv6-masked%wlan0');
+    eq(SRC.maskLine('ula fdab::1234:5678 ok'), 'ula IPv6-masked ok');
+    eq(SRC.maskLine('mcast ff02::1 ok'), 'mcast ff02::1 ok');
+  });
+
+  T('mask', 'GNSS coordinate pairs, plain and degree forms', () => {
+    eq(SRC.maskLine('fix 48.858400, 2.294500 acc=3m'), 'fix [coords] acc=3m');
+    eq(SRC.maskLine('fix 48.858412°N, 2.294511°E ok'), 'fix [coords]°E ok');
+    eq(SRC.maskLine('single 1.2345 stays'), 'single 1.2345 stays');
+  });
+
+  T('mask', 'subscriberId and hotspot SSID', () => {
+    eq(SRC.maskLine('subscriberId=41011223344 not provisioned'), 'subscriberId=*** not provisioned');
+    eq(SRC.maskLine('ssid=AndroidShare_4821'), 'ssid=AndroidShare_****');
+  });
+
+  T('mask', 'false-positive guards leave timestamps and versions intact', () => {
+    eq(SRC.maskLine('08-24 15:37:01.123  1234  5678 I Tag: v2.41.3'), '08-24 15:37:01.123  1234  5678 I Tag: v2.41.3');
+    eq(SRC.maskLine('+0200 offset'), '+0200 offset');
+  });
+
+  T('mask', 'MaskEngine disables individual rules', () => {
+    const eng = new SRC.MaskEngine();
+    eq(eng.maskLine('mail a.b@x.example here'), 'mail a***@***.example here');
+    eng.setEnabled('email', false);
+    eq(eng.maskLine('mail a.b@x.example here'), 'mail a.b@x.example here');
+    eng.setEnabled('email', true);
+    eq(eng.maskLine('mail a.b@x.example here'), 'mail a***@***.example here');
+  });
+
+  T('mask', 'MaskEngine counts hits per rule id', () => {
+    const eng = new SRC.MaskEngine();
+    eng.maskLine('VIN YV4AB9CD12EF34567 and 10.0.0.7 and 10.0.0.8');
+    const hits = eng.hitCounts();
+    eq(hits.vin, 1);
+    eq(hits.ipv4Private, 2);
+  });
+
+  T('mask', 'custom rules apply after built-ins', () => {
+    const eng = new SRC.MaskEngine();
+    eng.addCustom({ name: 'secret', pattern: 'secret-[a-z]+', replacement: 'secret-***' });
+    eq(eng.maskLine('token secret-alpha here'), 'token secret-*** here');
+    eq(eng.maskLine('VIN YV4AB9CD12EF34567'), 'VIN YV4**********4567');
+  });
+
+  T('mask', 'custom rules expand $N group references', () => {
+    const eng = new SRC.MaskEngine();
+    eng.addCustom({ name: 'opid', pattern: 'op=(\\d+)/(\\d+)', replacement: 'op=$1/$2**' });
+    eq(eng.maskLine('op=12/345 done'), 'op=12/345** done');
+  });
+
+  T('mask', 'invalid custom regex surfaces error without crashing', () => {
+    const eng = new SRC.MaskEngine();
+    const rule = eng.addCustom({ name: 'bad', pattern: '([unclosed', replacement: 'x' });
+    ok(rule.error, 'rule.error must be set');
+    eq(eng.maskLine('safe text ([unclosed ok'), 'safe text ([unclosed ok');
+  });
+
+  T('provider', 'registry validates and lists providers', () => {
+    eq(SRC.listProviders().length, 1); // built-in local regex provider
+    eq(SRC.listProviders()[0].id, 'local-regex');
+    eq(SRC.listProviders()[0].local, true);
+    let threw = false;
+    try { SRC.defineProvider({ label: 'no id' }); } catch (e) { threw = true; }
+    ok(threw, 'missing id must throw');
+  });
+
+  T('provider', 'mock provider analyze returns findings with offsets', () => {
+    const mock = SRC.defineProvider({
+      id: 'mock', label: 'Mock', local: true,
+      analyze(lines) {
+        const out = [];
+        lines.forEach((line, i) => {
+          const idx = line.indexOf('token ');
+          if (idx >= 0) out.push({ line: i, start: idx, end: idx + 6, type: 'secret', score: 1 });
+        });
+        return out;
+      },
+    });
+    const findings = SRC.getProvider('mock').analyze(['a token abc', 'nothing']);
+    eq(findings.length, 1);
+    deepEq(findings[0], { line: 0, start: 2, end: 8, type: 'secret', score: 1 });
+    eq(mock.id, 'mock');
+  });
+
+  T('provider', 'local-regex provider finds VIN findings', () => {
+    const p = SRC.getProvider('local-regex');
+    ok(p.available());
+    const findings = p.analyze(['VIN read: YV4AB9CD12EF34567 end']);
+    ok(findings.length === 1 && findings[0].type === 'vin');
+    eq(SRC.maskLine('VIN read: YV4AB9CD12EF34567 end'), 'VIN read: YV4**********4567 end');
+  });
+
+  T('provider', 'remote flag and unknown id', () => {
+    eq(SRC.getProvider('does-not-exist'), null);
+    SRC.defineProvider({ id: 'remote-mock', label: 'Remote', local: false, analyze: () => [] });
+    eq(SRC.getProvider('remote-mock').local, false);
+    ok(SRC.listProviders().some((p) => p.id === 'remote-mock'));
+  });
+
+  T('provider', 'available() gate, label fallback, zero-width match safety', () => {
+    let avail = false;
+    SRC.defineProvider({ id: 'gated', available: () => avail, analyze: () => [] });
+    eq(SRC.getProvider('gated').available(), false);
+    eq(SRC.getProvider('gated').label, 'gated'); // label falls back to id
+    avail = true;
+    eq(SRC.getProvider('gated').available(), true);
+    SRC.defineProvider({ id: 'nolabel', analyze: () => [] });
+    eq(SRC.getProvider('nolabel').label, 'nolabel');
+    const p = SRC.makeLocalRegexProvider(() => [{ id: 'zw', re: /x*/g, repl: () => 'y' }]);
+    const findings = p.analyze(['abc']);
+    ok(findings.length >= 1 && findings.every((f) => f.end >= f.start), 'zero-width match must not hang');
+  });
+
   return { CASES, eq, deepEq, ok };
 }));

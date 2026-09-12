@@ -6,4 +6,12 @@ module.exports = Object.assign({},
   require('./util.js'),
   require('./detect.js'),
   require('./parser.js'),
+  require('./masks.js'),
+  require('./pii-provider.js'),
 );
+
+// Register the built-in local provider on load (idempotent).
+const pp = require('./pii-provider.js');
+if (!pp.getProvider('local-regex')) {
+  pp.makeLocalRegexProvider(require('./masks.js').buildBuiltinMaskRules);
+}
