@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.3.0 (2026-09-12)
+- chore: rebuild log-triage.html
+- feat: debounce search and quick-filter inputs (250ms/200ms) so matching starts after typing pauses
+
 ## 1.2.0 (2026-09-12)
 - feat: responsive mobile layout — header wraps with scrollable tabs, files panel becomes an overlay drawer (auto-collapsed on narrow screens), single-column mask grid, scrollable rules table, dynamic viewport height
 - chore: rebuild log-triage.html
