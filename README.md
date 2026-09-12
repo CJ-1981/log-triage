@@ -2,6 +2,8 @@
 
 # Log Triage
 
+**Live app: https://cj-1981.github.io/log-triage/** — open it, drop a log file, done. The page is deployed automatically by CI from `main`.
+
 **Log Triage** is a privacy-first log triage tool that runs entirely in your browser. Drop one or more log files onto a single self-contained HTML page and get instant format detection, parsing, filtering, ripgrep-style search, PII masking, analysis, and sanitized export — with no server, no uploads, and no telemetry. Your files never leave your machine.
 
 Current status: v1.0.0 — all gates G0–G8 complete.
