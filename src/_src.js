@@ -15,6 +15,7 @@ module.exports = Object.assign({},
   require('./timeline.js'),
   require('./selection.js'),
   require('./bookmarks.js'),
+  require('./exporter.js'),
 );
 
 // Register the built-in local provider on load (idempotent).

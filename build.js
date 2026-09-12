@@ -19,6 +19,7 @@ const MODULE_ORDER = [
   'timeline.js',
   'selection.js',
   'bookmarks.js',
+  'exporter.js',
   // appended by later gates in dependency order
 ];
 

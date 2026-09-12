@@ -827,5 +827,71 @@
     eq(bm2.list('k')[1].note, 'n');
   });
 
+  /* ============================== G6: exporters ============================== */
+
+  function rec(file, lineNo, raw, extra) {
+    return Object.assign({ file, fileId: file, lineNo, raw, ts: null, level: null, tag: null, pid: null, msg: raw }, extra);
+  }
+
+  T('export', 'text with and without prefixes', () => {
+    const recs = [rec('a.log', 3, 'hello'), rec('b.log', 7, 'world', { ts: '08-24 15:37:01.000' })];
+    eq(SRC.toText(recs, { prefix: 'none' }), 'hello\nworld');
+    eq(SRC.toText(recs, { prefix: 'ln' }), '[L3] hello\n[L7] world');
+    eq(SRC.toText(recs, { prefix: 'file:line' }), 'a.log:3: hello\nb.log:7: world');
+  });
+
+  T('export', 'csv escapes quotes commas and newlines', () => {
+    const recs = [rec('a.log', 1, 'plain', { ts: '08-24 15:37:01.000', level: 'I', tag: 'Tag', pid: '12' }),
+      rec('a.log', 2, 'say "hi", ok', { level: 'W' })];
+    const csv = SRC.toCsv(recs);
+    const lines = csv.split('\n');
+    eq(lines[0], 'file,lineNo,ts,level,tag,pid,message');
+    eq(lines[1], 'a.log,1,08-24 15:37:01.000,I,Tag,12,plain');
+    eq(lines[2], 'a.log,2,,W,,,"say ""hi"", ok"');
+  });
+
+  T('export', 'json output is stable and parseable', () => {
+    const recs = [rec('a.log', 5, 'x', { level: 'E' })];
+    const parsed = JSON.parse(SRC.toJson(recs));
+    eq(parsed.length, 1);
+    eq(parsed[0].file, 'a.log');
+    eq(parsed[0].lineNo, 5);
+    eq(parsed[0].level, 'E');
+  });
+
+  T('export', 'rg text uses file:lineNo: format', () => {
+    const rows = [
+      { file: 'a.log', lineNo: 4, text: 'matched line' },
+      { file: 'a.log', lineNo: 5, text: 'context line', isMatch: false },
+    ];
+    eq(SRC.toRgText(rows), 'a.log:4: matched line\na.log:5- context line');
+  });
+
+  T('export', 'bookmarks export is json with all keys', () => {
+    const bm = new SRC.BookmarkStore();
+    bm.toggle('f1', 3, { snippet: 's' });
+    const parsed = JSON.parse(SRC.bookmarksToJson(bm));
+    eq(parsed.f1.length, 1);
+    eq(parsed.f1[0].lineNo, 3);
+  });
+
+  T('export', 'search json export records match flags', () => {
+    const rows = [{ file: 'a.log', lineNo: 4, text: 'm', isMatch: true }, { file: 'a.log', lineNo: 5, text: 'c', isMatch: false }];
+    const parsed = JSON.parse(SRC.searchToJson(rows));
+    eq(parsed.length, 2);
+    eq(parsed[0].match, true);
+    eq(parsed[1].match, false);
+    eq(parsed[1].text, 'c');
+  });
+
+  T('export', 'null-safe fields fall back to raw and empty', () => {
+    eq(SRC.csvField(null), '');
+    eq(SRC.csvField('a,b'), '"a,b"');
+    const recs = [{ file: 'a.log', lineNo: 1, raw: 'rr', ts: null, level: null, tag: null, pid: null, msg: null }];
+    eq(SRC.toCsv(recs), 'file,lineNo,ts,level,tag,pid,message\na.log,1,,,,,rr');
+    const parsed = JSON.parse(SRC.toJson(recs));
+    eq(parsed[0].message, 'rr');
+  });
+
   return { CASES, eq, deepEq, ok };
 }));
