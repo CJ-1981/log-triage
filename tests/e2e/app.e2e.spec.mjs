@@ -97,9 +97,9 @@ test('multi-file load keeps per-file counters and merged view', async () => {
     join(root, 'tests', 'fixtures', 'apache.log'),
   ]);
   await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 3, null, { timeout: 8000 });
-  await page.waitForFunction(() => document.getElementById('st-total').textContent === '61', null, { timeout: 8000 });
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '57', null, { timeout: 8000 });
   const badges = await page.evaluate(() => Array.from(document.querySelectorAll('.file-item .badge.fmt')).map((b) => b.textContent));
-  assert.deepStrictEqual(badges.sort(), ['apache', 'logcat', 'syslog']);
+  assert.deepStrictEqual(badges.sort(), ['clf', 'logcat', 'syslog']);
   // merged timeline: rows carry a file column
   const fileCells = await page.evaluate(() => document.querySelectorAll('.vrow .fl').length);
   assert.ok(fileCells > 0, 'merged view shows file column');

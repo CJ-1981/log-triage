@@ -94,11 +94,15 @@
     let detected = false;
     let lineNo = 0;
     const progress = (msg) => { $('st-progress').textContent = msg; };
-    const onBytes = (n) => { entry.read += n; progress(entry.name + ': ' + LT.fmtBytes(entry.read) + ' / ' + LT.fmtBytes(entry.size)); };
-    const parseAndAdd = (line, fastPath) => {
+    const onBytes = (n) => {
+      entry.read += n;
+      store.addBytes(entry.id, n);
+      progress(entry.name + ': ' + LT.fmtBytes(entry.read) + ' / ' + LT.fmtBytes(entry.size));
+    };
+    const parseAndAdd = (line, no, fastPath) => {
       const rec = LT.parseLine(line, format);
       const kept = fastPath ? true : filter.evaluate({ raw: line, ts: rec.ts, level: rec.level }).kept;
-      store.add(entry.id, lineNo, line, rec, kept);
+      store.add(entry.id, no, line, rec, kept);
     };
     entry.read = 0;
     store.setFileInfo(entry.id, entry.name, entry.size);
@@ -113,20 +117,22 @@
           format = LT.detectFormat(sample).format;
           entry.format = format;
           detected = true;
-          for (const l of sample) { parseAndAdd(l, fastPath); }
+          const base = lineNo - sample.length;
+          sample.forEach((l, j) => parseAndAdd(l, base + j + 1, fastPath));
           sample = null;
           renderFiles();
         }
         continue;
       }
-      parseAndAdd(line, fastPath);
+      parseAndAdd(line, lineNo, fastPath);
       if ((lineNo & 0x3fff) === 0) await tick(); // yield to UI periodically
     }
     if (!detected && sample) {
       // small file: detection happens at end of stream, then buffered lines parse
       format = LT.detectFormat(sample).format;
       entry.format = format;
-      for (const l of sample) { parseAndAdd(l, fastPath); }
+      const base = lineNo - sample.length;
+      sample.forEach((l, j) => parseAndAdd(l, base + j + 1, fastPath));
     }
     entry.status = 'done';
     entry.lines = lineNo;
@@ -502,23 +508,26 @@
   function renderSearchRows(res, mode, ms) {
     const out = $('search-results');
     $('search-progress').textContent = res.total + ' match(es) over kept lines in ' + ms.toFixed(0) + ' ms';
+    const nameOf = (fileId) => fileDisplayName(fileId);
     if (mode === 'count') {
-      out.innerHTML = Object.keys(res.byFile).map((f) => '<div class="sr-file">' + esc(f) + ': ' + res.byFile[f] + '</div>').join('') ||
+      out.innerHTML = Object.keys(res.byFile).map((f) => '<div class="sr-file">' + esc(nameOf(f)) + ': ' + res.byFile[f] + '</div>').join('') ||
         '<div class="muted" style="padding:20px">no matches</div>';
       return;
     }
     if (mode === 'files') {
-      out.innerHTML = Object.keys(res.byFile).map((f) => '<div class="sr-file">' + esc(f) + '</div>').join('') ||
+      out.innerHTML = Object.keys(res.byFile).map((f) => '<div class="sr-file">' + esc(nameOf(f)) + '</div>').join('') ||
         '<div class="muted" style="padding:20px">no matches</div>';
       return;
     }
     const byFile = {};
     for (const r of res.rows.slice(0, 10000)) {
-      (byFile[r.file] = byFile[r.file] || []).push({ lineNo: store.kept[r.idx].lineNo, text: displayText(store.kept[r.idx]), seq: store.kept[r.idx].seq, spans: r.spans });
+      const rec = store.kept[r.idx];
+      const name = nameOf(rec.fileId);
+      (byFile[name] = byFile[name] || []).push({ lineNo: rec.lineNo, text: displayText(rec), spans: r.spans });
     }
     out.innerHTML = Object.keys(byFile).map((f) =>
       '<div class="sr-file">' + esc(f) + ' (' + byFile[f].length + ')</div>' +
-      byFile[f].map((r) => srRow(f, r.lineNo, r.text, true, r.seq)).join('')).join('') ||
+      byFile[f].map((r) => srRow(f, r.lineNo, r.text, true, null)).join('')).join('') ||
       '<div class="muted" style="padding:20px">no matches</div>';
   }
 
