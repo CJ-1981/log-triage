@@ -12,6 +12,8 @@ const MODULE_ORDER = [
   'parser.js',
   'masks.js',
   'pii-provider.js',
+  'filters.js',
+  'levels.js',
   // appended by later gates in dependency order
 ];
 

@@ -398,5 +398,131 @@
     ok(findings.length >= 1 && findings.every((f) => f.end >= f.start), 'zero-width match must not hang');
   });
 
+  /* ============================== G3: filters + levels ============================== */
+
+  function mkEngine() {
+    return new SRC.FilterEngine();
+  }
+
+  T('filter', 'no rules means everything is kept', () => {
+    const e = mkEngine();
+    deepEq(e.evaluate({ raw: 'anything', ts: null, level: null }), { kept: true, highlights: [] });
+  });
+
+  T('filter', 'include rules OR together', () => {
+    const e = mkEngine();
+    e.setRules([
+      { id: 'r1', pattern: 'alpha', action: 'include', enabled: true },
+      { id: 'r2', pattern: 'beta', action: 'include', enabled: true },
+    ]);
+    eq(e.evaluate({ raw: 'has ALPHA here', ts: null, level: null }).kept, true, 'case-insensitive by default');
+    eq(e.evaluate({ raw: 'has beta here', ts: null, level: null }).kept, true);
+    eq(e.evaluate({ raw: 'has gamma here', ts: null, level: null }).kept, false);
+  });
+
+  T('filter', 'case-sensitive include', () => {
+    const e = mkEngine();
+    e.setRules([{ id: 'r1', pattern: 'Alpha', caseSensitive: true, action: 'include', enabled: true }]);
+    eq(e.evaluate({ raw: 'x alpha x', ts: null, level: null }).kept, false);
+    eq(e.evaluate({ raw: 'x Alpha x', ts: null, level: null }).kept, true);
+  });
+
+  T('filter', 'exclude subtracts even when include matches', () => {
+    const e = mkEngine();
+    e.setRules([
+      { id: 'in', pattern: 'heartbeat', action: 'include', enabled: true },
+      { id: 'out', pattern: 'missed', action: 'exclude', enabled: true },
+    ]);
+    eq(e.evaluate({ raw: 'heartbeat alive', ts: null, level: null }).kept, true);
+    eq(e.evaluate({ raw: 'heartbeat missed seq', ts: null, level: null }).kept, false);
+  });
+
+  T('filter', 'highlight is additive and never drops', () => {
+    const e = mkEngine();
+    e.setRules([
+      { id: 'h1', pattern: 'gps', action: 'highlight', enabled: true },
+    ]);
+    const r = e.evaluate({ raw: 'GPS fix', ts: null, level: null });
+    eq(r.kept, true);
+    deepEq(r.highlights, ['h1']);
+    eq(e.evaluate({ raw: 'no match', ts: null, level: null }).kept, true);
+  });
+
+  T('filter', 'disabled rules are ignored', () => {
+    const e = mkEngine();
+    e.setRules([
+      { id: 'a', pattern: 'keepme', action: 'include', enabled: false },
+      { id: 'b', pattern: 'dropme', action: 'exclude', enabled: false },
+    ]);
+    eq(e.evaluate({ raw: 'nothing relevant', ts: null, level: null }).kept, true);
+  });
+
+  T('filter', 'invalid regex surfaces error and rule is skipped', () => {
+    const e = mkEngine();
+    e.setRules([{ id: 'bad', pattern: '([unclosed', action: 'include', enabled: true }]);
+    const errs = e.errors();
+    eq(errs.length, 1);
+    eq(errs[0].id, 'bad');
+    eq(e.evaluate({ raw: 'safe', ts: null, level: null }).kept, true, 'invalid include acts as absent');
+  });
+
+  T('filter', 'quick search acts as an include rule', () => {
+    const e = mkEngine();
+    e.quick = { pattern: 'foo.bar', fixed: false, caseSensitive: false };
+    eq(e.evaluate({ raw: 'fooXbar', ts: null, level: null }).kept, true);
+    e.quick = { pattern: 'foo.bar', fixed: true, caseSensitive: false };
+    eq(e.evaluate({ raw: 'fooXbar', ts: null, level: null }).kept, false);
+    eq(e.evaluate({ raw: 'x foo.bar y', ts: null, level: null }).kept, true);
+  });
+
+  T('filter', 'level chips: none selected passes all, selection is OR, null bypasses', () => {
+    const e = mkEngine();
+    eq(e.evaluate({ raw: 'x', ts: null, level: 'I' }).kept, true);
+    e.setLevels(['W', 'E']);
+    eq(e.evaluate({ raw: 'x', ts: null, level: 'W' }).kept, true);
+    eq(e.evaluate({ raw: 'x', ts: null, level: 'I' }).kept, false);
+    eq(e.evaluate({ raw: 'stack trace line', ts: null, level: null }).kept, true, 'null level bypasses');
+  });
+
+  T('filter', 'time range uses inclusive prefix compare', () => {
+    const e = mkEngine();
+    e.timeFrom = '08-24 15:37';
+    e.timeTo = '08-24 19:22';
+    eq(e.evaluate({ raw: 'x', ts: '08-24 15:37:00.000', level: null }).kept, true, 'from includes exact minute start');
+    eq(e.evaluate({ raw: 'x', ts: '08-24 19:22:59.999', level: null }).kept, true, 'to includes minute end');
+    eq(e.evaluate({ raw: 'x', ts: '08-24 15:36:59.999', level: null }).kept, false);
+    eq(e.evaluate({ raw: 'x', ts: '08-24 19:23:00.000', level: null }).kept, false);
+    eq(e.evaluate({ raw: 'x', ts: null, level: null }).kept, true, 'null ts bypasses');
+  });
+
+  T('filter', 'hit counters accumulate per rule', () => {
+    const e = mkEngine();
+    e.setRules([{ id: 'in', pattern: 'hit', action: 'include', enabled: true }]);
+    e.evaluate({ raw: 'hit one', ts: null, level: null });
+    e.evaluate({ raw: 'hit two', ts: null, level: null });
+    e.evaluate({ raw: 'miss', ts: null, level: null });
+    eq(e.hits.in, 2);
+    e.quick = { pattern: 'hit', fixed: false, caseSensitive: false };
+    e.evaluate({ raw: 'hit three', ts: null, level: null });
+    eq(e.hits.__quick, 1);
+  });
+
+  T('levels', 'tally counts levels and unknown bucket', () => {
+    const t = new SRC.LevelTally();
+    ['I', 'I', 'W', 'E', null, null].forEach((l) => t.add(l));
+    const counts = t.counts();
+    eq(counts.I, 2);
+    eq(counts.W, 1);
+    eq(counts.E, 1);
+    eq(counts.__, 2);
+  });
+
+  T('levels', 'chip list is ordered V D I W E F then unknown, only present', () => {
+    const t = new SRC.LevelTally();
+    ['F', 'I', 'D', null, 'W', null].forEach((l) => t.add(l));
+    deepEq(t.chipList().map((c) => c.id), ['D', 'I', 'W', 'F', '__']);
+    deepEq(t.chipList().map((c) => c.count), [1, 1, 1, 1, 2]);
+  });
+
   return { CASES, eq, deepEq, ok };
 }));

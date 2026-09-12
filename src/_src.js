@@ -8,6 +8,8 @@ module.exports = Object.assign({},
   require('./parser.js'),
   require('./masks.js'),
   require('./pii-provider.js'),
+  require('./filters.js'),
+  require('./levels.js'),
 );
 
 // Register the built-in local provider on load (idempotent).
