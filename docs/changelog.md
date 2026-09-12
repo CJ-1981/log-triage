@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.1.5 (2026-09-12)
+- fix: horizontal scrolling in nowrap viewer — size the scroll range from the longest line in the view (regression spec added)
+
 ## 1.1.4 (2026-09-12)
 - test: make stress click-to-jump spec self-contained (fresh page, own ingest, row wait, page-error assertion)
 - docs: resolve changelog history after v1.1.3 release rebase
