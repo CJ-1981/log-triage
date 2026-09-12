@@ -496,6 +496,36 @@ test('horizontal scrolling works in nowrap mode (long lines widen the scroll are
   assert.ok(wide.textW >= wide.rowW || wide.rowW > 500, 'text cell holds the full line');
 });
 
+test('★ only-bookmarks toggle filters the viewer to bookmarked lines', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  // enabling with no bookmarks flashes a hint and stays off
+  await click('btn-bmonly');
+  assert.ok(await page.evaluate(() => document.getElementById('btn-bmonly').textContent.includes('OFF')), 'stays off with no bookmarks');
+  assert.match(await page.evaluate(() => document.getElementById('st-progress').textContent), /no bookmarks/);
+  // bookmark lines 2 and 4 via the gutter (re-query rows: render replaces DOM)
+  await page.evaluate(() => {
+    const rows = document.querySelectorAll('.vrow');
+    rows[1].querySelector('.bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+  await page.evaluate(() => {
+    const rows = document.querySelectorAll('.vrow');
+    rows[3].querySelector('.bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+  await click('btn-bmonly');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '2', null, { timeout: 5000 });
+  const lns = await page.evaluate(() => Array.from(document.querySelectorAll('.vrow .ln')).map((x) => Number(x.textContent)));
+  assert.deepStrictEqual(lns, [2, 4], 'only the bookmarked lines remain, got ' + JSON.stringify(lns));
+  // unbookmarking the only visible bookmark while ON re-filters the view
+  await page.evaluate(() => document.querySelector('.vrow .bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '1', null, { timeout: 5000 });
+  const lnAfter = await page.evaluate(() => Number(document.querySelector('.vrow .ln').textContent));
+  assert.strictEqual(lnAfter, 4, 'remaining bookmarked line is line 4');
+  await click('btn-bmonly'); // back to all lines
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44');
+});
+
 test('search results panel scrolls when content exceeds the viewport', async () => {
   await fresh();
   await click('btn-demo');

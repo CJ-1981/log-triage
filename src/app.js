@@ -12,7 +12,7 @@
     theme: LT.DEFAULT_THEME || 'midnight',
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
-    timeFrom: '', timeTo: '', sideHidden: false,
+    timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false,
     bookmarks: null, levels: [], rg: { fixed: false, word: false, invert: false, caseMode: 'smart', before: 0, after: 0 },
   });
   let state = defaults();
@@ -22,7 +22,7 @@
       // transient view state (quick filter, level chips, time range, search
       // pattern) is deliberately NOT persisted: a new session must start
       // unfiltered, or freshly loaded files can appear invisible
-      const { quick, levels, timeFrom, timeTo, rgPattern, ...persisted } = state;
+      const { quick, levels, timeFrom, timeTo, rgPattern, showOnlyBookmarked, ...persisted } = state;
       const s = Object.assign({}, persisted, { bookmarks: bookmarksStore.toJSON() });
       localStorage.setItem(STATE_KEY, JSON.stringify(s));
     } catch (e) { /* storage may be unavailable on file:// in some browsers */ }
@@ -237,6 +237,9 @@
     if (state.viewMode === 'file' && state.activeFile) {
       arr = arr.filter((r) => r.fileId === state.activeFile);
     }
+    if (state.showOnlyBookmarked) {
+      arr = arr.filter((r) => bookmarksStore.has(bookmarkKeyFor(r.fileId), r.lineNo));
+    }
     if (state.viewMode === 'merged') {
       arr = LT.mergeTimeline(arr);
     }
@@ -386,6 +389,12 @@
     }
 
     const wrapCls = state.wrapOn ? ' wrap' : '';
+    if (!view.length) {
+      const hint = state.showOnlyBookmarked
+        ? '<div class="vrow" style="white-space:normal"><div class="vcell muted" style="white-space:normal">no bookmarked lines in this view — add bookmarks with the ☆ gutter or the B key</div></div>'
+        : '';
+      inner.innerHTML = hint || '';
+    }
     for (let i = start; i < end; i++) {
       const rec = view[i];
       const row = document.createElement('div');
@@ -520,7 +529,8 @@
     const rec = view[idx];
     bookmarksStore.toggle(bookmarkKeyFor(rec.fileId), rec.lineNo, { snippet: displayText(rec).slice(0, 200), ts: rec.ts, fileId: rec.fileId });
     renderBookmarks();
-    updateStatus(); renderRows(); saveState();
+    if (state.showOnlyBookmarked) rebuildView(); else { updateStatus(); renderRows(); }
+    saveState();
   }
   function renderBookmarks() {
     const list = $('bookmark-list');
@@ -1078,6 +1088,18 @@
     if (on) viewer().scrollTop = viewer().scrollHeight;
     saveState();
   }
+
+  function setBmOnly(on) {
+    state.showOnlyBookmarked = on;
+    $('btn-bmonly').textContent = '★ Only bookmarks: ' + (on ? 'ON' : 'OFF');
+    $('btn-bmonly').classList.toggle('on', on);
+    saveState(); rebuildView();
+  }
+
+  function flash(msg) {
+    $('st-progress').textContent = msg;
+    setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
+  }
   function syncRgFromState() {
     $('rg-fixed').checked = state.rg.fixed; $('rg-word').checked = state.rg.word;
     $('rg-invert').checked = state.rg.invert; $('rg-case').value = state.rg.caseMode;
@@ -1179,6 +1201,13 @@
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
+    $('btn-bmonly').onclick = () => {
+      if (!state.showOnlyBookmarked) {
+        const any = store.kept.some((r) => bookmarksStore.has(bookmarkKeyFor(r.fileId), r.lineNo));
+        if (!any) { flash('no bookmarks yet — click ☆ in the gutter or press B'); return; }
+      }
+      setBmOnly(!state.showOnlyBookmarked);
+    };
     $('view-mode').onchange = () => { state.viewMode = $('view-mode').value; saveState(); rebuildView(); };
     $('btn-copy').onclick = copySelection;
     $('bookmark-list').addEventListener('click', (e) => {
