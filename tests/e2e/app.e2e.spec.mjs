@@ -114,6 +114,7 @@ test('ripgrep search: instant results and deep scan agree on small files', async
     q.value = 'heartbeat ecu=tcam';
     q.dispatchEvent(new Event('input'));
   });
+  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 10000 });
   const instant = await page.evaluate(() => document.getElementById('search-progress').textContent);
   assert.match(instant, /3 match/);
   await page.evaluate(() => document.getElementById('search-progress').textContent = '');

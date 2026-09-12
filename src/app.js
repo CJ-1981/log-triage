@@ -1095,10 +1095,15 @@
       if (e.dataTransfer && e.dataTransfer.files.length) loadFiles(Array.from(e.dataTransfer.files));
     });
 
+    // debounced: start matching only after typing pauses
+    let quickTimer = null;
     $('quick').oninput = () => {
       state.quick = $('quick').value;
-      filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null;
-      saveState(); rebuildView();
+      if (quickTimer) clearTimeout(quickTimer);
+      quickTimer = setTimeout(() => {
+        filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null;
+        saveState(); rebuildView();
+      }, 200);
     };
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
@@ -1119,7 +1124,14 @@
       });
     };
 
-    $('rg-pattern').oninput = () => { state.rgPattern = $('rg-pattern').value; runInstantSearch(); };
+    // debounced: start matching only after typing pauses
+    let rgTimer = null;
+    $('rg-pattern').oninput = () => {
+      state.rgPattern = $('rg-pattern').value;
+      $('search-progress').textContent = '…';
+      if (rgTimer) clearTimeout(rgTimer);
+      rgTimer = setTimeout(runInstantSearch, 250);
+    };
     ;['rg-fixed', 'rg-word', 'rg-invert', 'rg-case'].forEach((id) => {
       $(id).onchange = () => {
         state.rg = rgOpts();
