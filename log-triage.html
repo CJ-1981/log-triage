@@ -2032,6 +2032,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     displayCache = new Map();
     selection.clear();
     invalidateHeights();
+    renderFiles(); // refresh active-file highlight (cheap: few items)
     renderChips(); // chips follow the current scope (merged = all files, per-file = active file)
     renderRows();
     updateStatus();
@@ -2899,19 +2900,40 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   }
 
   /** Jump from a search-result row to the line in the viewer. */
+  /** bring a record into the viewer: switch file/filters if needed, then jump */
+  function jumpToRecord(rec) {
+    if (!seqToIdx.has(rec.seq)) {
+      let changed = false;
+      if (state.viewMode === 'file' && state.activeFile !== rec.fileId) {
+        state.activeFile = rec.fileId; // switch to the file the match belongs to
+        changed = true;
+      }
+      if (state.showOnlyBookmarked && !bookmarksStore.has(bookmarkKeyFor(rec.fileId), rec.lineNo)) {
+        state.showOnlyBookmarked = false;
+        $('btn-bmonly').textContent = '★ Only bookmarks: OFF';
+        $('btn-bmonly').classList.remove('on');
+        changed = true;
+      }
+      if (state.quick) { state.quick = ''; $('quick').value = ''; filter.quick = null; changed = true; }
+      if (state.levels.length) { state.levels = []; filter.setLevels([]); renderChips(); changed = true; }
+      if (state.timeFrom || state.timeTo) {
+        state.timeFrom = ''; state.timeTo = '';
+        filter.timeFrom = ''; filter.timeTo = '';
+        $('time-from').value = ''; $('time-to').value = '';
+        changed = true;
+      }
+      if (changed) { saveState(); rebuildView(); }
+    }
+    if (seqToIdx.has(rec.seq)) { jumpTo(seqToIdx.get(rec.seq)); return true; }
+    flash('that line is outside the kept-line cap — use Deep scan to find it');
+    return false;
+  }
+
   function jumpFromSearch(row) {
     const file = row.dataset.file;
     const lineNo = Number(row.dataset.ln);
     const rec = keptLineMap.get(file + ':' + lineNo);
-    if (rec) {
-      if (seqToIdx.has(rec.seq)) {
-        jumpTo(seqToIdx.get(rec.seq));
-        return;
-      }
-      $('st-progress').textContent = 'line ' + lineNo + ' is hidden by active filters — clear quick filter / chips to view it';
-      setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
-      return;
-    }
+    if (rec) { jumpToRecord(rec); return; }
     // line beyond the kept cap: show what we have from the search itself
     switchTab('viewer');
     const d = $('drawer');
@@ -3119,8 +3141,8 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       const entry = e.target.closest('.bm-entry');
       if (!entry) return;
       const rec = keptLineMap.get(entry.dataset.key.split('|')[0] + ':' + entry.dataset.ln);
-      if (rec && seqToIdx.has(rec.seq)) { jumpTo(seqToIdx.get(rec.seq)); return; }
-      $('st-progress').textContent = 'that file is not loaded right now — bookmark kept for later';
+      if (rec) { jumpToRecord(rec); return; }
+      flash('that file is not loaded right now — bookmark kept for later');
       setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
     });
 

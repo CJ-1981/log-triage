@@ -14,39 +14,46 @@ const server = createServer(async (req, res) => {
     res.writeHead(200, { 'content-type': extname(p) === '.html' ? 'text/html' : 'text/plain' });
     res.end(await readFile(normalize(join(root, p))));
   } catch { res.writeHead(404); res.end(); }
-}).listen(8906);
+}).listen(8910);
 
 const browser = await chromium.launch();
 const page = await browser.newPage();
 page.on('pageerror', (e) => console.log('PAGEERROR:', String(e).slice(0, 300)));
-const url = 'http://127.0.0.1:8906/log-triage.html';
-
-// replicate test 12 exactly, including fresh()
-await page.goto(url + '?x=' + Date.now(), { waitUntil: 'domcontentloaded' });
-await page.evaluate(() => localStorage.removeItem('log_triage_state_v1'));
-await page.reload({ waitUntil: 'domcontentloaded' });
+await page.goto('http://127.0.0.1:8910/log-triage.html', { waitUntil: 'domcontentloaded' });
+await page.evaluate(() => localStorage.clear());
 await page.setInputFiles('#file-input', [
   join(root, 'tests', 'fixtures', 'demo.log'),
   join(root, 'tests', 'fixtures', 'syslog.log'),
 ]);
-await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 2, null, { timeout: 8000 });
 await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
-const dump = (label) => page.evaluate(`JSON.stringify((() => ({
-  label: ${JSON.stringify(label)},
-  viewMode: document.getElementById('view-mode').value,
-  shown: document.getElementById('st-shown').textContent,
-  quick: document.getElementById('quick').value,
-  activeCls: (document.querySelector('.file-item') || { className: 'none' }).className,
-  errs: (window.__errs || []).length,
-  stored: (localStorage.getItem('log_triage_state_v1') || '').slice(0, 120)
-}))())`).then(JSON.parse);
-
-console.log('after load:', JSON.stringify(await dump('after load')));
 await page.evaluate(() => document.querySelectorAll('.file-item')[0].click());
 await page.waitForFunction(() => document.getElementById('view-mode').value === 'file', null, { timeout: 5000 });
-console.log('after click0:', JSON.stringify(await dump('after click0')));
-await page.waitForTimeout(500);
-console.log('after 500ms:', JSON.stringify(await dump('after 500ms')));
+await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, { timeout: 5000 });
+console.log('demo per-file view active');
+await page.evaluate(() => {
+  document.querySelector('#tabs button[data-tab=search]').click();
+  const q = document.getElementById('rg-pattern');
+  q.value = 'Failed password for admin';
+  q.dispatchEvent(new Event('input'));
+});
+await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 10000 });
+await page.waitForFunction(() => document.querySelector('#search-results .sr-row') !== null, null, { timeout: 5000 });
+const rowInfo = await page.evaluate(`JSON.stringify((() => {
+  const r = document.querySelector('#search-results .sr-row');
+  return { file: r.dataset.file, ln: r.dataset.ln, text: r.querySelector('.srx').textContent.slice(0, 60) };
+})())`).then(JSON.parse);
+console.log('first row:', JSON.stringify(rowInfo));
+await page.evaluate(() => document.querySelector('#search-results .sr-row').click());
+await page.waitForTimeout(400);
+console.log(JSON.stringify(await page.evaluate(`JSON.stringify((() => {
+  return {
+    viewMode: document.getElementById('view-mode').value,
+    shown: document.getElementById('st-shown').textContent,
+    active: (document.querySelector('.file-item.active .fname') || { textContent: '' }).textContent,
+    drawer: document.getElementById('drawer').textContent.slice(0, 80),
+    errs: window.__errs || []
+  };
+})())`).then(JSON.parse)));
 
 await browser.close();
 server.close();

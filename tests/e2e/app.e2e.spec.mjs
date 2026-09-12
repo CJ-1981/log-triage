@@ -350,6 +350,54 @@ test('file list click switches the viewer between loaded files (regression: unde
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '52', null, { timeout: 5000 });
 });
 
+test('search result from another file auto-switches the per-file selection', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'demo.log'),
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+  ]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
+  // per-file view bound to demo.log
+  await page.evaluate(() => document.querySelectorAll('.file-item')[0].click());
+  try {
+    await page.waitForFunction(() => document.getElementById('view-mode').value === 'file', null, { timeout: 5000 });
+  } catch (e) {
+    const diag = await page.evaluate(() => JSON.stringify({
+      viewMode: document.getElementById('view-mode').value,
+      items: document.querySelectorAll('.file-item').length,
+      filesPending: document.getElementById('st-progress').textContent,
+      errs: window.__errs || []
+    }));
+    throw new Error('state after click0: ' + diag);
+  }
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, { timeout: 5000 });
+  // search for a syslog-only line while demo is selected
+  await page.evaluate(() => {
+    document.querySelector('#tabs button[data-tab=search]').click();
+    const q = document.getElementById('rg-pattern');
+    q.value = 'Failed password for admin';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 10000 });
+  await page.waitForFunction(() => document.querySelector('#search-results .sr-row') !== null, null, { timeout: 5000 });
+  await page.evaluate(() => document.querySelector('#search-results .sr-row').click());
+  await page.waitForTimeout(300);
+  // the viewer must switch to syslog.log and show the matched line
+  const st = await page.evaluate(`JSON.stringify((() => {
+    return {
+      viewMode: document.getElementById('view-mode').value,
+      shown: document.getElementById('st-shown').textContent,
+      active: (document.querySelector('.file-item.active .fname') || { textContent: '' }).textContent,
+      drawer: document.getElementById('drawer').textContent,
+      errs: window.__errs || []
+    };
+  })())`).then(JSON.parse);
+  assert.strictEqual(st.viewMode, 'file');
+  assert.strictEqual(st.active, 'syslog.log', 'viewer switched to the matched file');
+  assert.match(st.drawer, /Failed password for admin/);
+  assert.strictEqual(st.errs.length, 0);
+});
+
 test('selection drag does not stick: plain hovering never changes the selection', async () => {
   await fresh();
   await click('btn-demo');
