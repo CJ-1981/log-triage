@@ -120,3 +120,19 @@ Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run agains
 | `syslog.log` | syslog RFC 3164 | Mixed-severity syslog lines exercising severity-to-level mapping. |
 | `apache.log` | Apache CLF | Combined log format entries whose statuses map to I/W/E level chips. |
 | `service.log` | ISO-8601 | Service log with ISO-8601 timestamps, multiline stack traces (null-timestamp lines), and plain fallback lines. |
+
+## Retrospectives
+
+### R1 (2026-09-12) — file switching shipped broken despite green tests
+
+- **Bug**: clicking a file in the list threw `ReferenceError: refreshView is not defined`; the viewer never switched files. Shipped in v1.1.x because no spec drove the file-item click and no spec asserted page errors.
+- **Why the tests missed it**: (1) the multi-file spec validated the merged view but never clicked a file item; (2) uncaught page exceptions were captured (`page.on(pageerror)`) but never asserted; (3) unit tests cannot catch boot-time DOM wiring.
+- **Actions taken**:
+  - every e2e test now ends with an `afterEach` assertion that zero uncaught page errors occurred (`page.on(pageerror)` + in-page `window.__errs`);
+  - interaction control map: every clickable control must be driven by at least one spec (file item, view-mode select, wrap/mask/follow toggles, bookmark gutter, search-result click, go-to-line, presets, exports);
+  - `fresh()` test helper now clears localStorage **before** the app boots (clear-after-boot leaked the previous test persisted filters into the next test — masked by a second bug: transient filters are no longer persisted at all, see changelog).
+
+### R2 (2026-09-12) — selection stuck in drag mode
+
+- **Bug**: after one click, merely moving the mouse over rows kept extending the selection (the drag flag survived, and re-rendered rows re-fired synthetic `mouseover` events, looping the handler).
+- **Actions**: drag extension now requires the primary button to be genuinely held (`e.buttons & 1`) and ignores repeated hover on the same row; drag state resets on `mouseup`, viewer `mouseleave`, and after a completed jump. Regression spec dispatches hover events with no button and asserts the selection cannot change.

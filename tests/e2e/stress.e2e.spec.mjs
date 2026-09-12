@@ -3,7 +3,7 @@
  * controls — wheel scrolling, search-result line jump, go-to-line, wrap and
  * rapid chip toggling — with counters, responsiveness and error-free page
  * state asserted throughout. Run: npm run build && npm run e2e:stress */
-import { test, before, after } from 'node:test';
+import { test, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn, execSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -47,6 +47,11 @@ function expectedMarkers() {
 after(async () => {
   if (browser) await browser.close();
   if (server) server.kill();
+});
+
+afterEach(async () => {
+  const errs = page && page.__pageErrors ? page.__pageErrors.splice(0) : [];
+  assert.strictEqual(errs.length, 0, 'uncaught page errors: ' + errs.join(' | '));
 });
 
 async function fresh() {

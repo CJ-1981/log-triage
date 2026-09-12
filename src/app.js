@@ -19,7 +19,11 @@
 
   function saveState() {
     try {
-      const s = Object.assign({}, state, { bookmarks: bookmarksStore.toJSON() });
+      // transient view state (quick filter, level chips, time range, search
+      // pattern) is deliberately NOT persisted: a new session must start
+      // unfiltered, or freshly loaded files can appear invisible
+      const { quick, levels, timeFrom, timeTo, rgPattern, ...persisted } = state;
+      const s = Object.assign({}, persisted, { bookmarks: bookmarksStore.toJSON() });
       localStorage.setItem(STATE_KEY, JSON.stringify(s));
     } catch (e) { /* storage may be unavailable on file:// in some browsers */ }
   }
@@ -179,7 +183,14 @@
         '<div class="fmeta"><span class="badge fmt">' + esc(f.format) + '</span>' +
         '<span>' + LT.fmtBytes(f.size) + '</span><span>' + st.total + ' lines</span>' +
         '<span>' + st.kept + ' kept</span></div>';
-      div.onclick = () => { state.activeFile = state.activeFile === f.id ? null : f.id; saveState(); renderFiles(); refreshView(); };
+      div.onclick = () => {
+        // clicking the selected file deselects it and returns to the merged view
+        state.activeFile = state.activeFile === f.id ? null : f.id;
+        state.viewMode = state.activeFile ? 'file' : 'merged';
+        const sel = $('view-mode');
+        if (sel) sel.value = state.viewMode;
+        saveState(); renderFiles(); rebuildView();
+      };
       el.appendChild(div);
     }
   }
@@ -444,6 +455,7 @@
       }
     });
     let drag = false;
+    let lastHoverIdx = -1;
     $('vspacer').addEventListener('mousedown', (e) => {
       const row = e.target.closest('.vrow');
       if (!row) return;
@@ -452,7 +464,9 @@
         toggleBookmark(idx);
         return;
       }
-      drag = true;
+      // only trust the drag gesture while the primary button is really held
+      drag = (e.buttons & 1) === 1;
+      lastHoverIdx = idx;
       if (e.shiftKey) selection.shiftClick(idx);
       else if (e.ctrlKey || e.metaKey) selection.ctrlClick(idx);
       else { selection.click(idx); showDrawer(view[idx]); }
@@ -463,10 +477,18 @@
       if (!drag) return;
       const row = e.target.closest('.vrow');
       if (!row) return;
-      selection.shiftClick(Number(row.dataset.idx));
+      const idx = Number(row.dataset.idx);
+      // skip repeat events for the row already handled (renderRows replaces
+      // nodes under a stationary cursor, which re-fires mouseover)
+      if (idx === lastHoverIdx) return;
+      lastHoverIdx = idx;
+      if (!(e.buttons & 1)) return; // button released — not a drag
+      selection.shiftClick(idx);
       renderRows(); updateStatus();
     });
-    window.addEventListener('mouseup', () => { drag = false; });
+    const endDrag = () => { drag = false; lastHoverIdx = -1; };
+    window.addEventListener('mouseup', endDrag);
+    $('viewer').addEventListener('mouseleave', endDrag);
     v.addEventListener('dblclick', (e) => {
       const row = e.target.closest('.vrow');
       if (row) showDrawer(view[Number(row.dataset.idx)]);

@@ -1,7 +1,7 @@
 'use strict';
 /* E2E suite: Playwright Chromium against the built single-file HTML.
  * Run: npm run build && npm run e2e  (CI installs playwright + chromium first). */
-import { test, before, after } from 'node:test';
+import { test, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
@@ -29,6 +29,13 @@ before(async () => {
 after(async () => {
   if (browser) await browser.close();
   if (server) server.kill();
+});
+
+// TDD enhancement (retrospective R1): every test must end with zero uncaught
+// page errors — UI handlers that throw (e.g. undefined functions) fail here
+afterEach(async () => {
+  const errs = page && page.__pageErrors ? page.__pageErrors.splice(0) : [];
+  assert.strictEqual(errs.length, 0, 'uncaught page errors: ' + errs.join(' | '));
 });
 
 async function fresh(hash) {
@@ -265,6 +272,58 @@ test('wrap mode renders scrolled pages at their true position', async () => {
   })())`).then(JSON.parse);
   assert.ok(rowInfo.centerLn && rowInfo.centerLn > 20, 'the viewport center shows a line near the end of the file, got ' + JSON.stringify(rowInfo));
   await click('btn-wrap');
+});
+
+test('file list click switches the viewer between loaded files (regression: undefined handler)', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'demo.log'),
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+  ]);
+  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 2, null, { timeout: 8000 });
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
+  // click the first file item: viewer switches to per-file mode for demo.log
+  await page.evaluate(() => document.querySelectorAll('.file-item')[0].click());
+  await page.waitForFunction(() => document.getElementById('view-mode').value === 'file', null, { timeout: 5000 });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, { timeout: 5000 });
+  // demo.log has no sshd lines
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = 'sshd';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '0', null, { timeout: 5000 });
+  // click the second file item: viewer switches to syslog.log
+  // (the quick filter 'sshd' is still active — clear it to see all syslog lines)
+  await page.evaluate(() => document.querySelectorAll('.file-item')[1].click());
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = '';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '8', null, { timeout: 5000 });
+  // clicking the active item again deselects and returns to the merged view
+  await page.evaluate(() => document.querySelectorAll('.file-item')[1].click());
+  await page.waitForFunction(() => document.getElementById('view-mode').value === 'merged', null, { timeout: 5000 });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '52', null, { timeout: 5000 });
+});
+
+test('selection drag does not stick: plain hovering never changes the selection', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await page.evaluate(() => document.querySelector('.vrow').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  const afterClick = await page.evaluate(() => document.getElementById('st-sel').textContent);
+  assert.strictEqual(afterClick, '1');
+  // simulate a stuck-drag bug: mouseover events with no button held
+  await page.evaluate(() => {
+    const rows = document.querySelectorAll('.vrow');
+    rows[2] && rows[2].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    rows[3] && rows[3].dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+  });
+  await page.waitForTimeout(150);
+  const afterHover = await page.evaluate(() => document.getElementById('st-sel').textContent);
+  assert.strictEqual(afterHover, '1', 'hover without button must not change selection');
 });
 
 test('search results use separate file, line and timestamp columns', async () => {
