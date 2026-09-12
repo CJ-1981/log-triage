@@ -31,6 +31,29 @@ jobs:
           name: log-triage-html
           path: log-triage.html
 
+  pages:
+    needs: test-build-e2e
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Build single-file HTML
+        run: npm run build
+      - name: Assemble site (index.html)
+        run: mkdir -p site && cp log-triage.html site/index.html
+      - uses: actions/configure-pages@v5
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
   release:
     needs: test-build-e2e
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
