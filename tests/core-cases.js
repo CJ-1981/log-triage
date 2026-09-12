@@ -262,6 +262,7 @@
   T('mask', 'IMEI exact 15 digits; epoch ms survives', () => {
     eq(SRC.maskLine('IMEI reported 350774129305118 ok'), 'IMEI reported [IMEI] ok');
     eq(SRC.maskLine('ts 1787611054935 ok'), 'ts 1787611054935 ok');
+    eq(SRC.maskLine('16 digits 1234567890123456 stay-not-imei'), '16 digits [card] stay-not-imei');
   });
 
   T('mask', 'email keeps first local char and TLD', () => {
@@ -293,6 +294,7 @@
     eq(SRC.maskLine('fix 48.858400, 2.294500 acc=3m'), 'fix [coords] acc=3m');
     eq(SRC.maskLine('fix 48.858412°N, 2.294511°E ok'), 'fix [coords]°E ok');
     eq(SRC.maskLine('single 1.2345 stays'), 'single 1.2345 stays');
+    eq(SRC.maskLine('two decimals 12.12, 13.12 stay'), 'two decimals 12.12, 13.12 stay', 'needs >= 3 decimals');
   });
 
   T('mask', 'subscriberId and hotspot SSID', () => {
@@ -493,6 +495,34 @@
     eq(e.evaluate({ raw: 'x', ts: '08-24 15:36:59.999', level: null }).kept, false);
     eq(e.evaluate({ raw: 'x', ts: '08-24 19:23:00.000', level: null }).kept, false);
     eq(e.evaluate({ raw: 'x', ts: null, level: null }).kept, true, 'null ts bypasses');
+  });
+
+  T('filter', 'one-sided time ranges', () => {
+    const e = mkEngine();
+    e.timeFrom = '08-24 15:37';
+    eq(e.evaluate({ raw: 'x', ts: '08-24 23:59:59.999', level: null }).kept, true, 'from only: everything later passes');
+    eq(e.evaluate({ raw: 'x', ts: '08-24 15:36:00.000', level: null }).kept, false);
+    const e2 = mkEngine();
+    e2.timeTo = '08-24 09:00';
+    eq(e2.evaluate({ raw: 'x', ts: '08-24 00:00:00.000', level: null }).kept, true, 'to only: everything earlier passes');
+    eq(e2.evaluate({ raw: 'x', ts: '08-24 09:00:59.999', level: null }).kept, true, 'inclusive minute end');
+    eq(e2.evaluate({ raw: 'x', ts: '08-24 09:01:00.000', level: null }).kept, false);
+  });
+
+  T('filter', 'invalid quick pattern acts as absent and is reported', () => {
+    const e = mkEngine();
+    e.quick = { pattern: '([unclosed', fixed: false, caseSensitive: false };
+    eq(e.evaluate({ raw: 'anything', ts: null, level: null }).kept, true, 'invalid quick = no constraint');
+    eq(e.errors().some((x) => x.id === '__quick'), true, 'quick error is surfaced');
+  });
+
+  T('filter', 'quick regex compiles once per pattern, not per line', () => {
+    const e = mkEngine();
+    e.quick = { pattern: 'hit', fixed: false, caseSensitive: false };
+    e.evaluate({ raw: 'hit', ts: null, level: null });
+    const cache1 = e._quickCache;
+    e.evaluate({ raw: 'hit again', ts: null, level: null });
+    eq(e._quickCache, cache1, 'same quick object must reuse the cached compile');
   });
 
   T('filter', 'hit counters accumulate per rule', () => {
@@ -891,6 +921,43 @@
     eq(SRC.toCsv(recs), 'file,lineNo,ts,level,tag,pid,message\na.log,1,,,,,rr');
     const parsed = JSON.parse(SRC.toJson(recs));
     eq(parsed[0].message, 'rr');
+  });
+
+  /* ============================== G7: themes ============================== */
+
+  T('themes', 'six built-in themes with expected names', () => {
+    deepEq(SRC.themeNames(), ['midnight', 'paper', 'solarized-dark', 'solarized-light', 'monokai', 'high-contrast']);
+    eq(SRC.THEMES.midnight.dark, true);
+    eq(SRC.THEMES.paper.dark, false);
+  });
+
+  T('themes', 'every theme defines every required variable', () => {
+    deepEq(SRC.themeCompletenessErrors(), []);
+  });
+
+  T('themes', 'generated CSS includes default root block and all data-theme blocks', () => {
+    const css = SRC.generateCss();
+    ok(css.includes(':root {'), 'root block');
+    for (const n of SRC.themeNames()) ok(css.includes('body[data-theme="' + n + '"]'));
+    ok(css.includes('--accent'), 'accent var present');
+  });
+
+  T('themes', 'completeness check reports partial themes by name', () => {
+    const errs = SRC.themeCompletenessErrors({ broken: { label: 'Broken', dark: true, vars: { '--bg': '#000' } } });
+    eq(errs.length, 1);
+    ok(errs[0].startsWith('broken: missing '));
+    const css = SRC.generateCss({ only: { label: 'Only', dark: false, vars: SRC.THEMES.paper.vars } });
+    ok(css.includes('body[data-theme="only"]'));
+  });
+
+  T('detect', 'logcat beats mmdd on tie (specificity order pinned)', () => {
+    const lines = [
+      '08-24 15:37:01.123  1234  5678 I Tag: x',
+      '08-24 15:37:02.456  1234  5678 E Tag: y',
+    ];
+    const r = SRC.detectFormat(lines);
+    eq(r.format, 'logcat');
+    eq(r.hits.logcat, r.hits.mmdd, 'both patterns match — order decides');
   });
 
   return { CASES, eq, deepEq, ok };

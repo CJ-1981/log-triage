@@ -44,7 +44,7 @@ export function nextVersion(current, commits) {
 
 export function commitsSince(tag, runGit) {
   const git = runGit || ((cmd) => execSync(cmd, { encoding: 'utf8' }));
-  const range = tag ? `${tag}..HEAD` : '--branches';
+  const range = commitRange(tag, runGit);
   const out = git(`git log --format=%s ${range}`);
   return out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
 }
@@ -67,6 +67,17 @@ function lastTag(runGit) {
     return git('git describe --tags --abbrev=0').trim();
   } catch {
     return null;
+  }
+}
+
+function commitRange(tag, runGit) {
+  const git = runGit || ((cmd) => execSync(cmd, { encoding: 'utf8' }));
+  if (tag) return `${tag}..HEAD`;
+  try {
+    git('git symbolic-ref -q HEAD'); // on a branch?
+    return 'HEAD'; // no tags yet: first-parent history of the current branch
+  } catch {
+    return 'HEAD';
   }
 }
 

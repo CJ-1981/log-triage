@@ -20,7 +20,8 @@ const MODULE_ORDER = [
   'selection.js',
   'bookmarks.js',
   'exporter.js',
-  // appended by later gates in dependency order
+  'themes.js',
+  'app.js',
 ];
 
 const TOKENS = [
@@ -37,12 +38,14 @@ function buildHTML({ version, template, modules, cases, css, demoLog }) {
       throw new Error('template is missing token ' + tok);
     }
   }
+  // Function replacers are mandatory: string replacements would expand
+  // $&, $`, $' sequences inside injected module sources.
   return template
-    .replace('__LT_VERSION__', String(version))
-    .replace('/*__LT_CSS__*/', String(css || ''))
-    .replace('/*__LT_MODULES__*/', modules.join('\n'))
-    .replace('/*__LT_CASES__*/', String(cases || ''))
-    .replace('/*__LT_DEMO__*/', JSON.stringify(String(demoLog)));
+    .replace('__LT_VERSION__', () => String(version))
+    .replace('/*__LT_CSS__*/', () => String(css || ''))
+    .replace('/*__LT_MODULES__*/', () => modules.join('\n'))
+    .replace('/*__LT_CASES__*/', () => String(cases || ''))
+    .replace('/*__LT_DEMO__*/', () => JSON.stringify(String(demoLog)));
 }
 
 function main() {
@@ -50,9 +53,11 @@ function main() {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const template = fs.readFileSync(path.join(root, 'template.html'), 'utf8');
   const demoLog = fs.readFileSync(path.join(root, 'tests', 'fixtures', 'demo.log'), 'utf8');
+  const css = require('./src/themes.js').generateCss();
+  const cases = fs.readFileSync(path.join(root, 'tests', 'core-cases.js'), 'utf8');
   const modules = MODULE_ORDER.map((name) =>
     fs.readFileSync(path.join(root, 'src', name), 'utf8'));
-  const html = buildHTML({ version: pkg.version, template, modules, demoLog });
+  const html = buildHTML({ version: pkg.version, template, modules, cases, css, demoLog });
   const out = path.join(root, 'log-triage.html');
   fs.writeFileSync(out, html, 'utf8');
   console.log('built', out, (html.length / 1024).toFixed(1) + ' KB', 'v' + pkg.version);

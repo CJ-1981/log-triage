@@ -55,7 +55,11 @@
     }
 
     errors() {
-      return this._compiled.filter((c) => !c.ok).map((c) => ({ id: c.def.id, error: c.error }));
+      const errs = this._compiled.filter((c) => !c.ok).map((c) => ({ id: c.def.id, error: c.error }));
+      if (this._quickCache && !this._quickCache.ok && this.quick && this.quick.pattern) {
+        errs.push({ id: '__quick', error: this._quickCache.error });
+      }
+      return errs;
     }
 
     setLevels(levels) {
@@ -65,12 +69,18 @@
     get levels() { return Array.from(this._levels); }
 
     _compileQuick() {
-      if (!this.quick || !this.quick.pattern) { this._quickRe = null; return; }
+      if (this._quickCache && this._quickCache.ref === this.quick) return; // cached
+      if (!this.quick || !this.quick.pattern) {
+        this._quickRe = null;
+        this._quickCache = { ref: this.quick, ok: true, error: null };
+        return;
+      }
       const p = this.quick.fixed
         ? escapeRegExp(this.quick.pattern)
         : this.quick.pattern;
       const c = compile(p, !!this.quick.caseSensitive);
       this._quickRe = c.ok ? c.re : null;
+      this._quickCache = { ref: this.quick, ok: c.ok, error: c.error || null };
     }
 
     _bump(id) { this._hits[id] = (this._hits[id] || 0) + 1; }

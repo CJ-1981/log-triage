@@ -31,6 +31,14 @@ test('buildHTML throws on missing placeholders', () => {
   assert.throws(() => buildHTML({ version: '1.0.0', template: '<p>no tokens</p>', modules: [], demoLog: '' }));
 });
 
+test('buildHTML does not expand $ sequences in module sources (P0 regression)', () => {
+  const template = '__LT_VERSION__/*__LT_CSS__*//*__LT_MODULES__*//*__LT_CASES__*//*__LT_DEMO__*/';
+  const tricky = "s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');";
+  const html = buildHTML({ version: '1.0.0', template, modules: [tricky], css: '', cases: '', demoLog: '' });
+  assert.ok(html.includes("\\$&"), 'the $& escape sequence must survive verbatim');
+  assert.ok(!html.includes('/*__LT_MODULES__*/'), 'token must be replaced');
+});
+
 test('fnv1a32 is deterministic, hex, and input-sensitive', () => {
   const a = fnv1a32('08-24 15:37:01.123');
   assert.match(a, /^[0-9a-f]{8}$/);

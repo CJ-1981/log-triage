@@ -12,14 +12,295 @@
 <style>
 /*__LT_CSS__*/
 </style>
+<style>
+:root { --row-h: 22px; --mono: 'Cascadia Mono', Consolas, 'JetBrains Mono', Menlo, monospace; }
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font: 14px/1.45 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
+button { background: var(--surface2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; font: inherit; }
+button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
+button.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
+input[type=text], select { background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; }
+input[type=text]:focus, select:focus { outline: 1px solid var(--accent); }
+input.err { outline: 1px solid var(--err); }
+small.muted, .muted { color: var(--muted); }
+
+#app { display: flex; flex-direction: column; height: 100vh; }
+header { display: flex; align-items: center; gap: 12px; padding: 8px 14px; background: var(--surface); border-bottom: 1px solid var(--border); }
+header h1 { font-size: 16px; letter-spacing: .3px; white-space: nowrap; }
+header h1 span { color: var(--accent); }
+#tabs { display: flex; gap: 4px; margin-left: 8px; }
+#tabs button { border: none; background: transparent; color: var(--muted); padding: 6px 12px; border-radius: 6px; }
+#tabs button.active { background: var(--surface2); color: var(--fg); }
+#hdr-right { margin-left: auto; display: flex; gap: 8px; align-items: center; }
+#privacy { font-size: 11px; color: var(--muted); }
+
+#main { flex: 1; display: flex; min-height: 0; }
+#sidebar { width: 260px; min-width: 180px; background: var(--surface); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+#sidebar .side-head { padding: 8px 10px; font-weight: 600; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+#file-list { overflow-y: auto; flex: 1; }
+.file-item { padding: 7px 10px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.file-item:hover { background: var(--surface2); }
+.file-item.active { box-shadow: inset 3px 0 0 var(--accent); background: var(--surface2); }
+.file-item .fname { font-size: 12.5px; word-break: break-all; }
+.file-item .fmeta { font-size: 11px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.badge { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10.5px; font-weight: 700; border: 1px solid var(--border); }
+.badge.fmt { color: var(--accent); border-color: var(--accent); }
+.badge.err-b { color: var(--err); border-color: var(--err); }
+#dropzone { margin: 10px; border: 2px dashed var(--border); border-radius: 8px; padding: 14px 8px; text-align: center; color: var(--muted); font-size: 12.5px; }
+#dropzone.drag { border-color: var(--accent); color: var(--accent); }
+#side-actions { padding: 8px 10px; display: flex; gap: 6px; flex-wrap: wrap; border-top: 1px solid var(--border); }
+
+#content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.tab { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.tab.active { display: flex; }
+
+/* ---------- viewer ---------- */
+#chips-row { display: flex; align-items: center; gap: 6px; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.chip { border: 1px solid var(--border); background: var(--surface2); border-radius: 12px; padding: 1px 10px; font-size: 12px; cursor: pointer; font-weight: 600; }
+.chip.sel { border-color: var(--accent); color: var(--accent); }
+.chip .n { color: var(--muted); font-weight: 400; margin-left: 4px; }
+#vtools { display: flex; gap: 6px; align-items: center; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+#quick { flex: 1; min-width: 200px; max-width: 480px; font-family: var(--mono); font-size: 12.5px; }
+#viewer-wrap { flex: 1; min-height: 0; position: relative; background: var(--bg); }
+#viewer { position: absolute; inset: 0; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
+#vspacer { position: relative; width: max-content; min-width: 100%; }
+.vrow { display: flex; white-space: pre; height: var(--row-h); line-height: var(--row-h); cursor: text; }
+.vrow.wrap { white-space: pre-wrap; word-break: break-all; height: auto; }
+.vrow:hover { background: var(--surface2); }
+.vrow.sel { background: var(--selection); }
+.vrow.tint-w { background: var(--tint-w); } .vrow.tint-w:hover, .vrow.tint-w.sel { background: var(--tint-w); outline: 1px solid var(--warn); }
+.vrow.tint-e { background: var(--tint-e); } .vrow.tint-e:hover, .vrow.tint-e.sel { background: var(--tint-e); outline: 1px solid var(--err); }
+.vrow.tint-f { background: var(--tint-f); } .vrow.tint-f:hover, .vrow.tint-f.sel { background: var(--tint-f); outline: 1px solid var(--lvl-f); }
+.vcell { padding: 0 6px; flex: none; color: var(--muted); }
+.vcell.ln { min-width: 56px; text-align: right; user-select: none; }
+.vcell.bm { min-width: 22px; text-align: center; cursor: pointer; user-select: none; }
+.vcell.bm.marked { color: var(--warn); }
+.vcell.lv { min-width: 26px; text-align: center; font-weight: 700; }
+.vcell.fl { max-width: 140px; overflow: hidden; text-overflow: ellipsis; color: var(--accent); }
+.lvl-V { color: var(--lvl-v); } .lvl-D { color: var(--lvl-d); } .lvl-I { color: var(--lvl-i); }
+.lvl-W { color: var(--lvl-w); } .lvl-E { color: var(--lvl-e); } .lvl-F { color: var(--lvl-f); }
+mark { background: var(--hl); color: var(--bg); border-radius: 2px; }
+#statusbar { display: flex; gap: 16px; padding: 4px 12px; font-size: 11.5px; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); flex-wrap: wrap; }
+#statusbar b { color: var(--fg); }
+#drawer { display: none; position: absolute; right: 12px; bottom: 12px; width: 460px; max-width: 90%; max-height: 60%; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.35); font-family: var(--mono); font-size: 12px; z-index: 30; }
+#drawer.open { display: block; }
+#drawer h3 { font-size: 13px; margin-bottom: 8px; display:flex; justify-content: space-between; }
+#drawer dl div { display: flex; gap: 8px; padding: 2px 0; }
+#drawer dt { color: var(--muted); min-width: 64px; }
+#drawer dd { word-break: break-all; white-space: pre-wrap; }
+#drawer .raw { color: var(--muted); }
+
+/* ---------- panels ---------- */
+.panel { padding: 14px; overflow-y: auto; flex: 1; }
+.panel h2 { font-size: 15px; margin: 14px 0 8px; }
+.panel h2:first-child { margin-top: 0; }
+.rowline { display: flex; gap: 8px; align-items: center; margin: 6px 0; flex-wrap: wrap; }
+table.rules { width: 100%; border-collapse: collapse; font-size: 13px; }
+table.rules th { text-align: left; color: var(--muted); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--border); }
+table.rules td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+table.rules input[type=text] { width: 100%; font-family: var(--mono); font-size: 12px; }
+.rule-err { color: var(--err); font-size: 11px; }
+.count-pill { background: var(--surface2); border-radius: 8px; padding: 0 8px; font-size: 11px; color: var(--muted); }
+.card-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
+.stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; min-width: 120px; }
+.stat-card .v { font-size: 20px; font-weight: 700; color: var(--accent); }
+.stat-card .k { font-size: 11.5px; color: var(--muted); }
+.hbar { display: flex; align-items: center; gap: 8px; margin: 3px 0; font-family: var(--mono); font-size: 12px; }
+.hbar .bar { height: 12px; border-radius: 4px; background: var(--accent); min-width: 2px; }
+.two-col { display: flex; gap: 18px; flex-wrap: wrap; }
+.two-col > div { flex: 1; min-width: 300px; }
+.issue { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; margin: 4px 0; display: flex; justify-content: space-between; gap: 8px; cursor: pointer; }
+.issue:hover { border-color: var(--accent); }
+canvas#histo { width: 100%; height: 120px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+
+/* search */
+#search-results { flex: 1; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
+.sr-file { position: sticky; top: 0; background: var(--surface2); padding: 4px 10px; font-weight: 700; border-top: 1px solid var(--border); }
+.sr-row { display: flex; white-space: pre; padding: 0 10px; }
+.sr-row:hover { background: var(--surface2); }
+.sr-row.ctx { color: var(--muted); }
+.sr-row .ln { color: var(--muted); min-width: 70px; text-align: right; padding-right: 10px; user-select: none; }
+.sr-row.hit { background: var(--surface); }
+#search-progress { padding: 4px 10px; color: var(--muted); font-size: 12px; }
+
+/* masks */
+.mask-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px; }
+.mask-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface); }
+.mask-card .t { display: flex; justify-content: space-between; font-weight: 600; }
+.mask-card .ex { font-family: var(--mono); font-size: 11px; color: var(--muted); word-break: break-all; }
+.mask-card .ex b { color: var(--ok); font-weight: 400; }
+.toggle { appearance: auto; accent-color: var(--accent); width: 16px; height: 16px; cursor: pointer; }
+
+/* selftest */
+#selftest { padding: 20px; overflow: auto; font-family: var(--mono); font-size: 13px; }
+.st-pass { color: var(--ok); } .st-fail { color: var(--err); }
+#selftest h1 { font-size: 18px; margin-bottom: 10px; }
+
+.hidden { display: none !important; }
+kbd { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 0 5px; font-size: 11px; }
+</style>
 </head>
 <body data-theme="midnight">
-<div id="app">Log Triage scaffold — UI arrives at gate G7.</div>
+<div id="app">
+  <header>
+    <h1>Log Triage <span id="ver">v__LT_VERSION__</span></h1>
+    <div id="tabs">
+      <button data-tab="viewer" class="active">Viewer</button>
+      <button data-tab="search">Search</button>
+      <button data-tab="filters">Filters</button>
+      <button data-tab="masks">Masks</button>
+      <button data-tab="analysis">Analysis</button>
+      <button data-tab="export">Export</button>
+    </div>
+    <div id="hdr-right">
+      <span id="privacy">100% client-side — files never leave this machine</span>
+      <select id="theme-sel" title="Color theme"></select>
+    </div>
+  </header>
+
+  <div id="main">
+    <aside id="sidebar">
+      <div class="side-head">Files <button id="clear-files" title="Remove all files">✕</button></div>
+      <div id="file-list"></div>
+      <div id="dropzone">drop log files here<br>or</div>
+      <div id="side-actions">
+        <button id="btn-pick" class="primary">Load files…</button>
+        <button id="btn-demo">Demo log</button>
+      </div>
+      <input type="file" id="file-input" multiple class="hidden">
+      <textarea id="paste-area" class="hidden" placeholder="paste log text here"></textarea>
+      <button id="btn-paste" class="hidden" title="load pasted text">Load pasted text</button>
+    </aside>
+
+    <div id="content">
+      <!-- VIEWER -->
+      <div class="tab active" id="tab-viewer">
+        <div id="chips-row"><span class="muted" id="chips-hint">Level chips appear after loading</span></div>
+        <div id="vtools">
+          <input type="text" id="quick" placeholder="quick filter (live)…">
+          <button id="btn-mask" title="toggle masking (M)">Mask: ON</button>
+          <button id="btn-wrap" title="wrap long lines (W)">Wrap: OFF</button>
+          <button id="btn-follow" title="follow tail">Follow: OFF</button>
+          <select id="view-mode" title="view"><option value="merged">Merged timeline</option><option value="file">Per file</option></select>
+          <button id="btn-copy" title="copy selection (Ctrl+C)">Copy selection</button>
+          <select id="copy-prefix" title="copy prefix"><option value="none">plain</option><option value="ln">[Ln]</option><option value="file:line">file:line:</option></select>
+          <button id="btn-bookmarks">Bookmarks</button>
+        </div>
+        <div id="viewer-wrap">
+          <div id="viewer"><div id="vspacer"></div></div>
+          <div id="drawer"></div>
+        </div>
+        <div id="statusbar">
+          <span>lines: <b id="st-total">0</b></span>
+          <span>kept: <b id="st-kept">0</b></span>
+          <span>shown: <b id="st-shown">0</b></span>
+          <span>selected: <b id="st-sel">0</b></span>
+          <span>bookmarks: <b id="st-bm">0</b></span>
+          <span id="st-trim" class="hidden"></span>
+          <span id="st-progress"></span>
+        </div>
+      </div>
+
+      <!-- SEARCH -->
+      <div class="tab" id="tab-search">
+        <div id="vtools">
+          <input type="text" id="rg-pattern" placeholder="search pattern (regex by default)…" style="flex:1;max-width:420px;font-family:var(--mono)">
+          <label><input type="checkbox" class="toggle" id="rg-fixed"> -F fixed</label>
+          <label><input type="checkbox" class="toggle" id="rg-word"> -w word</label>
+          <label><input type="checkbox" class="toggle" id="rg-invert"> -v invert</label>
+          <select id="rg-case"><option value="smart">smart case</option><option value="insensitive">-i insensitive</option><option value="sensitive">sensitive</option></select>
+          <select id="rg-mode"><option value="rows">matches</option><option value="count">-c count</option><option value="files">-l files</option></select>
+          <label>-B<input type="text" id="rg-before" value="0" style="width:36px"></label>
+          <label>-A<input type="text" id="rg-after" value="0" style="width:36px"></label>
+          <button id="btn-deepscan" class="primary">Deep scan files</button>
+          <button id="btn-rg-export">Export results</button>
+        </div>
+        <div id="search-progress"></div>
+        <div id="search-results"><div class="muted" style="padding:20px">Instant results for kept lines appear here as you type. “Deep scan files” re-reads the full files from disk (finds matches even beyond the kept-lines cap).</div></div>
+      </div>
+
+      <!-- FILTERS -->
+      <div class="tab" id="tab-filters">
+        <div class="panel">
+          <h2>Regex rules</h2>
+          <div class="rowline"><button id="btn-add-rule" class="primary">+ Add rule</button>
+            <span class="muted">includes OR together · excludes subtract · highlights additive</span></div>
+          <table class="rules"><thead><tr><th>on</th><th>name</th><th>pattern</th><th>case</th><th>action</th><th>hits</th><th></th></tr></thead>
+            <tbody id="rule-rows"></tbody></table>
+          <h2>Time range <small class="muted">(inclusive, e.g. 08-24 15:37)</small></h2>
+          <div class="rowline">
+            <label>from <input type="text" id="time-from" placeholder="08-24 15:37"></label>
+            <label>to <input type="text" id="time-to" placeholder="08-24 19:22"></label>
+          </div>
+          <h2>Presets</h2>
+          <div class="rowline">
+            <select id="preset-sel"></select>
+            <button id="btn-preset-save">Save current…</button>
+            <button id="btn-preset-load">Load</button>
+            <button id="btn-preset-del">Delete</button>
+            <button id="btn-preset-export">Export .json</button>
+            <button id="btn-preset-import">Import .json</button>
+            <input type="file" id="preset-file" accept=".json" class="hidden">
+          </div>
+        </div>
+      </div>
+
+      <!-- MASKS -->
+      <div class="tab" id="tab-masks">
+        <div class="panel">
+          <h2>Built-in PII rules <small class="muted">(order preserved; toggle per rule)</small></h2>
+          <div class="rowline"><button id="btn-mask-all">Enable all</button><button id="btn-mask-none">Disable all</button></div>
+          <div class="mask-grid" id="mask-grid"></div>
+          <h2>Custom rules</h2>
+          <div class="rowline">
+            <input type="text" id="cm-name" placeholder="name" style="width:120px">
+            <input type="text" id="cm-pattern" placeholder="regex" style="flex:1;font-family:var(--mono)">
+            <input type="text" id="cm-repl" placeholder="replacement ($1…)" style="flex:1;font-family:var(--mono)">
+            <button id="btn-add-cm" class="primary">Add</button>
+          </div>
+          <div id="cm-list"></div>
+          <h2>Preview</h2>
+          <div class="rowline"><input type="text" id="mask-preview-in" value="VIN YV4AB9CD12EF34567 · a.b@corp.example · 10.20.30.40" style="flex:1;font-family:var(--mono)"></div>
+          <div id="mask-preview-out" style="font-family:var(--mono);color:var(--ok);word-break:break-all"></div>
+        </div>
+      </div>
+
+      <!-- ANALYSIS -->
+      <div class="tab" id="tab-analysis">
+        <div class="panel" id="analysis-panel"></div>
+      </div>
+
+      <!-- EXPORT -->
+      <div class="tab" id="tab-export">
+        <div class="panel">
+          <h2>Export sanitized extract</h2>
+          <div class="rowline">
+            <label>prefix <select id="exp-prefix"><option value="none">plain</option><option value="ln">[Ln]</option><option value="file:line" selected>file:line:</option></select></label>
+            <label><input type="checkbox" class="toggle" id="exp-selection"> selection only</label>
+            <span class="muted">exports respect the viewer mask toggle</span>
+          </div>
+          <div class="rowline">
+            <button id="exp-txt" class="primary">.log / .txt</button>
+            <button id="exp-csv">.csv</button>
+            <button id="exp-json">.json</button>
+            <button id="exp-rg">search results (rg)</button>
+            <button id="exp-bookmarks">bookmarks .json</button>
+          </div>
+          <p class="muted" id="exp-note"></p>
+          <h2>Privacy</h2>
+          <p class="muted">Exports are generated in your browser via Blob download. Nothing is uploaded — ever. External PII providers (Presidio/LLM) are <b>not</b> active in this build; the default engine is the local regex engine.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
 <script>
 /*__LT_MODULES__*/
 </script>
 <script>
-/* Embedded test suite: open log-triage.html?selftest to run it. */
+/* Shared test suite (same cases as node --test): open log-triage.html?selftest */
 /*__LT_CASES__*/
 </script>
 <script>

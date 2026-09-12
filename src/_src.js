@@ -16,6 +16,7 @@ module.exports = Object.assign({},
   require('./selection.js'),
   require('./bookmarks.js'),
   require('./exporter.js'),
+  require('./themes.js'),
 );
 
 // Register the built-in local provider on load (idempotent).

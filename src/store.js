@@ -11,6 +11,9 @@
   class Store {
     constructor(cap) {
       this.cap = cap || 100000;
+      // amortized trim: allow a small overshoot, then splice once instead of
+      // shift()-ing per line (O(cap) memmove per add at the cap)
+      this._batch = Math.max(1, Math.floor(this.cap / 10));
       this.kept = [];          // kept records, FIFO-trimmed
       this._keptTotal = 0;
       this._trimmed = 0;
@@ -49,9 +52,10 @@
         seq: this._keptTotal,
       };
       this.kept.push(entry);
-      while (this.kept.length > this.cap) {
-        this.kept.shift();
-        this._trimmed++;
+      if (this.kept.length >= this.cap + this._batch) {
+        const cut = this.kept.length - this.cap;
+        this.kept.splice(0, cut);
+        this._trimmed += cut;
       }
     }
 
