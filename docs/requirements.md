@@ -1,6 +1,6 @@
 # Requirements
 
-Version reference: v1.3.0 (release). Requirements are numbered and testable; each functional requirement (FR) carries acceptance criteria (AC) that map directly to the shared test suite (`tests/core-cases.js`) and the Playwright e2e scope (see `docs/test-plan.md`). All requirements are implemented as of the v1.3.0 release.
+Version reference: v1.12.1 (release). Requirements are numbered and testable; each functional requirement (FR) carries acceptance criteria (AC) that map directly to the shared test suite (`tests/core-cases.js`) and the Playwright e2e scope (see `docs/test-plan.md`). All requirements are implemented as of the v1.12.1 release.
 
 ## Functional requirements
 
@@ -132,11 +132,12 @@ Status: implemented (v1.0.0).
 
 ### FR-15 — Responsive/mobile layout
 
-Status: implemented (v1.3.0).
+Status: implemented (v1.3.0); extended in v1.12.1 (drawer as bottom sheet, 100dvh viewport height).
 
 - AC-1: No page-level horizontal overflow at a 390 px viewport width.
 - AC-2: At ≤ 760 px the files panel becomes an overlay drawer (auto-collapsed on narrow screens until toggled); the header wraps and tabs scroll horizontally.
 - AC-3: Mask cards stack in a single column on narrow screens.
+- AC-4 (v1.12.1): The drawer renders as a bottom sheet on narrow screens, and the app fills the dynamic viewport height (100dvh).
 
 ### FR-16 — Search-match horizontal scrolling
 
@@ -167,6 +168,48 @@ Status: implemented (v1.3.0).
 - AC-1: The files panel toggles via the header "☰ Files" button; the collapsed state persists.
 - AC-2: The panel auto-collapses on narrow screens until toggled.
 - AC-3: Clicking a file in the list switches the viewer to that file.
+
+### FR-20 — File cache / session restore
+
+Status: implemented (v1.12.1).
+
+- AC-1: Every successfully loaded file's content is cached in IndexedDB (database `log-triage-cache`).
+- AC-2: Reopening the app lists previously loaded files; clicking an entry with cached content reloads the file.
+- AC-3: Entries whose cached content is missing (quota rejected / file too large, or load failed) render greyed out with a "file not found" badge and a removable ✕.
+- AC-4: Removing a file purges its cache entry and clears its bookmarks; browser-close persistence is unchanged.
+
+### FR-21 — Analysis tab file scoping
+
+Status: implemented (v1.12.1).
+
+- AC-1: The analysis tab has a file selector — "All files (N)" plus one option per loaded file — and the heading shows the current scope.
+- AC-2: The scope applies to every section: overview cards, level bars, histogram, top tags/messages, issue scan, and PII census.
+- AC-3: Clicking an issue entry jumps to the line, auto-switching the per-file selection to the matched file and auto-clearing transient filters that would hide it.
+
+### FR-22 — Issue-scan rule editor
+
+Status: implemented (v1.12.1).
+
+- AC-1: The five built-in keyword groups are listed with enable checkboxes, editable kind and case-insensitive pattern, delete, add-rule, and restore-defaults.
+- AC-2: Rule changes are saved in state and included in presets.
+- AC-3: Invalid regex patterns are skipped safely (no crash, no partial application).
+- AC-4: The built-in auth group also detects "failed password" and "password check failed".
+
+### FR-23 — Responsive mobile layout refinements
+
+Status: implemented (v1.12.1). Base responsive layout: FR-15.
+
+- AC-1: The files-panel drawer renders as a bottom sheet on narrow screens.
+- AC-2: The app fills the dynamic viewport height (100dvh) on mobile.
+- AC-3: All FR-15 behavior holds at ≤ 760 px (overlay drawer via "☰ Files", auto-collapse with persisted state, single-column mask grid, scrollable rules table).
+
+### FR-24 — Config export/import tab
+
+Status: implemented (v1.12.1).
+
+- AC-1: The Config tab exports the current filter rules, time range, PII mask setup, and issue-scan rules as one JSON file.
+- AC-2: Import validates the JSON and applies it per section, reporting the outcome in a status line.
+- AC-3: Current-setup cards show what will be exported/applied before confirming.
 
 ## Non-functional requirements
 

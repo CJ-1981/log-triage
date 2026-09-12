@@ -92,7 +92,7 @@ Implemented in G2–G8:
 | `src/selftest.js` | In-browser runner for the shared case suite (`?selftest`). |
 | `src/app-*.js` | UI glue: file list, viewer, analysis tab, search results panel, presets UI (exempt from coverage gates). |
 
-The shipped UI glue is the single module `src/app.js` (exempt from the coverage gate); the dev helpers `tools/serve.mjs` (static server), `tools/shots.mjs` (screenshot capture), `tools/genbig.mjs` (big-log generator — emits deterministic RAREJUMPMARKER lines every 100k lines for stable stress assertions), and `tools/debug-fileswitch.mjs` (deep-scan/file-switch debug probe) support e2e and performance verification and contribute no runtime code.
+The shipped UI glue modules are `src/app.js` and `src/app-filecache.js` (IndexedDB file-cache wrapper for session restore — browser-only; both exempt from the coverage gate); the dev helpers `tools/serve.mjs` (static server), `tools/shots.mjs` (screenshot capture), `tools/genbig.mjs` (big-log generator — emits deterministic RAREJUMPMARKER lines every 100k lines for stable stress assertions), and `tools/debug-fileswitch.mjs` (deep-scan/file-switch debug probe) support e2e and performance verification and contribute no runtime code.
 
 ## Build pipeline
 
@@ -121,9 +121,9 @@ The shipped UI glue is the single module `src/app.js` (exempt from the coverage 
 3. **Store fan-out.** The kept-line store feeds the level tally (chips), the merged timeline (timestamp sort, file-order tiebreak — null-timestamp lines such as stack traces attach to the preceding parsed line), the masking engine, the selection model, instant search, and the analysis tab. Retained `File` handles feed the deep scan independently of the store's contents.
 4. **Masking (S3).** Masking is lazy: ordered built-in rules plus custom rules and any provider findings transform text only at render, copy, and export time; raw text is never rewritten in the store.
 5. **Search (SR).** Instant search queries the kept lines; deep scan re-streams from disk with ripgrep-style flags and merges results grouped by file as `file:lineNo:`.
-6. **UI (S4).** The virtualized viewer renders merged or per-file views with wrap, themes, severity tint, bookmarks, and selection; analysis renders level bars, histogram, clustered top messages, issue scan, PII census, and per-file comparison. Responsive breakpoints live in `template.html`: `@media` ≤ 760px (header wraps, tabs scroll, sidebar becomes an overlay drawer) and ≤ 1280px (privacy tagline hidden).
+6. **UI (S4).** The virtualized viewer renders merged or per-file views with wrap, themes, severity tint, bookmarks, and selection; analysis renders level bars, histogram, clustered top messages, issue scan, PII census, and per-file comparison. The issue-scan rule editor is driven by `state.issueGroups` (five built-in keyword groups, editable and preset-saveable). Responsive breakpoints live in `template.html`: `@media` ≤ 760px (header wraps, tabs scroll, sidebar becomes an overlay drawer) and ≤ 1280px (privacy tagline hidden).
 7. **Export (5).** The exporter serializes sanitized kept/selected lines, search results, and bookmarks to `.log`/`.txt`/`.csv`/`.json` with timestamped filenames.
-8. **Presets (6).** Named sets of filter rules, mask rules, and search flags persist to `localStorage` and round-trip as JSON, feeding the filter engine, masking engine, and search.
+8. **Presets (6).** Named sets of filter rules, mask rules, and search flags persist to `localStorage` and round-trip as JSON, feeding the filter engine, masking engine, and search. App state persists to `localStorage` under `log_triage_state_v1`, which excludes transient filters (quick search, level chips, time range, search pattern, ★ only-bookmarks) per ADR-0007.
 9. **Self-test (7).** `?selftest` re-validates ingestion, masking, and search in the running build using the shared case suite.
 
 ## PII provider extension point

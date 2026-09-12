@@ -50,3 +50,17 @@ Architecture decision records (ADRs). Status values: proposed, accepted, superse
 - **Context:** The app originally persisted quick search, level chips, time range, and the search pattern across sessions alongside themes, mask/rule config, presets, and bookmarks. A restored stale filter made freshly loaded files appear empty or nearly empty — the "new files are invisible" bug reported against v1.1.x — even though ingestion had succeeded. The fault was in persistence policy, not in ingestion or rendering.
 - **Decision:** Transient view filters — quick search, level chips, time range, and the search pattern — are intentionally not persisted across sessions. Rules, masks, presets, themes, and bookmarks remain persisted because they describe durable user configuration rather than a moment's investigative focus.
 - **Consequences:** Reloading the page always starts with an unfiltered view of whatever is loaded, so newly loaded files are immediately visible; users who need a filter across a reload must reapply it — accepted friction, far cheaper than misdiagnosing "lost" logs. The persistence specs and the `fresh()` e2e helper (which clears localStorage before app boot) cover this behavior.
+
+## ADR-0008 — Debounced text inputs
+
+- **Status:** accepted
+- **Context:** Instant search and the viewer quick filter originally re-ran their match pass on every keystroke. Over a large kept-line store each pass is O(lines), so fast typing queued expensive intermediate runs — the input felt laggiest exactly when the dataset was biggest.
+- **Decision:** Text inputs are debounced: the search pattern matches 250 ms after typing pauses, the viewer quick filter 200 ms. Keystrokes only update input state; matching starts after the pause.
+- **Consequences:** Results appear about a quarter-second after typing stops — imperceptible for triage workflows — while per-keystroke cost drops to nothing; the delays are small enough to feel responsive but long enough to skip entire bursts of intermediate queries. Deep scan remains an explicit action and is unaffected.
+
+## ADR-0009 — Loaded-file content cache in IndexedDB
+
+- **Status:** accepted
+- **Context:** `File` handles and the kept-line store do not survive a browser session, so reopening the app meant re-dragging every file the user had just been working on. localStorage cannot hold file bytes comfortably, and only filtered lines are kept in memory by design.
+- **Decision:** On every successful load, the file's bytes are cached in IndexedDB (database `log-triage-cache`) keyed by file identity. Reopening the app lists previously loaded files; clicking an entry with cached content reloads it. Entries without cached content — quota exceeded / file too large, or a failed load — are listed greyed out with a "file not found" badge and a removable ✕. Removing a file purges its cache entry and clears its bookmarks (removal is intentional; browser-close persistence is unchanged).
+- **Consequences:** Session restore is one click and stays 100% local — IndexedDB is same-origin and on-device, so the privacy posture is unchanged. Quota limits degrade gracefully to a greyed "file not found" entry instead of an error; the cache key matches the bookmark file identity so the two stay consistent; storage use grows only with the files the user actually loads, bounded by the browser's quota.

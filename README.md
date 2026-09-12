@@ -6,7 +6,7 @@
 
 **Log Triage** is a privacy-first log triage tool that runs entirely in your browser. Drop one or more log files onto a single self-contained HTML page and get instant format detection, parsing, filtering, ripgrep-style search, PII masking, analysis, and sanitized export — with no server, no uploads, and no telemetry. Your files never leave your machine.
 
-Current release: v1.3.0 (version is bumped automatically by CI from conventional commits).
+Current release: v1.12.1 (version is bumped automatically by CI from conventional commits).
 
 ## Screenshots
 
@@ -49,16 +49,19 @@ The same viewer in the light **Paper** theme:
 
 - **Multi-file loading** — sequential streaming ingestion with per-file and overall progress, cancel support, an 8 MB newline valve, and exact per-file counters. Only filtered "kept" lines are retained, under a configurable global cap (default 100,000 lines).
 - **Format autodetection** — Android logcat threadtime, syslog (RFC 3164), Apache CLF, ISO-8601, bare `MM-DD`, and plain text with timestamps normalized to a year-less `MM-DD HH:MM:SS.mmm` form.
-- **Ripgrep-style search** — instant search over kept lines plus a deep-scan mode that re-streams files from disk with `-F` (fixed strings), smart-case default (`-i` / sensitive), `-w` whole word, `-v` invert, `-B`/`-A` context, and normal / `-c` count / `-l` files-with-matches modes. Results are capped (default 10,000), grouped by file as `file:lineNo:`, and exportable as rg-style text or JSON.
+- **Ripgrep-style search** — instant search over kept lines plus a deep-scan mode that re-streams files from disk with `-F` (fixed strings), smart-case default (`-i` / sensitive), `-w` whole word, `-v` invert, `-B`/`-A` context, and normal / `-c` count / `-l` files-with-matches modes. Results are capped (default 10,000), grouped by file as `file:lineNo:` in collapsible per-file groups (Collapse all / Expand all, match counts in headers), and exportable as rg-style text or JSON.
 - **PII masking** — 16 built-in ordered regex rules (VIN, IBAN, credit card, SSN, international and US phone, IMEI, email, device serial `SN-`, MAC with OUI kept, private/public IPv4, IPv6 link-local/ULA, GNSS decimal pairs, subscriberId, hotspot SSID `AndroidShare_`), individually toggleable, plus custom regex-to-template rules. Masking is applied lazily over raw stored text and toggled in the viewer with the `M` key. An extensible `PiiProvider` registry ships with a mock provider; future Presidio and LLM backends are documented but not wired.
 - **Filter engine** — ordered regex rules of three kinds: include (OR), exclude (subtractive), and highlight (additive), with a case toggle and live hit counters. Dynamic level chips are generated from the levels actually observed in each load, and an inclusive time range narrows the view by timestamp prefix comparison.
-- **Analysis tab** — level bars, top tags, top messages via pattern normalization (numbers/hex/UUIDs stripped to cluster similar lines), a canvas time histogram, issue scanning for crashes/ANRs/process deaths/connectivity/auth problems, a PII census, and per-file comparison.
-- **Viewer** — virtualized rendering for 100k+ rows, merged-timeline and per-file views, wrap toggle with a measured-height cache, six themes (Midnight default, Paper, Solarized Dark, Solarized Light, Monokai, High Contrast), severity badges with W/E/F row tint, multiline selection and copy (click anchor, shift-click range, ctrl-click toggle, ctrl+A; copy with optional `file:lineNo:` prefixes), bookmarks with notes persisted by file identity, and a detail drawer.
+- **Analysis tab** — level bars, top tags, top messages via pattern normalization (numbers/hex/UUIDs stripped to cluster similar lines), a canvas time histogram with y-axis gridlines and value ticks, x-axis time labels, and a hover tooltip (count + time range; device-pixel-ratio aware), issue scanning for crashes/ANRs/process deaths/connectivity/auth problems (the auth group also detects `failed password` and `password check failed`), an issue-scan rule editor (enable, edit kind and case-insensitive pattern, delete, add-rule, restore-defaults; bad patterns skipped safely; saved in state and presets), a PII census, and per-file comparison — all scopeable via a file selector (`All files (N)` or one file), with issue entries that click-jump to the line.
+- **Viewer** — virtualized rendering for 100k+ rows, merged-timeline and per-file views, wrap toggle with a measured-height cache, six themes (Midnight default, Paper, Solarized Dark, Solarized Light, Monokai, High Contrast), severity badges with W/E/F row tint, multiline selection and copy (click anchor, shift-click range, ctrl-click toggle, ctrl+A; copy with optional `file:lineNo:` prefixes), bookmarks with notes persisted by file identity, a sidebar bookmarks panel (entry list, jump-to-line, count pill; collapsible with a drag-resize handle), a ★ Only-bookmarks toolbar toggle (shows a hint when no bookmarks exist; re-filters live), and a detail drawer.
 - **Export sanitized** — `.log`/`.txt` (with `[Ln]` or `file:lineNo:` prefixes), `.csv`, `.json`, rg search results, bookmarks, and selection-only export. Filenames are timestamped `YYYY-MM-DD_HHmmss`.
 - **Presets** — named filter/mask/search-flag sets persisted in localStorage with JSON import/export.
+- **File removal** — per-file ✕ buttons in the files panel drop a file's lines, counters, and level-chip contribution (clear-all uses the same path); removing a file also clears its bookmarks and purges its cache entry.
+- **File cache / session restore** — every successfully loaded file is cached in IndexedDB (`log-triage-cache`); reopening the app lists previous files — clicking a cached entry reloads it, while entries whose content is missing render greyed out with a "file not found" badge and a removable ✕.
+- **Config tab** — export/import the current filter rules, time range, PII mask setup, and issue-scan rules as one JSON file, with validation, per-section application, a status line, and current-setup cards.
 - **Responsive mobile layout** — header wraps with horizontally scrollable tabs, the files panel becomes an overlay drawer on narrow screens, and the mask grid stacks to a single column.
 - **Debounced search and quick-filter inputs** — matching starts after typing pauses (search 250 ms, quick filter 200 ms).
-- **Navigation** — click a search result to jump to the line in the viewer; a go-to-line box in the viewer toolbar takes a line number + Enter.
+- **Navigation** — click a search result, sidebar bookmark, or issue-scan entry to jump to the line: the per-file selection auto-switches to the matched file and transient filters that would hide the target (quick search, level chips, time range, ★ only-bookmarks) are auto-cleared; lines beyond the kept-line cap open an explanatory drawer; a go-to-line box in the viewer toolbar takes a line number + Enter.
 - **Collapsible files panel** — toggle via the header "☰ Files" button (state persisted; auto-collapsed on narrow screens).
 - **Horizontal scrolling in nowrap mode** — the scroll range is sized from the longest line in the view, so long lines are fully reachable instead of ellipsis-truncated.
 - **Self-test** — `?selftest` runs the same 113-case suite in the browser that `node --test` executes (`tests/core-cases.js`).
@@ -78,8 +81,8 @@ Requirements: Node.js 22.
 npm test          # Unit + bump suites (node:test)
 npm run test:gate # Unit tests + coverage gate (>=90% line / >=85% branch on core src modules)
 npm run build     # Build log-triage.html from src/
-npm run e2e       # Playwright end-to-end tests (26 specs: 18 app + 8 stress)
-npm run e2e:stress
+npm run e2e       # Playwright end-to-end tests (35 specs: 27 app + 8 stress)
+npm run e2e:stress # Stress suite only (generated big fixture)
 npm run bump      # Semver bump from conventional commits (CI runs this automatically on main)
 ```
 
@@ -100,7 +103,7 @@ log-triage/
 │   ├── parser.js          # logcat / syslog / CLF / ISO-8601 / MM-DD / plain parsers
 │   └── …                  # masks, pii-provider, filters, levels, search, store,
 │                          # timeline, selection, bookmarks, exporter, themes,
-│                          # app.js (UI glue)
+│                          # app.js + app-filecache.js (UI glue)
 ├── tests/
 │   ├── core-cases.js      # Shared case suite — powers node --test AND ?selftest
 │   ├── e2e/               # Playwright specs (app.e2e, stress.e2e)
@@ -113,10 +116,10 @@ log-triage/
 │   └── shots.mjs          # Screenshot capture for docs
 ├── docs/
 │   ├── img/               # README screenshots (generated by tools/shots.mjs)
-│   ├── requirements.md    # FR-1..FR-19, NFR-1..NFR-4, out of scope
+│   ├── requirements.md    # FR-1..FR-24, NFR-1..NFR-4, out of scope
 │   ├── architecture.md    # Module map, build pipeline, data flow, extension points
 │   ├── test-plan.md       # Gates G0–G8, coverage policy, e2e scope, fixtures
-│   ├── decisions.md       # ADR-0001..ADR-0007
+│   ├── decisions.md       # ADR-0001..ADR-0009
 │   └── changelog.md       # Maintained by tools/bump.mjs
 └── .github/
     └── workflows/

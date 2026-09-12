@@ -9,10 +9,13 @@
 ## 1.12.1 (2026-09-12)
 - chore: rebuild log-triage.html
 - fix: materialize issue-scan rule groups at boot (analysis tab crashed when state.issueGroups was unset); e2e diagnostics for panel render
+- feat: file cache (IndexedDB) — previously loaded files are listed after reopening the app; cached ones reload on click, uncached ones show greyed as "file not found"
+- feat: Config tab — export/import filter rules, time range, PII mask setup and issue-scan rules as one JSON file
 
 ## 1.12.0 (2026-09-12)
 - chore: rebuild log-triage.html
 - feat: analysis tab file selector scopes every section to one file or all; auth issue scan detects failed password lines
+- feat: issue-scan rule editor — enable/disable, edit, add or delete keyword groups with a how-it-works note
 
 ## 1.11.1 (2026-09-12)
 - chore: rebuild log-triage.html
@@ -22,13 +25,9 @@
 - chore: rebuild log-triage.html at current version
 - feat: time histogram axes — y gridlines with value ticks, x time tick labels, hover tooltip with count and time range (DPR-aware canvas)
 
-<<<<<<< HEAD
 ## 1.10.0 (2026-09-12)
 - chore: rebuild log-triage.html
 - feat: collapsible bookmarks panel section in sidebar with drag-resize handle; per-file removal clears that file's bookmarks
-=======
-- Analysis tab: the time histogram now has y-axis gridlines with value ticks and x-axis time tick labels, plus a hover tooltip showing the line count and time range of the hovered bucket (device-pixel-ratio aware rendering)
->>>>>>> aa61923 (feat: time histogram axes — y gridlines with value ticks, x time tick labels, hover tooltip with count and time range (DPR-aware canvas))
 
 ## 1.9.0 (2026-09-12)
 - chore: rebuild log-triage.html
@@ -44,7 +43,6 @@
 
 ## 1.6.0 (2026-09-12)
 - chore: rebuild log-triage.html at current version
-- feat: level chips rescope to the active file in per-file view (store.tallyFor); merged view keeps the all-files sum
 - feat: level chips rescope to the active file in per-file view (store.tallyFor); merged view keeps the all-files sum
 
 ## 1.5.0 (2026-09-12)
