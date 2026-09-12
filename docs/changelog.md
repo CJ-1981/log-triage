@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.11.1 (2026-09-12)
+- chore: rebuild log-triage.html
+- fix: search-result and bookmark clicks auto-switch the per-file selection and clear hiding filters before jumping; file list active highlight refreshes on programmatic view switches (regression specs)
+
 ## 1.11.0 (2026-09-12)
 - chore: rebuild log-triage.html at current version
 - feat: time histogram axes — y gridlines with value ticks, x time tick labels, hover tooltip with count and time range (DPR-aware canvas)
