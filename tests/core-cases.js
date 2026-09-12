@@ -524,5 +524,109 @@
     deepEq(t.chipList().map((c) => c.count), [1, 1, 1, 1, 2]);
   });
 
+  /* ============================== G4: ripgrep-style search ============================== */
+
+  T('search', 'plain regex search', () => {
+    const s = SRC.buildSearcher('heartb.at', {});
+    ok(s.ok);
+    eq(SRC.matchLine(s, 'heartbeat alive'), true);
+    eq(SRC.matchLine(s, 'heatbeat dead'), false);
+  });
+
+  T('search', 'fixed strings mode escapes metacharacters', () => {
+    const s = SRC.buildSearcher('a.b', { fixed: true });
+    eq(SRC.matchLine(s, 'xx a.b yy'), true);
+    eq(SRC.matchLine(s, 'xx aXb yy'), false);
+  });
+
+  T('search', 'smart case: lowercase pattern matches any case, uppercase is sensitive', () => {
+    const smartLo = SRC.buildSearcher('error', { caseMode: 'smart' });
+    eq(SRC.matchLine(smartLo, 'ERROR occurred'), true);
+    const smartHi = SRC.buildSearcher('Error', { caseMode: 'smart' });
+    eq(SRC.matchLine(smartHi, 'ERROR occurred'), false);
+    eq(SRC.matchLine(smartHi, 'Error occurred'), true);
+  });
+
+  T('search', 'forced insensitive and sensitive', () => {
+    const ins = SRC.buildSearcher('ERROR', { caseMode: 'insensitive' });
+    eq(SRC.matchLine(ins, 'error'), true);
+    const sen = SRC.buildSearcher('error', { caseMode: 'sensitive' });
+    eq(SRC.matchLine(sen, 'ERROR'), false);
+    eq(SRC.matchLine(sen, 'error'), true);
+  });
+
+  T('search', 'whole word mode', () => {
+    const w = SRC.buildSearcher('cat', { caseMode: 'sensitive', word: true });
+    eq(SRC.matchLine(w, 'the cat sat'), true);
+    eq(SRC.matchLine(w, 'the category'), false);
+  });
+
+  T('search', 'invert matches non-matching lines only', () => {
+    const s = SRC.buildSearcher('noise', { invert: true });
+    eq(SRC.matchLine(s, 'clean line'), true);
+    eq(SRC.matchLine(s, 'noisy line noise'), false);
+  });
+
+  T('search', 'spans give match offsets for highlighting', () => {
+    const s = SRC.buildSearcher('ab', {});
+    deepEq(SRC.matchSpans(s, '-ab-ab-'), [[1, 3], [4, 6]]);
+    deepEq(SRC.matchSpans(s, 'zzz'), []);
+  });
+
+  T('search', 'empty pattern means no search', () => {
+    const s = SRC.buildSearcher('', {});
+    ok(s.ok);
+    eq(SRC.matchLine(s, 'anything'), false);
+    deepEq(SRC.matchSpans(s, 'anything'), []);
+  });
+
+  T('search', 'invalid regex surfaces error', () => {
+    const s = SRC.buildSearcher('([unclosed', {});
+    eq(s.ok, false);
+    ok(s.error);
+  });
+
+  T('search', 'searchRecords aggregates per-file counts', () => {
+    const s = SRC.buildSearcher('heartbeat', {});
+    const recs = [
+      { file: 'f1', raw: 'heartbeat seq=1' },
+      { file: 'f1', raw: 'heartbeat seq=2' },
+      { file: 'f2', raw: 'heartbeat missed' },
+      { file: 'f2', raw: 'silence' },
+    ];
+    const r = SRC.searchRecords(recs, s);
+    eq(r.total, 3);
+    eq(r.byFile.f1, 2);
+    eq(r.byFile.f2, 1);
+    eq(r.rows.length, 3);
+    eq(r.rows[0].idx, 0);
+  });
+
+  T('search', 'context merges adjacent matches into contiguous ranges', () => {
+    const s = SRC.buildSearcher('M', {});
+    const lines = ['a', 'M', 'M', 'b', 'c', 'M', 'd'];
+    const rows = SRC.searchWithContext(lines, s, 1, 1);
+    // matches at 1,2,5 → ranges [0..3] and [4..6]
+    deepEq(rows.map((r) => r.idx), [0, 1, 2, 3, 4, 5, 6]);
+    deepEq(rows.map((r) => r.isMatch), [false, true, true, false, false, true, false]);
+  });
+
+  T('search', 'context zero returns only match lines', () => {
+    const s = SRC.buildSearcher('M', {});
+    const rows = SRC.searchWithContext(['a', 'M', 'b'], s, 0, 0);
+    deepEq(rows.map((r) => r.idx), [1]);
+  });
+
+  T('search', 'defaults: no opts, missing file, undefined context, zero-width spans', () => {
+    const s = SRC.buildSearcher('x*'); // no opts at all; zero-width regex
+    eq(SRC.matchLine(s, 'abc'), true);
+    deepEq(SRC.matchSpans(s, 'ab'), [], 'zero-width matches yield no spans');
+    const r = SRC.searchRecords([{ raw: 'xx' }], SRC.buildSearcher('xx'));
+    eq(r.total, 1);
+    eq(r.byFile['?'], 1, 'records without file bucket under ?');
+    const rows = SRC.searchWithContext(['a', 'b', 'a'], SRC.buildSearcher('a'), undefined, undefined);
+    deepEq(rows.map((x) => x.idx), [0, 2]);
+  });
+
   return { CASES, eq, deepEq, ok };
 }));

@@ -10,6 +10,7 @@ module.exports = Object.assign({},
   require('./pii-provider.js'),
   require('./filters.js'),
   require('./levels.js'),
+  require('./search.js'),
 );
 
 // Register the built-in local provider on load (idempotent).

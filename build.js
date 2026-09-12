@@ -14,6 +14,7 @@ const MODULE_ORDER = [
   'pii-provider.js',
   'filters.js',
   'levels.js',
+  'search.js',
   // appended by later gates in dependency order
 ];
 
