@@ -21,6 +21,7 @@ const MODULE_ORDER = [
   'bookmarks.js',
   'exporter.js',
   'themes.js',
+  'app-filecache.js',
   'app.js',
 ];
 

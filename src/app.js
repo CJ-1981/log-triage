@@ -43,6 +43,7 @@
   const selection = new LT.SelectionModel();
   const bookmarksStore = new LT.BookmarkStore();
   const files = [];                                   // {id, name, size, file, format, done}
+  let cacheEntries = [];                              // restored entries from previous sessions (IDB)
   let displayCache = new Map();                       // seq -> rendered text (masked or raw)
 
   const $ = (id) => document.getElementById(id);
@@ -160,18 +161,37 @@
     saveState();
     let i = 0;
     for (const f of fileList) {
-      const entry = { id: 'f' + Date.now() + '_' + (i++), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
+      const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
       files.push(entry);
       renderFiles();
       await ingestFile(entry);
       renderFiles();
       onKeptChanged();
+      if (entry.status === 'done') await cacheLoadedFile(entry, f);
       if (ingestAbort) break;
     }
     saveState();
   }
 
+  async function cacheLoadedFile(entry, f) {
+    // retire superseded cache entries (same name and size)
+    const sup = cacheEntries.filter((c) => c.name === f.name && c.size === f.size);
+    for (const c of sup) await LT.cacheDelete(c.id);
+    cacheEntries = cacheEntries.filter((c) => !sup.includes(c));
+    const ok = await LT.cachePut({ id: 'cache_' + Date.now() + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, format: f.format, ts: Date.now(), data: f });
+    entry.cached = ok;
+  }
+
   /* ---------------- rendering: files ---------------- */
+  /** restore the list of last loaded files from the local cache (IDB) */
+  async function restoreCache() {
+    const entries = await LT.cacheGetAll();
+    entries.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    if (!entries.length) return;
+    cacheEntries = entries;
+    renderFiles();
+  }
+
   function renderFiles() {
     const el = $('file-list');
     el.innerHTML = '';
@@ -197,17 +217,55 @@
       };
       el.appendChild(div);
     }
+    // cached entries from previous sessions
+    for (const c of cacheEntries) {
+      if (files.some((f) => f.name === c.name && f.size === c.size)) continue; // superseded by a live load
+      const div = document.createElement('div');
+      const fx = document.createElement('button');
+      fx.className = 'fx'; fx.textContent = '✕'; fx.title = 'remove from cache';
+      fx.onclick = (e) => { e.stopPropagation(); removeFileById(c.id); };
+      div.appendChild(fx);
+      if (c.data) {
+        div.className = 'file-item cached';
+        div.title = 'cached — click to load';
+        div.insertAdjacentHTML('beforeend', '<div class="fname">' + esc(c.name) + '</div>' +
+          '<div class="fmeta"><span class="badge fmt">' + esc(c.format || '—') + '</span>' +
+          '<span>' + LT.fmtBytes(c.size) + '</span><span>cached — click to load</span></div>');
+        div.onclick = () => loadCachedFile(c);
+      } else {
+        div.className = 'file-item missing';
+        div.title = 'this file could not be restored';
+        div.insertAdjacentHTML('beforeend', '<div class="fname muted">' + esc(c.name) + '</div>' +
+          '<div class="fmeta"><span class="badge miss">file not found</span>' +
+          '<span>' + LT.fmtBytes(c.size) + '</span></div>');
+      }
+      el.appendChild(div);
+    }
   }
 
-  function removeFileById(fileId) {
-    const idx = files.findIndex((f) => f.id === fileId);
-    if (idx >= 0) files.splice(idx, 1);
-    store.removeFile(fileId);
-    if (state.activeFile === fileId) { state.activeFile = null; state.viewMode = 'merged'; }
+  async function loadCachedFile(c) {
+    if (!c.data) { flash('file not found: ' + c.name); return; }
+    await loadFiles([new File([c.data], c.name, { type: 'text/plain' })]);
+  }
+
+  function removeFileById(id) {
+    if (cacheEntries.some((c) => c.id === id)) {
+      cacheEntries = cacheEntries.filter((c) => c.id !== id);
+      LT.cacheDelete(id);
+      renderFiles(); saveState();
+      return;
+    }
+    const idx = files.findIndex((f) => f.id === id);
+    if (idx < 0) return;
+    const f = files[idx];
+    files.splice(idx, 1);
+    store.removeFile(id);
+    if (state.activeFile === id) { state.activeFile = null; state.viewMode = 'merged'; }
+    const matches = cacheEntries.filter((c) => c.name === f.name && c.size === f.size);
+    for (const c of matches) LT.cacheDelete(c.id);
+    cacheEntries = cacheEntries.filter((c) => !matches.includes(c));
     displayCache = new Map();
-    onKeptChanged();
-    renderFiles();
-    saveState();
+    onKeptChanged(); renderFiles(); saveState();
   }
 
   /* ---------------- view model ---------------- */
@@ -1172,9 +1230,11 @@
       if (!t.trim()) return;
       loadFiles([new File([t], 'pasted.log', { type: 'text/plain' })]);
     };
-    $('clear-files').onclick = () => {
+    $('clear-files').onclick = async () => {
       files.slice().forEach((f) => store.removeFile(f.id));
       files.length = 0;
+      cacheEntries = [];
+      await LT.cacheClear();
       state.activeFile = null;
       onKeptChanged(); renderFiles(); saveState();
     };
@@ -1311,6 +1371,7 @@
     renderChips(); renderRules(); renderPresets(); renderFiles(); renderBookmarks(); updateStatus();
     bindViewer();
     applySide();
+    restoreCache().catch(() => {});
 
     // keyboard
     document.addEventListener('keydown', (e) => {

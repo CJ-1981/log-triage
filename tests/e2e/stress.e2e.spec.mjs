@@ -56,7 +56,12 @@ afterEach(async () => {
 
 async function fresh() {
   await page.goto(url() + '?stress=' + Date.now(), { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => new Promise((res) => {
+    const r = indexedDB.deleteDatabase('log-triage-cache');
+    r.onsuccess = r.onerror = r.onblocked = () => res();
+  }));
   await page.evaluate(() => localStorage.removeItem('log_triage_state_v1'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
 }
 
 async function loadStress() {

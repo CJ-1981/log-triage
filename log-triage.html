@@ -59,6 +59,10 @@ header h1 span { color: var(--accent); }
 .file-item .fx { position: absolute; top: 6px; right: 6px; background: transparent; border: none; color: var(--muted); padding: 0 3px; font-size: 12px; cursor: pointer; }
 .file-item .fx:hover { color: var(--err); }
 .file-item.active { box-shadow: inset 3px 0 0 var(--accent); background: var(--surface2); }
+.file-item.cached .fname::after { content: ' ↻'; color: var(--accent); }
+.file-item.missing { opacity: 0.55; }
+.file-item.missing .fname { text-decoration: line-through; }
+.badge.miss { color: var(--err); border-color: var(--err); }
 .file-item .fname { font-size: 12.5px; word-break: break-all; }
 .file-item .fmeta { font-size: 11px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .badge { display: inline-block; padding: 0 6px; border-radius: 8px; font-size: 10.5px; font-weight: 700; border: 1px solid var(--border); }
@@ -1584,6 +1588,109 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   return { THEMES, REQUIRED_VARS, DEFAULT_THEME, themeNames, themeCompletenessErrors, generateCss };
 }));
 
+/* Log Triage — app-filecache.js: IndexedDB cache of last loaded files.
+ * Stores file contents so a session can be restored after reopening the app.
+ * Entries without data render greyed out as "file not found". Browser-only
+ * glue (exempt from the coverage gate); every call degrades gracefully when
+ * IndexedDB is unavailable. */
+(function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const DB = 'log-triage-cache';
+  const STORE = 'files';
+
+  function openDb() {
+    return new Promise((res, rej) => {
+      if (typeof indexedDB === 'undefined') { rej(new Error('IndexedDB unavailable')); return; }
+      const req = indexedDB.open(DB, 1);
+      req.onupgradeneeded = () => { req.result.createObjectStore(STORE, { keyPath: 'id' }); };
+      req.onsuccess = () => res(req.result);
+      req.onerror = () => rej(req.error);
+    });
+  }
+
+  function txDone(tx) {
+    return new Promise((res, rej) => {
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+      tx.onabort = () => rej(tx.error || new Error('transaction aborted'));
+    });
+  }
+
+  /** cachePut(entry) -> true if stored (content cached), false on failure */
+  async function cachePut(entry) {
+    let db;
+    try {
+      db = await openDb();
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).put(entry);
+      await txDone(tx);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (db) db.close();
+    }
+  }
+
+  /** cachePutMeta(entry) -> metadata-only entry (content could not be cached) */
+  async function cachePutMeta(entry) {
+    const meta = Object.assign({}, entry);
+    delete meta.data;
+    return cachePut(meta);
+  }
+
+  async function cacheGetAll() {
+    let db;
+    try {
+      db = await openDb();
+      const tx = db.transaction(STORE, 'readonly');
+      const rq = tx.objectStore(STORE).getAll();
+      const items = await new Promise((res, rej) => {
+        rq.onsuccess = () => res(rq.result || []);
+        rq.onerror = () => rej(rq.error);
+      });
+      return items;
+    } catch {
+      return [];
+    } finally {
+      if (db) db.close();
+    }
+  }
+
+  async function cacheDelete(id) {
+    let db;
+    try {
+      db = await openDb();
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(id);
+      await txDone(tx);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (db) db.close();
+    }
+  }
+
+  async function cacheClear() {
+    let db;
+    try {
+      db = await openDb();
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).clear();
+      await txDone(tx);
+      return true;
+    } catch {
+      return false;
+    } finally {
+      if (db) db.close();
+    }
+  }
+
+  return { cachePut, cachePutMeta, cacheGetAll, cacheDelete, cacheClear };
+}));
+
 /* Log Triage — app.js: browser UI glue (virtualized viewer, streaming
  * ingestion, deep scan, panels). Pure logic lives in the other src modules;
  * this file is UI wiring and is exempt from the coverage gate. */
@@ -1629,6 +1736,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   const selection = new LT.SelectionModel();
   const bookmarksStore = new LT.BookmarkStore();
   const files = [];                                   // {id, name, size, file, format, done}
+  let cacheEntries = [];                              // restored entries from previous sessions (IDB)
   let displayCache = new Map();                       // seq -> rendered text (masked or raw)
 
   const $ = (id) => document.getElementById(id);
@@ -1746,18 +1854,37 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     saveState();
     let i = 0;
     for (const f of fileList) {
-      const entry = { id: 'f' + Date.now() + '_' + (i++), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
+      const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
       files.push(entry);
       renderFiles();
       await ingestFile(entry);
       renderFiles();
       onKeptChanged();
+      if (entry.status === 'done') await cacheLoadedFile(entry, f);
       if (ingestAbort) break;
     }
     saveState();
   }
 
+  async function cacheLoadedFile(entry, f) {
+    // retire superseded cache entries (same name and size)
+    const sup = cacheEntries.filter((c) => c.name === f.name && c.size === f.size);
+    for (const c of sup) await LT.cacheDelete(c.id);
+    cacheEntries = cacheEntries.filter((c) => !sup.includes(c));
+    const ok = await LT.cachePut({ id: 'cache_' + Date.now() + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, format: f.format, ts: Date.now(), data: f });
+    entry.cached = ok;
+  }
+
   /* ---------------- rendering: files ---------------- */
+  /** restore the list of last loaded files from the local cache (IDB) */
+  async function restoreCache() {
+    const entries = await LT.cacheGetAll();
+    entries.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+    if (!entries.length) return;
+    cacheEntries = entries;
+    renderFiles();
+  }
+
   function renderFiles() {
     const el = $('file-list');
     el.innerHTML = '';
@@ -1783,17 +1910,55 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       };
       el.appendChild(div);
     }
+    // cached entries from previous sessions
+    for (const c of cacheEntries) {
+      if (files.some((f) => f.name === c.name && f.size === c.size)) continue; // superseded by a live load
+      const div = document.createElement('div');
+      const fx = document.createElement('button');
+      fx.className = 'fx'; fx.textContent = '✕'; fx.title = 'remove from cache';
+      fx.onclick = (e) => { e.stopPropagation(); removeFileById(c.id); };
+      div.appendChild(fx);
+      if (c.data) {
+        div.className = 'file-item cached';
+        div.title = 'cached — click to load';
+        div.insertAdjacentHTML('beforeend', '<div class="fname">' + esc(c.name) + '</div>' +
+          '<div class="fmeta"><span class="badge fmt">' + esc(c.format || '—') + '</span>' +
+          '<span>' + LT.fmtBytes(c.size) + '</span><span>cached — click to load</span></div>');
+        div.onclick = () => loadCachedFile(c);
+      } else {
+        div.className = 'file-item missing';
+        div.title = 'this file could not be restored';
+        div.insertAdjacentHTML('beforeend', '<div class="fname muted">' + esc(c.name) + '</div>' +
+          '<div class="fmeta"><span class="badge miss">file not found</span>' +
+          '<span>' + LT.fmtBytes(c.size) + '</span></div>');
+      }
+      el.appendChild(div);
+    }
   }
 
-  function removeFileById(fileId) {
-    const idx = files.findIndex((f) => f.id === fileId);
-    if (idx >= 0) files.splice(idx, 1);
-    store.removeFile(fileId);
-    if (state.activeFile === fileId) { state.activeFile = null; state.viewMode = 'merged'; }
+  async function loadCachedFile(c) {
+    if (!c.data) { flash('file not found: ' + c.name); return; }
+    await loadFiles([new File([c.data], c.name, { type: 'text/plain' })]);
+  }
+
+  function removeFileById(id) {
+    if (cacheEntries.some((c) => c.id === id)) {
+      cacheEntries = cacheEntries.filter((c) => c.id !== id);
+      LT.cacheDelete(id);
+      renderFiles(); saveState();
+      return;
+    }
+    const idx = files.findIndex((f) => f.id === id);
+    if (idx < 0) return;
+    const f = files[idx];
+    files.splice(idx, 1);
+    store.removeFile(id);
+    if (state.activeFile === id) { state.activeFile = null; state.viewMode = 'merged'; }
+    const matches = cacheEntries.filter((c) => c.name === f.name && c.size === f.size);
+    for (const c of matches) LT.cacheDelete(c.id);
+    cacheEntries = cacheEntries.filter((c) => !matches.includes(c));
     displayCache = new Map();
-    onKeptChanged();
-    renderFiles();
-    saveState();
+    onKeptChanged(); renderFiles(); saveState();
   }
 
   /* ---------------- view model ---------------- */
@@ -2758,9 +2923,11 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       if (!t.trim()) return;
       loadFiles([new File([t], 'pasted.log', { type: 'text/plain' })]);
     };
-    $('clear-files').onclick = () => {
+    $('clear-files').onclick = async () => {
       files.slice().forEach((f) => store.removeFile(f.id));
       files.length = 0;
+      cacheEntries = [];
+      await LT.cacheClear();
       state.activeFile = null;
       onKeptChanged(); renderFiles(); saveState();
     };
@@ -2897,6 +3064,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     renderChips(); renderRules(); renderPresets(); renderFiles(); renderBookmarks(); updateStatus();
     bindViewer();
     applySide();
+    restoreCache().catch(() => {});
 
     // keyboard
     document.addEventListener('keydown', (e) => {

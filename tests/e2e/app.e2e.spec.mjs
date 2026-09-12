@@ -40,6 +40,10 @@ afterEach(async () => {
 
 async function fresh(hash) {
   await page.goto(url() + (hash || ''), { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => new Promise((res) => {
+    const r = indexedDB.deleteDatabase('log-triage-cache');
+    r.onsuccess = r.onerror = r.onblocked = () => res();
+  }));
   await page.evaluate(() => localStorage.removeItem('log_triage_state_v1'));
   await page.reload({ waitUntil: 'domcontentloaded' });
 }
@@ -524,6 +528,47 @@ test('★ only-bookmarks toggle filters the viewer to bookmarked lines', async (
   assert.strictEqual(lnAfter, 4, 'remaining bookmarked line is line 4');
   await click('btn-bmonly'); // back to all lines
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44');
+});
+
+test('file cache: previous session is listed after reload, cached file reloads, missing content shows as file not found', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  // reopen the app: the cache lists the previous file as restorable
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 1, null, { timeout: 8000 });
+  const listed = await page.evaluate(`JSON.stringify((() => {
+    const el = document.querySelector('.file-item');
+    return { name: el.querySelector('.fname').textContent, cached: el.className.includes('cached'), missing: el.className.includes('missing') };
+  })())`).then(JSON.parse);
+  assert.strictEqual(listed.name, 'demo.log');
+  assert.ok(listed.cached && !listed.missing, 'cached entry is restorable');
+  // clicking it re-ingests from the local cache
+  await page.evaluate(() => document.querySelector('.file-item').click());
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 20000 });
+  // an entry without cached content is listed greyed out as file not found
+  await page.evaluate(() => LT.cachePut({ id: 'cache_gone', name: 'gone.log', size: 12, format: '—', ts: 1 }));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 2, null, { timeout: 8000 });
+  const missing = await page.evaluate(`JSON.stringify((() => {
+    const el = Array.from(document.querySelectorAll('.file-item')).find((x) => x.className.includes('missing'));
+    return { found: !!el, badge: el ? el.querySelector('.badge.miss').textContent : '' };
+  })())`).then(JSON.parse);
+  assert.ok(missing.found && /file not found/.test(missing.badge), 'missing entry greyed with file not found');
+  // ✕ on the missing entry removes it from the cache list
+  await page.evaluate(() => {
+    const el = Array.from(document.querySelectorAll('.file-item')).find((x) => x.className.includes('missing'));
+    el.querySelector('.fx').click();
+  });
+  try {
+    await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 1, null, { timeout: 8000 });
+  } catch (e) {
+    const diag = await page.evaluate(() => JSON.stringify({
+      items: Array.from(document.querySelectorAll('.file-item')).map((x) => x.className),
+      errs: window.__errs || []
+    }));
+    throw new Error('state after X: ' + diag);
+  }
 });
 
 test('search results panel scrolls when content exceeds the viewport', async () => {
