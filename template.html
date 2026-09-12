@@ -68,9 +68,11 @@ header h1 span { color: var(--accent); }
 #quick { flex: 1; min-width: 200px; max-width: 480px; font-family: var(--mono); font-size: 12.5px; }
 #viewer-wrap { flex: 1; min-height: 0; position: relative; background: var(--bg); }
 #viewer { position: absolute; inset: 0; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
-#vspacer { position: relative; width: max-content; min-width: 100%; }
+#vspacer { position: relative; width: 100%; min-width: 0; }
+#viewer.nowrap #vspacer { width: max-content; min-width: 100%; }
 .vrow { display: flex; white-space: pre; height: var(--row-h); line-height: var(--row-h); cursor: text; }
-.vrow.wrap { white-space: pre-wrap; word-break: break-all; height: auto; }
+.vrow.wrap { white-space: pre-wrap; word-break: break-word; height: auto; min-height: var(--row-h); }
+.vrow.wrap .vcell.txt { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; word-break: break-word; }
 .vrow:hover { background: var(--surface2); }
 .vrow.sel { background: var(--selection); }
 .vrow.tint-w { background: var(--tint-w); } .vrow.tint-w:hover, .vrow.tint-w.sel { background: var(--tint-w); outline: 1px solid var(--warn); }

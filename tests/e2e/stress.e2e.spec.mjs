@@ -133,6 +133,7 @@ test('stress: clicking an instant search result jumps to the line', async () => 
     q.dispatchEvent(new Event('input'));
   });
   await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 20000 });
+  await page.waitForFunction(() => document.querySelector('#search-results .sr-row') !== null, null, { timeout: 10000 });
   await page.evaluate(() => document.querySelector('#search-results .sr-row').click());
   await page.waitForTimeout(300);
   const st = await state();

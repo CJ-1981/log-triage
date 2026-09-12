@@ -277,18 +277,24 @@
     if (heights) return;
     const n = view.length;
     heights = new Array(n);
+    const v = viewer();
     if (!measureEl) {
+      // a real .vrow.wrap clone so measured heights match rendered rows exactly
       measureEl = document.createElement('div');
-      measureEl.style.cssText = 'position:absolute;visibility:hidden;white-space:pre-wrap;word-break:break-all;font-family:var(--mono);font-size:12.5px;left:-9999px;top:0;';
+      measureEl.className = 'vrow wrap';
+      measureEl.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;font-family:var(--mono);font-size:12.5px;';
+      measureEl.innerHTML = '<div class="vcell bm">☆</div><div class="vcell ln">00000000</div>' +
+        '<div class="vcell fl">00000000</div><div class="vcell lv">W</div>' +
+        '<div class="vcell txt" style="white-space:inherit"></div>';
       document.body.appendChild(measureEl);
     }
-    measureEl.style.width = Math.max(200, viewer().clientWidth -
-      (110 + (state.viewMode === 'merged' ? 140 : 0))) + 'px';
+    measureEl.style.display = 'flex';
+    measureEl.style.width = v.clientWidth + 'px';
+    measureEl.querySelector('.fl').style.display = state.viewMode === 'merged' ? '' : 'none';
+    const txtCell = measureEl.querySelector('.txt');
     for (let i = 0; i < n; i++) {
-      const t = displayText(view[i]);
-      measureEl.textContent = t;
-      const lines = Math.max(1, Math.ceil(measureEl.offsetHeight / ROW_H));
-      heights[i] = lines * ROW_H;
+      txtCell.textContent = displayText(view[i]);
+      heights[i] = Math.max(ROW_H, measureEl.offsetHeight);
     }
     heightSum = new Array(n + 1); heightSum[0] = 0;
     for (let i = 0; i < n; i++) heightSum[i + 1] = heightSum[i] + heights[i];
@@ -345,7 +351,7 @@
         '<div class="vcell ln">' + rec.lineNo + '</div>' +
         (state.viewMode === 'merged' ? '<div class="vcell fl" title="' + esc(fileDisplayName(rec.fileId)) + '">' + esc(fileDisplayName(rec.fileId)) + '</div>' : '') +
         (rec.level ? '<div class="vcell lv lvl-' + esc(rec.level) + '">' + esc(rec.level) + '</div>' : '<div class="vcell lv"></div>') +
-        '<div class="vcell" style="white-space:inherit">' + (hl || esc(text)) + '</div>';
+        '<div class="vcell txt" style="white-space:inherit">' + (hl || esc(text)) + '</div>';
       row.dataset.idx = i;
       inner.appendChild(row);
     }
@@ -973,6 +979,8 @@
     state.wrapOn = on;
     $('btn-wrap').textContent = 'Wrap: ' + (on ? 'ON' : 'OFF');
     $('btn-wrap').classList.toggle('on', on);
+    // nowrap keeps long lines on one scrollable row; wrap clips to the column
+    viewer().classList.toggle('nowrap', !on);
     invalidateHeights(); saveState(); renderRows();
   }
   function setFollow(on) {

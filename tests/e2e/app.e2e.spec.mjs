@@ -213,8 +213,37 @@ test('wrap mode renders scrolled pages at their true position', async () => {
   await fresh();
   await click('btn-demo');
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  // bring long stack-trace lines into the window
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = 'AndroidRuntime';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForTimeout(250);
   await click('btn-wrap');
   await page.waitForTimeout(300); // wrap heights re-measured, spacer resized
+  const geom = await page.evaluate(`JSON.stringify((() => {
+    const el = document.getElementById('viewer');
+    const rows = Array.from(document.querySelectorAll('.vrow'));
+    return {
+      hScroll: el.scrollWidth > el.clientWidth + 1,
+      spacerW: document.getElementById('vspacer').offsetWidth,
+      viewW: el.clientWidth,
+      tallRow: rows.some((r) => r.offsetHeight > 22),
+      totalH: document.getElementById('vspacer').offsetHeight
+    };
+  })())`).then(JSON.parse);
+  assert.ok(!geom.hScroll, 'wrap mode must not overflow horizontally');
+  assert.ok(Math.abs(geom.spacerW - geom.viewW) <= 1, 'spacer width equals viewer width in wrap mode');
+  assert.ok(geom.tallRow, 'long lines actually wrap into multiple visual lines');
+  // clear the filter: with all 44 lines the wrapped content is scrollable
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = '';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForTimeout(250);
+  // scrolling to the bottom must render the last lines at the bottom, not the top
   const scrolled = await page.evaluate(() => {
     const el = document.getElementById('viewer');
     el.scrollTop = el.scrollHeight; // jump to the bottom (scroll event re-renders)

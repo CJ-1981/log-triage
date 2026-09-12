@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Fix: wrap mode now actually wraps long lines — the row container previously stretched to the longest single line (no wrapping, mostly-empty scroll area); windowed pages are also positioned at their true scroll offset
+
 ## 1.1.2 (2026-09-12)
 - fix: release-bot changelog insertion now folds Unreleased bullets into the new version section with a single header (regression-tested)
 
