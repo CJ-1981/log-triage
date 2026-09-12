@@ -1,0 +1,61 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: write
+
+jobs:
+  test-build-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install dependencies
+        run: npm install
+      - name: Unit tests + coverage gate
+        run: npm run test:gate
+      - name: Build single-file HTML
+        run: npm run build
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: E2E tests
+        run: npm run e2e
+      - name: Upload built HTML
+        uses: actions/upload-artifact@v4
+        with:
+          name: log-triage-html
+          path: log-triage.html
+
+  release:
+    needs: test-build-e2e
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Automatic version bump from conventional commits
+        run: node tools/bump.mjs --ci
+      - name: Push release commit and tag
+        run: |
+          git config user.name "log-triage-release-bot"
+          git config user.email "release-bot@users.noreply.github.com"
+          if git diff --quiet; then
+            echo "No version bump needed."
+          else
+            git add package.json README.md docs/changelog.md
+            git commit -m "chore(release): $(node -p "require('./package.json').version")"
+            git tag "v$(node -p "require('./package.json').version")"
+            git push --follow-tags
+          fi
