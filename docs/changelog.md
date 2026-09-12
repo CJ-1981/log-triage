@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.10.0 (2026-09-12)
+- chore: rebuild log-triage.html
+- feat: collapsible bookmarks panel section in sidebar with drag-resize handle; per-file removal clears that file's bookmarks
+
 ## 1.9.0 (2026-09-12)
 - chore: rebuild log-triage.html
 - feat: per-file ✕ removal now purges the file cache entry; duplicate removeFileById declarations merged (cache-aware path restored)
