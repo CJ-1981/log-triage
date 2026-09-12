@@ -187,6 +187,7 @@ kbd { background: var(--surface2); border: 1px solid var(--border); border-radiu
         <div id="chips-row"><span class="muted" id="chips-hint">Level chips appear after loading</span></div>
         <div id="vtools">
           <input type="text" id="quick" placeholder="quick filter (live)…">
+          <input type="text" id="goto-ln" placeholder="line #⏎" title="go to line — type a line number and press Enter" style="width:80px">
           <button id="btn-mask" title="toggle masking (M)">Mask: ON</button>
           <button id="btn-wrap" title="wrap long lines (W)">Wrap: OFF</button>
           <button id="btn-follow" title="follow tail">Follow: OFF</button>
@@ -1689,6 +1690,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   /* ---------------- view model ---------------- */
   let view = [];            // current visible records
   let seqToIdx = new Map();
+  let keptLineMap = new Map(); // "displayName:lineNo" -> record (for jumps)
   let filteredCount = 0;
 
   function onKeptChanged() {
@@ -1708,6 +1710,8 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     }
     view = arr;
     seqToIdx = new Map(view.map((r, i) => [r.seq, i]));
+    keptLineMap = new Map();
+    for (const r of store.kept) keptLineMap.set(fileDisplayName(r.fileId) + ':' + r.lineNo, r);
     filteredCount = view.length;
     displayCache = new Map();
     selection.clear();
@@ -2091,7 +2095,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     for (const r of results) (byFile[r.file] = byFile[r.file] || []).push(r);
     const total = results.length;
     const note = results.length >= cap ? ' (capped at ' + cap + ' — refine the pattern)' : '';
-    $('search-progress').textContent = 'deep scan: ' + total + ' match(es)' + note;
+    $('search-progress').textContent = 'deep scan: ' + total + ' match(es) over ' + scanned + ' lines' + note;
     if (mode === 'count') {
       out.innerHTML = Object.keys(byFile).map((f) => '<div class="sr-file">' + esc(f) + ': ' + byFile[f].filter((r) => r.isMatch).length + '</div>').join('');
       return;
@@ -2389,17 +2393,52 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   function jumpTo(idx) {
     switchTab('viewer');
     const v = viewer();
-    const y = state.wrapOn ? (measureWrapOff() || 0) : idx * ROW_H;
+    let y;
+    if (state.wrapOn) {
+      measureWrap();
+      y = (heightSum && heightSum.length > idx) ? heightSum[idx] : 0;
+    } else {
+      y = idx * ROW_H;
+    }
     v.scrollTop = Math.max(0, y - v.clientHeight / 2);
     selection.click(idx);
     renderRows(); updateStatus();
-    showDrawer(view[idx]);
+    if (view[idx]) showDrawer(view[idx]);
   }
-  function measureWrapOff() { // cheap jump in wrap mode
-    if (!state.wrapOn) return 0;
-    measureWrap();
-    return heightSum[Math.min(idx0(), heightSum.length - 1)] || 0;
-    function idx0() { return 0; }
+
+  /** Jump from a search-result row to the line in the viewer. */
+  function jumpFromSearch(row) {
+    const file = row.dataset.file;
+    const lineNo = Number(row.dataset.ln);
+    const rec = keptLineMap.get(file + ':' + lineNo);
+    if (rec) {
+      if (seqToIdx.has(rec.seq)) {
+        jumpTo(seqToIdx.get(rec.seq));
+        return;
+      }
+      $('st-progress').textContent = 'line ' + lineNo + ' is hidden by active filters — clear quick filter / chips to view it';
+      setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
+      return;
+    }
+    // line beyond the kept cap: show what we have from the search itself
+    switchTab('viewer');
+    const d = $('drawer');
+    d.className = 'open';
+    d.innerHTML = '<h3>' + esc(file) + ':' + esc(lineNo) +
+      ' <small class="muted">(beyond kept-line cap)</small><button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
+      '<dl><div><dt>text</dt><dd>' + esc(row.textContent.replace(/^[^ ]+ /, '')) + '</dd></div></dl>' +
+      '<p class="muted">This line was released from memory (kept-line cap). Deep scan re-read the file from disk to find it.</p>';
+  }
+
+  /** Go-to-line: scroll the viewer to a specific line number. */
+  function goToLine() {
+    const target = parseInt($('goto-ln').value, 10);
+    if (!target || target < 1) return;
+    for (let i = 0; i < view.length; i++) {
+      if (view[i].lineNo === target) { jumpTo(i); return; }
+    }
+    $('st-progress').textContent = 'line ' + target + ' is not in the current view (filtered out or beyond the kept-line cap)';
+    setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
   }
 
   function switchTab(name) {
@@ -2530,6 +2569,13 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     });
     $('btn-deepscan').onclick = deepScan;
     $('btn-rg-export').onclick = exportRg;
+    $('search-results').addEventListener('click', (e) => {
+      const row = e.target.closest('.sr-row');
+      if (row) jumpFromSearch(row);
+    });
+    $('goto-ln').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') { goToLine(); e.preventDefault(); }
+    });
 
     $('btn-add-rule').onclick = () => { state.rules.push({ name: 'rule ' + (state.rules.length + 1), pattern: '', caseSensitive: false, action: 'include', enabled: true }); renderRules(); };
     ;['time-from', 'time-to'].forEach((id) => { $(id).onchange = applyFilters; });

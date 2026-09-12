@@ -102,6 +102,16 @@ Version reference: v1.0.0. Development was test-driven and proceeded through qua
 7. Bookmark persistence across reload.
 8. Masked export download, byte-checked.
 
+Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`):
+
+1. Ingest timing (<60 s) with total-line count asserted against the fixture on disk.
+2. Real mouse-wheel scrolling of the virtualized viewer (bounded window, monotonic line numbers).
+3. Go-to-line inside the kept window (viewer scrolls, drawer shows the exact line).
+4. Go-to-line for a line released by the kept-line cap (clear explanatory status).
+5. Clicking an instant-search result jumps to the line (tab switch, selection, drawer).
+6. Uncapped deep scan covers every line on disk (`deep scan: N match(es) over M lines` with M = fixture lines) and finds matches the kept cap hides.
+7. Wrap toggle over the full kept set stays responsive; rapid chip toggling stays consistent and error-free.
+
 ## Fixture inventory (`tests/fixtures/`)
 
 | Fixture | Format | Contents |
