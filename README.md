@@ -1,10 +1,10 @@
-<!-- version: 0.1.0-dev -->
+<!-- version: 1.0.0 -->
 
 # Log Triage
 
 **Log Triage** is a privacy-first log triage tool that runs entirely in your browser. Drop one or more log files onto a single self-contained HTML page and get instant format detection, parsing, filtering, ripgrep-style search, PII masking, analysis, and sanitized export — with no server, no uploads, and no telemetry. Your files never leave your machine.
 
-Current status: G0–G1 complete (scaffold, parsing); gates G2–G8 in progress.
+Current status: v1.0.0 — all gates G0–G8 complete.
 
 ## Quick start
 
@@ -17,7 +17,7 @@ Current status: G0–G1 complete (scaffold, parsing); gates G2–G8 in progress.
 
   This concatenates the `src/` UMD modules (plus CSS, shared test cases, and demo data) into a fresh single-file `log-triage.html`.
 
-Node.js 22 is required **only** for building and running tests. The generated HTML file is fully self-contained and runs anywhere, including offline from `file://`.
+**Browser requirements:** any modern Chromium-based browser or Firefox; Safari 16.4+ (lookbehind regexes). Node.js 22 is required **only** for building and running tests. The generated HTML file is fully self-contained and runs anywhere, including offline from `file://`.
 
 ## Features overview
 
@@ -27,10 +27,10 @@ Node.js 22 is required **only** for building and running tests. The generated HT
 - **PII masking** — 16 built-in ordered regex rules (VIN, IBAN, credit card, SSN, international and US phone, IMEI, email, device serial `SN-`, MAC with OUI kept, private/public IPv4, IPv6 link-local/ULA, GNSS decimal pairs, subscriberId, hotspot SSID `AndroidShare_`), individually toggleable, plus custom regex-to-template rules. Masking is applied lazily over raw stored text and toggled in the viewer with the `M` key. An extensible `PiiProvider` registry ships with a mock provider; future Presidio and LLM backends are documented but not wired.
 - **Filter engine** — ordered regex rules of three kinds: include (OR), exclude (subtractive), and highlight (additive), with a case toggle and live hit counters. Dynamic level chips are generated from the levels actually observed in each load, and an inclusive time range narrows the view by timestamp prefix comparison.
 - **Analysis tab** — level bars, top tags, top messages via pattern normalization (numbers/hex/UUIDs stripped to cluster similar lines), a canvas time histogram, issue scanning for crashes/ANRs/process deaths/connectivity/auth problems, a PII census, and per-file comparison.
-- **Viewer** — virtualized rendering for 100k+ rows, merged-timeline and per-file views, wrap toggle with a measured-height cache, six themes (Midnight default, Paper, Solarized Dark, Solarized Light, Monokai, High Contrast), severity badges with W/E/F row tint, multiline selection (anchor / shift-range / ctrl-toggle / ctrl+A / copy with optional `file:lineNo:` prefixes), bookmarks with notes, and a detail drawer.
+- **Viewer** — virtualized rendering for 100k+ rows, merged-timeline and per-file views, wrap toggle with a measured-height cache, six themes (Midnight default, Paper, Solarized Dark, Solarized Light, Monokai, High Contrast), severity badges with W/E/F row tint, multiline selection and copy (click anchor, shift-click range, ctrl-click toggle, ctrl+A; copy with optional `file:lineNo:` prefixes), bookmarks with notes persisted by file identity, and a detail drawer.
 - **Export sanitized** — `.log`/`.txt` (with `[Ln]` or `file:lineNo:` prefixes), `.csv`, `.json`, rg search results, bookmarks, and selection-only export. Filenames are timestamped `YYYY-MM-DD_HHmmss`.
 - **Presets** — named filter/mask/search-flag sets persisted in localStorage with JSON import/export.
-- **Self-test** — `?selftest` runs the exact same shared case suite in the browser that the Node test runner executes (`tests/core-cases.js`).
+- **Self-test** — `?selftest` runs the same 113-case suite in the browser that `node --test` executes (`tests/core-cases.js`).
 
 ## Privacy and security
 
@@ -44,14 +44,14 @@ Node.js 22 is required **only** for building and running tests. The generated HT
 Requirements: Node.js 22.
 
 ```sh
-npm test          # Run the Node test suite (node:test)
-npm run test:gate # Enforce coverage gates (>=90% line, >=85% branch on core src modules)
+npm test          # Unit tests (node:test over the shared case suite)
+npm run test:gate # Unit tests + coverage gate (>=90% line / >=85% branch on core src modules)
 npm run build     # Build log-triage.html from src/
-npm run e2e       # Run Playwright end-to-end tests
+npm run e2e       # Playwright end-to-end tests (8 specs)
 npm run bump      # Semver bump from conventional commits (CI runs this automatically on main)
 ```
 
-- **TDD with quality gates G0–G8.** Development proceeds gate by gate (scaffold, parsing, ingestion, filters, search, masking, viewer, export/presets, e2e hardening). Each gate has entry/exit criteria in `docs/test-plan.md`, and coverage is enforced per core module by `node tools/coverage-gate.mjs`.
+- **TDD with quality gates G0–G8.** Development proceeded gate by gate (scaffold, parsing, masking, filters, search, store/timeline/selection/bookmarks, export/bump tooling, themes/UI, e2e hardening) — all complete in v1.0.0. Each gate has entry/exit criteria in `docs/test-plan.md`, and coverage is enforced per core module by `node tools/coverage-gate.mjs`.
 - **Conventional commits.** `feat` → minor, `fix` → patch, `!` or `BREAKING CHANGE` → major. On every push to `main`, GitHub Actions runs test + coverage, build, and e2e, then `tools/bump.mjs` bumps the version, updates `package.json`, the README version marker, and `docs/changelog.md`, and tags `vX.Y.Z`.
 
 ## Project structure

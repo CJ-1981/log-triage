@@ -74,7 +74,7 @@ Implemented (G0–G1):
 | `src/parser.js` | Parsers for the six formats; normalized records (`file · lineNo · ts · level · tag · pid · msg`) with year-less `MM-DD HH:MM:SS.mmm` timestamps. |
 | `src/_src.js` | Node aggregator that exports all modules for tests and the coverage gate. |
 
-Planned (G2–G8):
+Implemented in G2–G8:
 
 | Module | Responsibility |
 | --- | --- |
@@ -91,6 +91,8 @@ Planned (G2–G8):
 | `src/themes.js` | Six themes via `body[data-theme]` CSS variables (Midnight default). |
 | `src/selftest.js` | In-browser runner for the shared case suite (`?selftest`). |
 | `src/app-*.js` | UI glue: file list, viewer, analysis tab, search results panel, presets UI (exempt from coverage gates). |
+
+The shipped UI glue is the single module `src/app.js` (exempt from the coverage gate); the dev helpers `tools/serve.mjs` (static server), `tools/shots.mjs` (screenshot capture), and `tools/genbig.mjs` (big-log generator) support e2e and performance verification and contribute no runtime code.
 
 ## Build pipeline
 
