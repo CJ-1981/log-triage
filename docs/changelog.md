@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.12.1 (2026-09-12)
+- chore: rebuild log-triage.html
+- fix: materialize issue-scan rule groups at boot (analysis tab crashed when state.issueGroups was unset); e2e diagnostics for panel render
+
 ## 1.12.0 (2026-09-12)
 - chore: rebuild log-triage.html
 - feat: analysis tab file selector scopes every section to one file or all; auth issue scan detects failed password lines
