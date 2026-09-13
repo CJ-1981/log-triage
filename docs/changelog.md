@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.23.0 (2026-09-13)
+- feat: suspend-to-RAM issue group for Android logcat analysis
+
 ## 1.22.3 (2026-09-13)
 - fix: post-merge review follow-ups (archive budget semantics, zip claim reserve)
 
