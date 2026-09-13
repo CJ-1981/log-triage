@@ -1072,6 +1072,7 @@ test('issue scan flags suspend-to-RAM transitions with the built-in suspend grou
   await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'suspend.log')]);
   await page.waitForFunction(() => document.getElementById('st-total').textContent !== '0', null, { timeout: 8000 });
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => document.querySelectorAll('#analysis-panel .issue').length > 0, null, { timeout: 8000 });
   const issues = await page.evaluate(() =>
     Array.from(document.querySelectorAll('#analysis-panel .issue')).map((e) => e.textContent));
   // 12 of the 14 lines are suspend events; "SleepScheduled" and the filesystem
@@ -1096,6 +1097,7 @@ test('issueGroups migration appends the suspend rule to older persisted sessions
   });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => document.querySelectorAll('#analysis-panel input[data-ig-k=kind]').length > 0, null, { timeout: 8000 });
   const rows = await page.evaluate(() =>
     Array.from(document.querySelectorAll('#analysis-panel input[data-ig-k="kind"]')).map((i) => i.value));
   assert.ok(rows.includes('suspend'), 'suspend rule appended by migration, got: ' + rows.join(', '));
@@ -1124,6 +1126,27 @@ test('search tab rg options have explanatory tooltips', async () => {
   assert.match(titles.after, /[Aa]fter/);
 });
 
+test('analysis tab shows an analyzing placeholder; deep scan has a cancel control', async () => {
+  await fresh();
+  await page.evaluate(() => {
+    window.__sawAnalyzing = false;
+    const p = document.getElementById('analysis-panel');
+    new MutationObserver(() => { if (p.textContent.includes('analyzing')) window.__sawAnalyzing = true; })
+      .observe(p, { childList: true, subtree: true, characterData: true });
+  });
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  // first analysis open shows the placeholder, then the panel renders
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => document.querySelectorAll('#analysis-panel .stat-card').length > 0, null, { timeout: 8000 });
+  assert.ok(await page.evaluate(() => window.__sawAnalyzing), 'analyzing placeholder painted at least once');
+  // deep scan wiring: cancel control exists, hidden while idle
+  const cancel = await page.evaluate(() => {
+    const b = document.getElementById('btn-deep-cancel');
+    return { exists: !!b, hidden: b.classList.contains('hidden') };
+  });
+  assert.ok(cancel.exists && cancel.hidden, 'cancel button present but hidden while idle');
+});
 test('drawer shows TID next to PID and copy buttons for the line', async () => {
   await fresh();
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
@@ -1217,7 +1240,7 @@ test('issue scan groups by kind with severity color coding', async () => {
 test('loads a .7z archive: extracted files appear in the file list', { skip: !find7z() }, async () => {
   await fresh();
   await page.setInputFiles('#file-input', [sevenZipBundle()]);
-  await page.waitForFunction(() => document.getElementById('st-total').textContent !== '0', null, { timeout: 15000 });
+  await page.waitForFunction(() => document.querySelectorAll('.file-item .fname').length === 2, null, { timeout: 15000 });
   const names = await page.evaluate(() =>
     Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent));
   assert.ok(names.includes('bundle/a.log'), 'bundle/a.log listed, got: ' + names.join(', '));
@@ -1230,7 +1253,7 @@ test('loads a .7z archive: extracted files appear in the file list', { skip: !fi
 test('archive export re-packs the extract (.7z stored) as a download', { skip: !find7z() }, async () => {
   await fresh();
   await page.setInputFiles('#file-input', [sevenZipBundle()]);
-  await page.waitForFunction(() => document.getElementById('st-total').textContent !== '0', null, { timeout: 15000 });
+  await page.waitForFunction(() => document.querySelectorAll('.file-item .fname').length === 2, null, { timeout: 15000 });
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
   await page.evaluate(() => {
     const sel = document.getElementById('exp-archive-format');

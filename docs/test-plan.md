@@ -64,7 +64,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 
 - **Shared cases:** 131 shared logic cases plus a theme check pass in both runners — `node --test` and the browser `?selftest` page each report **132 passed / 0 failed** (the suite has grown with the feature gates: archives/7z, bookmark management, the expanded issue-scan catalog).
 - **Coverage gate:** green on all core `src/` modules (≥ 90% line / ≥ 85% branch enforced by `node tools/coverage-gate.mjs`); current new-module numbers: `lzma.js` 100%/93%, `format-7z.js` 100%/86%, `archive.js` 96%/89%, `bookmarks.js` 96%/87%.
-- **E2e:** Playwright suite **48/48 green** (40 app + 8 stress) locally (spec lists below).
+- **E2e:** Playwright suite **50/50 green** (42 app + 8 stress) locally (spec lists below).
 - **Error guard:** every e2e test ends with an `afterEach` assertion of zero uncaught page errors (`page.on(pageerror)` plus an in-page `window.__errs` tally) — the guard that would have caught the v1.1.x file-switch `ReferenceError` (see Retrospective R1).
 - **Performance / big file:** a 300 MB / 3,380,636-line synthetic log was fully streamed and counted in ~31 s in Chromium (~108 MB/s), with exact per-file counters, FIFO trim at the 100k kept-line cap, and zero page errors. Throughput in hidden/background tabs is lower because browsers throttle them; the app uses a `MessageChannel` yield (ADR-0006) to minimize this effect.
 
@@ -81,7 +81,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 | --- | --- |
 | `npm test` | Run the Node unit suites (`node:test`, Node 22): shared logic cases + bump-tooling suite. |
 | `npm run test:gate` | Run unit tests with coverage and enforce ≥ 90% line / ≥ 85% branch per core module. |
-| `npm run e2e` | Run the Playwright end-to-end suite (48 specs: 40 app + 8 stress) against the built `log-triage.html`. |
+| `npm run e2e` | Run the Playwright end-to-end suite (50 specs: 42 app + 8 stress) against the built `log-triage.html`. |
 | `npm run e2e:stress` | Run only the stress suite against the generated big fixture (`tools/genbig.mjs`). |
 | `npm run build` | Rebuild `log-triage.html` from `src/` (inlines CSS, modules, shared cases, demo log). |
 
@@ -93,7 +93,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 - **Browser:** `build.js` inlines the identical file into `log-triage.html`; opening it with `?selftest` executes the suite and reports pass/fail counts and failing case names.
 - **Guarantee:** any behavior change must be expressed as a case update, so Node CI and the in-browser self-test can never disagree.
 
-## E2e scope (Playwright — 48 specs: 40 app + 8 stress)
+## E2e scope (Playwright — 50 specs: 42 app + 8 stress)
 
 App suite (37 specs) — coverage includes:
 
@@ -126,6 +126,7 @@ App suite (37 specs) — coverage includes:
 27. Expanded issue catalog (14 groups): shared cases pin native crash signals (`Fatal signal`, kernel panic), lmkd/OOM memory pressure, binder transaction failures, SELinux denials, watchdog kills, thermal critical/shutdown, storage exhaustion, boot-loop/reason lines, modem subsystem restarts, ANR `am_anr`/`Force finishing`, and the auth tightening (successful token refresh / credential-encrypted storage / LIGHT thermal status are NOT flagged).
 28. Issue list tree + severity colors: findings group into collapsible per-kind details sorted crit / high / med / low (demo: crash first, auto-open; others collapsed), summary counts match leaves, and a leaf click still jumps to the line.
 29. Search-tab rg tooltips: every ripgrep option control (fixed-strings, whole-word, invert, case-sensitivity select, result-mode select, context-before/after, Deep scan) carries an explanatory hover tooltip; asserted by e2e so future controls cannot silently ship without one.
+30. Processing indicators: the analysis tab paints an analyzing placeholder before its deferred heavy render (MutationObserver-verified); the deep-scan cancel control is present-but-hidden while idle; archive block progress yields so messages paint before synchronous LZMA decode.
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 

@@ -253,6 +253,8 @@
     for (let i = 0; i < parsed.folders.length; i++) {
       onProgress('decompressing ' + name + ' (block ' + (i + 1) + '/' + parsed.folders.length + ')');
       budgetTake(parsed.folders[i].outSize); // claimed decoded size, before allocating it
+      // let the progress message paint before the (synchronous) LZMA decode
+      await new Promise((resolve) => setTimeout(resolve, 0));
       decoded.push(await F7.decode7zFolder(data, parsed.folders[i]));
     }
     const real = parsed.files.filter((f) => !f.isDir);

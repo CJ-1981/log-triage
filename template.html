@@ -329,6 +329,7 @@ table.rules { min-width: 620px; }
           <label title="Context after (-A): deep scan also shows this many lines AFTER each match — 1 line = 0">
             -A<input type="text" id="rg-after" value="0" style="width:36px"></label>
           <button id="btn-deepscan" class="primary" title="Deep scan: re-read the COMPLETE files from disk, ignoring the kept-line cap — finds matches that are no longer in memory; the instant results above only cover kept lines">Deep scan files</button>
+          <button id="btn-deep-cancel" class="hidden" title="stop the running deep scan">✕ Cancel</button>
           <button id="btn-rg-collapse" title="collapse all file groups">Collapse all</button>
           <button id="btn-rg-expand" title="expand all file groups">Expand all</button>
           <button id="btn-rg-export">Export results</button>

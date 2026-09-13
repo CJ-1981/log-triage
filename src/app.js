@@ -815,44 +815,52 @@
     const before = Math.max(0, Number($('rg-before').value) || 0);
     const after = Math.max(0, Number($('rg-after').value) || 0);
     const cap = 10000;
+    const cancelBtn = $('btn-deep-cancel');
     deepAbort = false;
+    cancelBtn.classList.remove('hidden');
     const results = [];
     let scanned = 0;
-    for (const entry of files) {
-      if (deepAbort) break;
-      const ring = [];
-      let afterLeft = 0;
-      let lineNo = 0;
-      for await (const line of streamLines(entry.file, (n) => {
-        entry.read += n;
-        $('search-progress').textContent = 'deep scan ' + entry.name + ': ' + LT.fmtBytes(entry.read) + ' / ' + LT.fmtBytes(entry.size) + ' — ' + results.length + ' matches';
-      })) {
-        if (deepAbort) break;
-        lineNo++;
-        scanned++;
-        const masked = state.maskOn ? engine.maskLine(line) : line;
-        if (LT.matchLine(s, line)) {
-          for (const r of ring) results.push({ file: entry.name, lineNo: r.lineNo, ts: LT.detectTs(r.text), text: state.maskOn ? engine.maskLine(r.text) : r.text, isMatch: false });
-          ring.length = 0;
-          results.push({ file: entry.name, lineNo, ts: LT.detectTs(line), text: masked, isMatch: true });
-          afterLeft = after;
-        } else if (afterLeft > 0) {
-          results.push({ file: entry.name, lineNo, ts: LT.detectTs(line), text: masked, isMatch: false });
-          afterLeft--;
-        } else {
-          ring.push({ lineNo, text: line });
-          while (ring.length > before) ring.shift();
+    let cancelled = false;
+    try {
+      for (const entry of files) {
+        if (deepAbort) { cancelled = true; break; }
+        const ring = [];
+        let afterLeft = 0;
+        let lineNo = 0;
+        for await (const line of streamLines(entry.file, (n) => {
+          entry.read += n;
+          $('search-progress').textContent = 'deep scan ' + entry.name + ': ' + LT.fmtBytes(entry.read) + ' / ' + LT.fmtBytes(entry.size) + ' — ' + results.length + ' matches';
+        })) {
+          if (deepAbort) { cancelled = true; break; }
+          lineNo++;
+          scanned++;
+          const masked = state.maskOn ? engine.maskLine(line) : line;
+          if (LT.matchLine(s, line)) {
+            for (const r of ring) results.push({ file: entry.name, lineNo: r.lineNo, ts: LT.detectTs(r.text), text: state.maskOn ? engine.maskLine(r.text) : r.text, isMatch: false });
+            ring.length = 0;
+            results.push({ file: entry.name, lineNo, ts: LT.detectTs(line), text: masked, isMatch: true });
+            afterLeft = after;
+          } else if (afterLeft > 0) {
+            results.push({ file: entry.name, lineNo, ts: LT.detectTs(line), text: masked, isMatch: false });
+            afterLeft--;
+          } else {
+            ring.push({ lineNo, text: line });
+            while (ring.length > before) ring.shift();
+          }
+          if (results.length >= cap) break;
+          if ((scanned & 0x3fff) === 0) await tick();
         }
-        if (results.length >= cap) { deepAbort = false; break; }
-        if ((scanned & 0x3fff) === 0) await tick();
+        if (results.length >= cap) break;
       }
-      if (results.length >= cap) break;
+    } finally {
+      cancelBtn.classList.add('hidden');
     }
     const mode = $('rg-mode').value;
     const byFile = {};
     for (const r of results) (byFile[r.file] = byFile[r.file] || []).push(r);
     const total = results.length;
-    const note = results.length >= cap ? ' (capped at ' + cap + ' — refine the pattern)' : '';
+    const note = results.length >= cap ? ' (capped at ' + cap + ' — refine the pattern)'
+      : cancelled ? ' (cancelled after ' + scanned + ' lines)' : '';
     $('search-progress').textContent = 'deep scan: ' + total + ' match(es) over ' + scanned + ' lines' + note;
     if (mode === 'count') {
       out.innerHTML = Object.keys(byFile).map((f) => '<div class="sr-file">' + esc(f) + ': ' + byFile[f].filter((r) => r.isMatch).length + '</div>').join('');
@@ -1023,8 +1031,22 @@
     }).join('');
   }
 
+  let analysisToken = 0;
   function renderAnalysis() {
     const p = $('analysis-panel');
+    if (!p) return;
+    const token = ++analysisToken;
+    // first paint shows an analyzing placeholder; the (potentially multi-second)
+    // heavy pass runs deferred so the tab never freezes without feedback.
+    // Re-renders (rule edits, scope change) keep the previous content visible
+    // instead of flickering a placeholder.
+    if (!p.querySelector('.stat-card')) {
+      p.innerHTML = '<div class="muted" style="padding:24px">analyzing…</div>';
+    }
+    setTimeout(() => { if (token === analysisToken) renderAnalysisInto(p); }, 30);
+  }
+
+  function renderAnalysisInto(p) {
     const st = store.stats();
     const sel = state.analysisFile || '';
     const selStats = sel ? (st.files[sel] || { total: 0, kept: 0, dropped: 0, bytes: 0 }) : null;
@@ -1884,6 +1906,7 @@
       };
     });
     $('btn-deepscan').onclick = deepScan;
+    $('btn-deep-cancel').onclick = () => { deepAbort = true; };
     $('btn-rg-export').onclick = exportRg;
     const setAllGroups = (open) => {
       document.querySelectorAll('#search-results details.sr-group').forEach((d) => { d.open = open; });
