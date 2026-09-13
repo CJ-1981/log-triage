@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.22.0 (2026-09-13)
+- feat: per-entry ✕ buttons in the bookmarks panel
+
 ## 1.21.1 (2026-09-13)
 - fix: bookmarks Clear button wipes all bookmarks in one click
 
