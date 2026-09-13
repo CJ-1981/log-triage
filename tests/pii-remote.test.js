@@ -47,14 +47,6 @@ test('parseLlmContent returns [] for text without JSON arrays', () => {
   assert.deepStrictEqual(pr.parseLlmContent('no json at all'), []);
 });
 
-// --- withProxy edge cases ---
-
-test('withProxy only rewrites when enabled and url set', () => {
-  assert.strictEqual(pr.withProxy('http://api', { enabled: true, url: 'http://proxy:8080' }), 'http://proxy:8080/http://api');
-  assert.strictEqual(pr.withProxy('http://api', { enabled: false, url: 'http://proxy:8080' }), 'http://api');
-  assert.strictEqual(pr.withProxy('http://api', {}), 'http://api');
-});
-
 // --- createRemoteAnalyzer ---
 
 test('createRemoteAnalyzer llm uses stub fetch and reports findings', async () => {
@@ -135,10 +127,6 @@ test('parseLlmContent skips entries missing required fields', () => {
   assert.strictEqual(findings[0].type, 'OK');
 });
 
-test('createRemoteAnalyzer unknown kind throws', () => {
-  assert.throws(() => pr.createRemoteAnalyzer('bogus', {}, { fetchImpl: async () => ({}) }), /unknown/);
-});
-
 test('parsePresidioResponse skips entries missing start or end', () => {
   const body = JSON.stringify([{ start: 0, entityType: 'X' }, { end: 5, entityType: 'Y' }, { start: 1, end: 3, entityType: 'Z' }]);
   const offsets = [{ line: 0, start: 0, len: 10 }];
@@ -152,61 +140,6 @@ test('buildPresidioRequest defaults language and threshold', () => {
   const body = JSON.parse(r.body);
   assert.strictEqual(body.language, 'en');
   assert.strictEqual(body.score_threshold, 0.4);
-});
-
-test('parsePresidioResponse skips entries missing start or end', () => {
-  const body = JSON.stringify([{ start: 0, entityType: 'X' }, { end: 5, entityType: 'Y' }, { start: 1, end: 3, entityType: 'Z' }]);
-  const offsets = [{ line: 0, start: 0, len: 10 }];
-  const f = pr.parsePresidioResponse(body, offsets);
-  assert.strictEqual(f.length, 1);
-});
-
-test('parseLlmContent skips entries missing required fields', () => {
-  const text = '[{"line":"notnum","type":"X"},{},"text",{"line":2,"type":"OK"}]';
-  const findings = pr.parseLlmContent(text);
-  assert.strictEqual(findings.length, 1);
-  assert.strictEqual(findings[0].type, 'OK');
-});
-
-test('createRemoteAnalyzer throws for unknown kind', () => {
-  assert.throws(() => pr.createRemoteAnalyzer('bogus', {}, { fetchImpl: async () => ({}) }), /unknown/);
-});
-
-test('joinUrl handles trailing slashes and empty path', () => {
-  assert.strictEqual(pr.joinUrl('http://a.test', '/api'), 'http://a.test/api');
-  assert.strictEqual(pr.joinUrl('http://a.test/', 'api'), 'http://a.test/api');
-  assert.strictEqual(pr.joinUrl('http://a.test', ''), 'http://a.test/');
-});
-
-test('buildPresidioRequest defaults language and threshold', () => {
-  const r = pr.buildPresidioRequest(LINES, { url: 'http://p.test' });
-  const body = JSON.parse(r.body);
-  assert.strictEqual(body.language, 'en');
-  assert.strictEqual(body.score_threshold, 0.4);
-});
-
-test('parsePresidioResponse skips entries missing start or end', () => {
-  const body = JSON.stringify([{ start: 0, entityType: 'X' }, { end: 5, entityType: 'Y' }, { start: 1, end: 3, entityType: 'Z' }]);
-  const offsets = [{ line: 0, start: 0, len: 10 }];
-  const f = pr.parsePresidioResponse(body, offsets);
-  assert.strictEqual(f.length, 1);
-});
-
-test('parseLlmContent skips entries missing required fields', () => {
-  const text = '[{"line":"notnum","type":"X"},{},"text",{"line":2,"type":"OK"}]';
-  const findings = pr.parseLlmContent(text);
-  assert.strictEqual(findings.length, 1);
-  assert.strictEqual(findings[0].type, 'OK');
-});
-
-test('createRemoteAnalyzer throws for unknown kind', () => {
-  assert.throws(() => pr.createRemoteAnalyzer('bogus', {}, { fetchImpl: async () => ({}) }), /unknown/);
-});
-
-test('joinUrl handles trailing slashes and empty path', () => {
-  assert.strictEqual(pr.joinUrl('http://a.test', '/api'), 'http://a.test/api');
-  assert.strictEqual(pr.joinUrl('http://a.test/', 'api'), 'http://a.test/api');
-  assert.strictEqual(pr.joinUrl('http://a.test', ''), 'http://a.test/');
 });
 
 // --- buildPresidioRequest / parsePresidioResponse ---

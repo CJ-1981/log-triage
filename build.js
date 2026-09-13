@@ -12,6 +12,7 @@ const MODULE_ORDER = [
   'parser.js',
   'masks.js',
   'pii-provider.js',
+  'pii-remote.js',
   'filters.js',
   'levels.js',
   'search.js',

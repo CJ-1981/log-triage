@@ -80,6 +80,7 @@ Implemented in G2–G8:
 | --- | --- |
 | `src/masks.js` | The 16 built-in ordered PII regex rules plus custom regex → template rules; lazy mask application. |
 | `src/pii-provider.js` | `PiiProvider` interface, registry, and mock provider (see extension point below). |
+| `src/pii-remote.js` | Presidio/LLM request builders, response parsers and offset mapping (FR-25); HTTP injected for testability. |
 | `src/filters.js` | Ordered include/exclude/highlight regex rules, case toggle, live hit counters. |
 | `src/levels.js` | Dynamic level tally and chip generation from observed levels; "—" handling for unparseable lines. |
 | `src/search.js` | Instant search over kept lines and ripgrep-style deep scan (`-F -i -w -v`, `-B/-A`, `-c/-l`), capped results. |
@@ -95,7 +96,7 @@ Implemented in G2–G8:
 | `src/app.js` (selftest section) | In-browser runner for the shared case suite (`?selftest`) — no separate module; it is part of the app glue. |
 | `src/app-*.js` | UI glue: file list, viewer, analysis tab, search results panel, presets UI (exempt from coverage gates). |
 
-The shipped UI glue modules are `src/app.js` and `src/app-filecache.js` (IndexedDB file-cache wrapper for session restore — browser-only; both exempt from the coverage gate); the dev helpers `tools/serve.mjs` (static server), `tools/shots.mjs` (screenshot capture), `tools/genbig.mjs` (big-log generator — emits deterministic RAREJUMPMARKER lines every 100k lines for stable stress assertions), and `tools/debug-fileswitch.mjs` (deep-scan/file-switch debug probe) support e2e and performance verification and contribute no runtime code.
+The shipped UI glue modules are `src/app.js` and `src/app-filecache.js` (IndexedDB file-cache wrapper for session restore — browser-only; both exempt from the coverage gate, which fails loudly if any other `src/` module produces no coverage row); the dev helpers `tools/serve.mjs` (static server), `tools/shots.mjs` (screenshot capture), `tools/genbig.mjs` (big-log generator — emits deterministic RAREJUMPMARKER lines every 100k lines for stable stress assertions), and `tools/debug-fileswitch.mjs` (deep-scan/file-switch debug probe) support e2e and performance verification and contribute no runtime code.
 
 ## Build pipeline
 

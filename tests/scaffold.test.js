@@ -68,3 +68,18 @@ test('timestampedName prefixes sortable timestamp', () => {
   const d = new Date(2026, 8, 11, 7, 5, 3);
   assert.strictEqual(timestampedName(d, 'extract', 'csv'), '2026-09-11_070503_extract.csv');
 });
+
+// P0 regression guard (2026-09 review): pii-remote.js shipped missing from
+// MODULE_ORDER, so the built single-file app threw on the Providers tab while
+// every test layer stayed green. Every non-glue src module must be bundled.
+test('MODULE_ORDER bundles every non-glue src module', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { MODULE_ORDER } = require('../build.js');
+  const GLUE = new Set(['app.js', 'app-filecache.js', '_src.js']);
+  const onDisk = fs.readdirSync(path.join(__dirname, '..', 'src')).filter((f) => f.endsWith('.js'));
+  const missing = onDisk.filter((f) => !GLUE.has(f) && !MODULE_ORDER.includes(f));
+  assert.deepStrictEqual(missing, [], 'src modules missing from MODULE_ORDER: ' + missing.join(', '));
+  const unknown = MODULE_ORDER.filter((f) => !onDisk.includes(f));
+  assert.deepStrictEqual(unknown, [], 'MODULE_ORDER entries with no file: ' + unknown.join(', '));
+});

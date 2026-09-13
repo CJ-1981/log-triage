@@ -16,13 +16,15 @@ jobs:
         with:
           node-version: 22
       - name: Install dependencies
-        run: npm install
+        run: npm ci
       - name: Install 7-Zip CLI (7z archive fixtures)
         run: sudo apt-get update && sudo apt-get install -y p7zip-full
       - name: Unit tests + coverage gate
         run: npm run test:gate
       - name: Build single-file HTML
         run: npm run build
+      - name: Verify committed bundle is fresh
+        run: git diff --exit-code -- log-triage.html
       - name: Install Playwright browser
         run: npx playwright install --with-deps chromium
       - name: E2E tests
@@ -74,6 +76,8 @@ jobs:
           node-version: 22
       - name: Automatic version bump from conventional commits
         run: node tools/bump.mjs --ci
+      - name: Rebuild bundle with the release version
+        run: npm run build
       - name: Push release commit and tag
         run: |
           git config user.name "log-triage-release-bot"
@@ -82,7 +86,7 @@ jobs:
             echo "No version bump needed."
           else
             VERSION=$(node -p "require('./package.json').version")
-            git add package.json README.md docs/changelog.md
+            git add package.json README.md docs/changelog.md log-triage.html
             git commit -m "chore(release): v$VERSION"
             git tag -a "v$VERSION" -m "v$VERSION"
             git push origin HEAD "v$VERSION"

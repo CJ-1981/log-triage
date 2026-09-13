@@ -1,6 +1,6 @@
 # Requirements
 
-Version reference: v1.20.0 (release). Requirements are numbered and testable; each functional requirement (FR) carries acceptance criteria (AC) that map directly to the shared test suite (`tests/core-cases.js`) and the Playwright e2e scope (see `docs/test-plan.md`). All requirements are implemented as of the v1.20.0 release.
+Version reference: v1.22.1 (release). Requirements are numbered and testable; each functional requirement (FR) carries acceptance criteria (AC) that map directly to the shared test suite (`tests/core-cases.js`) and the Playwright e2e scope (see `docs/test-plan.md`). All requirements are implemented as of the v1.22.1 release.
 
 ## Functional requirements
 

@@ -12,7 +12,7 @@ import path from 'node:path';
 const LINE_MIN = 90;
 const BRANCH_MIN = 85;
 const OVERRIDES = { 'pii-remote.js': { line: 95, branch: 75 } }; // new module, actively developed
-const EXEMPT = [/src[\\/]app-.*\.js$/];
+const EXEMPT = [/src[\\/]app(-.*)?\.js$/]; // UI glue: never loaded under node --test
 
 function collectTestFiles(root) {
   const out = [];
@@ -67,6 +67,16 @@ function main() {
   if (core.length === 0) {
     console.error('GATE FAIL: no src/ coverage rows found — is --experimental-test-coverage supported?');
     console.error(out.slice(-2000));
+    process.exit(1);
+  }
+  // A core module that no test loads produces NO coverage row at all and would
+  // silently escape the gate (how pii-remote.js once shipped unbundled and
+  // untested through CI). Fail loudly instead.
+  const srcFiles = readdirSync(path.join(root, 'src')).filter((f) => f.endsWith('.js'));
+  const rowNames = new Set(rows.map((r) => path.basename(r.file)));
+  const untested = srcFiles.filter((f) => !EXEMPT.some((rx) => rx.test('src/' + f)) && !rowNames.has(f));
+  if (untested.length) {
+    console.error('GATE FAIL: core modules with no coverage row (never loaded by any test): ' + untested.join(', '));
     process.exit(1);
   }
 
