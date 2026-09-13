@@ -867,6 +867,35 @@ function sevenZipBundle() {
   return sevenZipFixture;
 }
 
+test('bookmarks panel Clear button removes entries from unloaded files', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  // bookmark one demo line via the gutter
+  await page.evaluate(() => document.querySelector('.vrow .bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  // seed a stale bookmark from an unloaded file via the persisted-state format
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('log_triage_state_v1') || '{}');
+    s.bookmarks = s.bookmarks || {};
+    s.bookmarks['ghost.log|999|deadbeef'] = [{ lineNo: 3, meta: { snippet: 'stale ghost entry' }, note: '' }];
+    localStorage.setItem('log_triage_state_v1', JSON.stringify(s));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  const entries = () => page.evaluate(() =>
+    Array.from(document.querySelectorAll('#bookmark-list .bm-entry')).map((e) => e.textContent));
+  let listed = await entries();
+  assert.strictEqual(listed.length, 2, 'live + stale entries listed: ' + listed.join(' | '));
+  await click('clear-bookmarks');
+  listed = await entries();
+  assert.strictEqual(listed.length, 1, 'only the live bookmark remains: ' + listed.join(' | '));
+  assert.match(listed[0], /demo\.log/, 'surviving entry belongs to the loaded demo file');
+  assert.doesNotMatch(listed.join(' '), /ghost\.log/, 'stale entry is gone');
+  const flashText = await page.evaluate(() => document.getElementById('st-progress').textContent);
+  assert.match(flashText, /cleared 1 bookmark/, 'status line confirms: ' + flashText);
+});
+
 test('loads a .7z archive: extracted files appear in the file list', { skip: !find7z() }, async () => {
   await fresh();
   await page.setInputFiles('#file-input', [sevenZipBundle()]);

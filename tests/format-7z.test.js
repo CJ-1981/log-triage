@@ -17,7 +17,9 @@ const F7 = require('../src/format-7z.js');
 const ar = require('../src/archive.js');
 
 const FX = path.join(__dirname, 'fixtures');
-const SAMPLE = fs.readFileSync(path.join(FX, 'sample7z.txt'), 'utf8');
+// normalize EOLs so a CRLF checkout (Windows autocrlf) cannot desync the
+// expected text from the LF bytes the committed LZMA fixtures encode
+const SAMPLE = fs.readFileSync(path.join(FX, 'sample7z.txt'), 'utf8').replace(/\r\n/g, '\n');
 const hex = (f) => new Uint8Array(Buffer.from(fs.readFileSync(path.join(FX, f), 'utf8').trim(), 'hex'));
 const enc = (s) => new TextEncoder().encode(s);
 const dec = (b) => new TextDecoder().decode(b);

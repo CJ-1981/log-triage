@@ -1,0 +1,3 @@
+# Fixtures must keep exact bytes: EOL conversion would invalidate the
+# pre-compressed LZMA fixtures that encode the LF form of sample7z.txt.
+tests/fixtures/* -text

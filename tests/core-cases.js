@@ -1033,5 +1033,26 @@
     eq(bm.all().length, 0);
   });
 
+  T('bookmarks', 'pruneExcept drops entries whose file key is not kept', () => {
+    const bm = new SRC.BookmarkStore();
+    bm.toggle('loaded|100|h1', 1, {});
+    bm.toggle('loaded|100|h1', 2, {});
+    bm.toggle('stale|100|h2', 3, {});
+    bm.toggle('stale2|100|h3', 4, {});
+    const removed = bm.pruneExcept(['loaded|100|h1']);
+    eq(bm.all().length, 2, 'kept entries survive');
+    eq(bm.list('loaded|100|h1').length, 2);
+    eq(bm.list('stale|100|h2').length, 0, 'stale file entries dropped');
+    eq(bm.list('stale2|100|h3').length, 0, 'second stale file dropped');
+    deepEq(removed.slice().sort(), ['stale2|100|h3', 'stale|100|h2'], 'returns removed keys');
+    // pruning again with a superset of keys is a no-op
+    eq(bm.pruneExcept(['loaded|100|h1', 'other|1|x']).length, 0);
+    eq(bm.all().length, 2);
+    // an omitted or empty keep-list clears everything
+    deepEq(bm.pruneExcept().slice().sort(), ['loaded|100|h1']);
+    eq(bm.pruneExcept([]).length, 0, 'nothing left to prune');
+    eq(bm.all().length, 0);
+  });
+
   return { CASES, eq, deepEq, ok };
 }));

@@ -52,6 +52,17 @@
       delete this._byKey[key];
     }
 
+    /** removes every file entry whose key is NOT in keepKeys; returns the
+     * removed keys so callers can report how many files were cleared */
+    pruneExcept(keepKeys) {
+      const keep = new Set(keepKeys || []);
+      const removed = [];
+      for (const key of Object.keys(this._byKey)) {
+        if (!keep.has(key)) { delete this._byKey[key]; removed.push(key); }
+      }
+      return removed;
+    }
+
     /** removes every file entry whose key starts with the given prefix */
     removeByKeyPrefix(prefix) {
       for (const key of Object.keys(this._byKey)) {

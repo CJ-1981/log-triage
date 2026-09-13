@@ -653,6 +653,20 @@
   function bookmarkKeyFor(fileId) {
     return LT.bookmarkFileKey(fileDisplayName(fileId), fileSizeOf(fileId), firstLineOf(files.find((x) => x.id === fileId)));
   }
+
+  /* Clear button: drop bookmarks whose file is not currently loaded. */
+  function clearStaleBookmarks() {
+    const keep = files.map((f) => bookmarkKeyFor(f.id));
+    const keepSet = new Set(keep);
+    const removedCount = bookmarksStore.all().filter((b) => !keepSet.has(b.key)).length;
+    const removedKeys = bookmarksStore.pruneExcept(keep);
+    renderBookmarks(); updateStatus();
+    if (state.showOnlyBookmarked) rebuildView();
+    saveState();
+    flash(removedKeys.length
+      ? 'cleared ' + removedCount + ' bookmark(s) from ' + removedKeys.length + ' unloaded file(s)'
+      : 'no stale bookmarks — all bookmarks belong to loaded files');
+  }
   function fileSizeOf(fileId) {
     const f = files.find((x) => x.id === fileId);
     return f ? f.size : 0;
@@ -1748,6 +1762,7 @@
       flash('that file is not loaded right now — bookmark kept for later');
       setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
     });
+    $('clear-bookmarks').onclick = clearStaleBookmarks;
 
     // debounced: start matching only after typing pauses
     let rgTimer = null;
