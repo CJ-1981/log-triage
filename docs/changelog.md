@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.18.0 (2026-09-13)
+- feat: archive support (.gz/.tar/.zip recursive decompress + recompress for export), PII Providers tab wiring, progress overlay; fix: issue editor materialization
+
 ## 1.17.0 (2026-09-13)
 - fix: archive test expected 'gzip' but module returns 'gz'
 - feat: archive support (.gz/.tar/.tar.gz/.zip), ★ star badge chip in chips row, config tab, responsive mobile, file cache — all e2e 35/35
