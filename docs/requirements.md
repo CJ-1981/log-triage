@@ -94,7 +94,7 @@ Status: implemented (v1.0.0).
 - AC-1: Rendering is virtualized and stays smooth at 100k+ rows.
 - AC-2: Both merged-timeline view (sorted by timestamp, file order as tiebreak) and per-file views are available.
 - AC-3: A wrap toggle switches between pre-wrapped (variable row heights with a measured-height cache) and single-line modes; severity badges and W/E/F row tint are always visible.
-- AC-4: Six themes switch via `body[data-theme]` CSS variables: Midnight (default), Paper, Solarized Dark, Solarized Light, Monokai, High Contrast.
+- AC-4: Six themes switch via `body[data-theme]` CSS variables: Midnight (default), Paper, Solarized Dark, Solarized Light, Monokai, High Contrast. The header exposes them through a compact icon button that opens the theme dropdown (replacing the former inline `<select>`, so the mobile header stays on one line); the choice persists.
 
 ### FR-11 — Selection, copy, and bookmarks
 

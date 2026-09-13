@@ -154,16 +154,59 @@ test('ripgrep search: instant results and deep scan agree on small files', async
   assert.match(first.ln, /^\d+$/);
 });
 
-test('theme switch persists across reload', async () => {
+test('theme icon opens the dropdown, switches persist across reload', async () => {
   await fresh();
+  // icon button opens the dropdown list
+  await page.evaluate(() => document.getElementById('theme-btn').click());
+  assert.ok(
+    await page.evaluate(() => !document.getElementById('theme-menu').classList.contains('hidden')),
+    'theme menu opens from the icon button');
+  // pick paper from the dropdown: applied, menu closes
   await page.evaluate(() => {
-    const s = document.getElementById('theme-sel');
-    s.value = 'paper';
-    s.dispatchEvent(new Event('change'));
+    const opt = Array.from(document.querySelectorAll('#theme-menu .theme-opt')).find((o) => o.dataset.value === 'paper');
+    opt.click();
   });
+  assert.strictEqual(await page.evaluate(() => document.body.dataset.theme), 'paper');
+  assert.ok(
+    await page.evaluate(() => document.getElementById('theme-menu').classList.contains('hidden')),
+    'menu closes after picking a theme');
+  assert.ok(
+    await page.evaluate(() => Array.from(document.querySelectorAll('#theme-menu .theme-opt')).every((o) => o.dataset.value)),
+    'all six themes listed');
+  // persists across reload
   await page.reload({ waitUntil: 'domcontentloaded' });
-  const theme = await page.evaluate(() => document.body.dataset.theme);
-  assert.strictEqual(theme, 'paper');
+  assert.strictEqual(await page.evaluate(() => document.body.dataset.theme), 'paper');
+  // outside click closes the menu without changing the theme
+  await page.evaluate(() => document.getElementById('theme-btn').click());
+  await page.evaluate(() => document.getElementById('viewer').click());
+  assert.ok(
+    await page.evaluate(() => document.getElementById('theme-menu').classList.contains('hidden')),
+    'outside click closes the menu');
+  assert.strictEqual(await page.evaluate(() => document.body.dataset.theme), 'paper');
+});
+
+test('theme icon keeps the mobile header on a single line', async () => {
+  await fresh();
+  try {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await page.waitForTimeout(150);
+    const geo = await page.evaluate(() => {
+      const btn = document.getElementById('theme-btn').getBoundingClientRect();
+      const side = document.getElementById('btn-side').getBoundingClientRect();
+      const hdrRight = document.getElementById('hdr-right').getBoundingClientRect();
+      const center = (r) => (r.top + r.bottom) / 2;
+      return {
+        btnVisible: btn.width > 0 && btn.right <= window.innerWidth + 1,
+        oneLine: Math.abs(center(hdrRight) - center(side)) < 6,
+        noOverlap: hdrRight.left >= side.right - 1,
+      };
+    });
+    assert.ok(geo.btnVisible, 'theme icon visible within the viewport');
+    assert.ok(geo.oneLine, 'hdr-right shares the first header line with the files button');
+    assert.ok(geo.noOverlap, 'theme icon does not overlap the files button');
+  } finally {
+    await page.setViewportSize({ width: 1440, height: 900 });
+  }
 });
 
 test('bookmark survives reload via file-identity persistence', async () => {

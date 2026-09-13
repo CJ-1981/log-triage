@@ -1571,15 +1571,36 @@
     }
     if (location.search.indexOf('selftest') >= 0) { runSelfTest(); return; }
 
-    const sel = $('theme-sel');
-    for (const n of LT.themeNames()) {
-      const o = document.createElement('option');
-      o.value = n; o.textContent = LT.THEMES[n].label;
-      sel.appendChild(o);
-    }
-    sel.value = state.theme;
+    // --- theme icon + dropdown (replaces the old <select>; fits the mobile header) ---
     document.body.dataset.theme = state.theme;
-    sel.onchange = () => { state.theme = sel.value; document.body.dataset.theme = sel.value; saveState(); };
+    const themeBtn = $('theme-btn');
+    const themeMenu = $('theme-menu');
+    const renderThemeMenu = () => {
+      themeMenu.innerHTML = LT.themeNames().map((n) =>
+        '<button type="button" class="theme-opt' + (n === state.theme ? ' active' : '') + '" data-value="' + n + '" role="option" aria-selected="' + (n === state.theme) + '">' +
+        esc(LT.THEMES[n].label) + '<span class="tick">✓</span></button>').join('');
+    };
+    const closeThemeMenu = () => { themeMenu.classList.add('hidden'); themeBtn.setAttribute('aria-expanded', 'false'); };
+    const setTheme = (n) => {
+      state.theme = n;
+      document.body.dataset.theme = n;
+      renderThemeMenu();
+      saveState();
+    };
+    renderThemeMenu();
+    themeBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = themeMenu.classList.toggle('hidden');
+      themeBtn.setAttribute('aria-expanded', open ? 'false' : 'true');
+    });
+    themeMenu.addEventListener('click', (e) => {
+      const opt = e.target.closest('.theme-opt');
+      if (!opt) return;
+      setTheme(opt.dataset.value);
+      closeThemeMenu();
+    });
+    document.body.addEventListener('click', closeThemeMenu);
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeThemeMenu(); });
 
     // --- PII Providers tab ---
     const piiSel = $('pii-provider');
