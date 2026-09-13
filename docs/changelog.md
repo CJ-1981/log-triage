@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.27.0 (2026-09-13)
+- docs: test-plan spec list ordering (25-29) and tooltip spec 29
+- feat: explanatory tooltips on the Search tab rg option controls
+
 ## 1.26.0 (2026-09-13)
 - feat: severity-grouped issue scan tree; docs refresh
 
