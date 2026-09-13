@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.24.0 (2026-09-13)
+- feat: expand built-in issue-scan catalog to 14 groups (Android expert review)
+
 ## 1.23.0 (2026-09-13)
 - feat: suspend-to-RAM issue group for Android logcat analysis
 
