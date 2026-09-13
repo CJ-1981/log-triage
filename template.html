@@ -159,6 +159,24 @@ table.rules input[type=text] { width: 100%; font-family: var(--mono); font-size:
 .two-col > div { flex: 1; min-width: 300px; }
 .issue { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; margin: 4px 0; display: flex; justify-content: space-between; gap: 8px; cursor: pointer; }
 .issue:hover { border-color: var(--accent); }
+/* issue scan: severity-grouped collapsible tree */
+.iss-group { border: 1px solid var(--border); border-radius: 8px; margin: 6px 0; }
+.iss-group > summary { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; font-weight: 600; list-style: none; }
+.iss-group > summary::-webkit-details-marker { display: none; }
+.iss-group > summary::before { content: '▸'; color: var(--muted); font-size: 11px; }
+.iss-group[open] > summary::before { content: '▾'; }
+.iss-group > summary:hover { background: var(--surface2); border-radius: 8px; }
+.iss-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.iss-kind { text-transform: uppercase; font-size: 12px; letter-spacing: .4px; }
+.iss-group > .issue { margin-left: 20px; margin-right: 8px; }
+.iss-crit .iss-dot { background: var(--err); }
+.iss-high .iss-dot { background: var(--warn); }
+.iss-med  .iss-dot { background: var(--accent); }
+.iss-low  .iss-dot { background: var(--muted); }
+.iss-crit .iss-kind { color: var(--err); }
+.iss-high .iss-kind { color: var(--warn); }
+.iss-med  .iss-kind { color: var(--accent); }
+.iss-low  .iss-kind { color: var(--muted); }
 canvas#histo { width: 100%; height: 120px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
 
 /* search */

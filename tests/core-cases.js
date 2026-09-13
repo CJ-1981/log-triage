@@ -1126,6 +1126,13 @@
     eq(found.length, 0, 'no false positives, got: ' + JSON.stringify(found.map((f) => f.kind + ':' + f.snippet)));
   });
 
+  T('issues', 'every built-in kind has a severity tier for color coding', () => {
+    const sev = SRC.ISSUE_SEVERITY;
+    ok(sev && typeof sev === 'object', 'severity map exported');
+    for (const g of GROUPS) ok(sev[g.kind], 'severity defined for ' + g.kind);
+    ok(Object.keys(sev).every((k) => ['crit', 'high', 'med', 'low'].includes(sev[k])), 'only known tiers');
+  });
+
   T('issues', 'a line matching multiple groups is reported once (first match wins)', () => {
     const found = SRC.issueScan(recs(['FATAL EXCEPTION in ConnectivityService monitor']), GROUPS, (id) => id);
     eq(found.length, 1);

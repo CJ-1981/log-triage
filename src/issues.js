@@ -38,6 +38,16 @@
     { kind: 'suspend', pattern: 'pm: suspend|suspend (entry|exit|attempt|not allowed|failed)|failed to suspend|going to sleep|waking up from|wake reason|wakeup reason|freeze of tasks|freezing of tasks|abort_suspend|suspend to ram|early suspend|late resume|suspended for \\d', on: true },
   ];
 
+  // severity tiers drive the color coding in the analysis issue list:
+  // crit (red) — app/runtime fatal; high (orange) — stability/resource loss;
+  // med (blue) — resource & policy problems; low (grey) — state changes
+  const ISSUE_SEVERITY = {
+    crash: 'crit', watchdog: 'crit',
+    anr: 'high', mem: 'high', 'proc-death': 'high', subsys: 'high',
+    thermal: 'med', storage: 'med', binder: 'med', selinux: 'med', boot: 'med',
+    connectivity: 'low', auth: 'low', suspend: 'low',
+  };
+
   /** Scan records against issue groups; at most one finding per line (first
    * matching group wins), capped at 200. nameOf formats a fileId for display. */
   function issueScan(records, groups, nameOf) {
@@ -59,5 +69,5 @@
     return out;
   }
 
-  return { DEFAULT_ISSUE_GROUPS, issueScan };
+  return { DEFAULT_ISSUE_GROUPS, ISSUE_SEVERITY, issueScan };
 }));

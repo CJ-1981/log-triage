@@ -62,9 +62,9 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 
 ## Verification evidence (v1.20.0)
 
-- **Shared cases:** 130 shared logic cases plus a theme check pass in both runners — `node --test` and the browser `?selftest` page each report **131 passed / 0 failed** (the suite has grown with the feature gates: archives/7z, bookmark management, the expanded issue-scan catalog).
+- **Shared cases:** 131 shared logic cases plus a theme check pass in both runners — `node --test` and the browser `?selftest` page each report **132 passed / 0 failed** (the suite has grown with the feature gates: archives/7z, bookmark management, the expanded issue-scan catalog).
 - **Coverage gate:** green on all core `src/` modules (≥ 90% line / ≥ 85% branch enforced by `node tools/coverage-gate.mjs`); current new-module numbers: `lzma.js` 100%/93%, `format-7z.js` 100%/86%, `archive.js` 96%/89%, `bookmarks.js` 96%/87%.
-- **E2e:** Playwright suite **45/45 green** (37 app + 8 stress) locally (spec lists below).
+- **E2e:** Playwright suite **48/48 green** (40 app + 8 stress) locally (spec lists below).
 - **Error guard:** every e2e test ends with an `afterEach` assertion of zero uncaught page errors (`page.on(pageerror)` plus an in-page `window.__errs` tally) — the guard that would have caught the v1.1.x file-switch `ReferenceError` (see Retrospective R1).
 - **Performance / big file:** a 300 MB / 3,380,636-line synthetic log was fully streamed and counted in ~31 s in Chromium (~108 MB/s), with exact per-file counters, FIFO trim at the 100k kept-line cap, and zero page errors. Throughput in hidden/background tabs is lower because browsers throttle them; the app uses a `MessageChannel` yield (ADR-0006) to minimize this effect.
 
@@ -81,7 +81,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 | --- | --- |
 | `npm test` | Run the Node unit suites (`node:test`, Node 22): shared logic cases + bump-tooling suite. |
 | `npm run test:gate` | Run unit tests with coverage and enforce ≥ 90% line / ≥ 85% branch per core module. |
-| `npm run e2e` | Run the Playwright end-to-end suite (45 specs: 37 app + 8 stress) against the built `log-triage.html`. |
+| `npm run e2e` | Run the Playwright end-to-end suite (48 specs: 40 app + 8 stress) against the built `log-triage.html`. |
 | `npm run e2e:stress` | Run only the stress suite against the generated big fixture (`tools/genbig.mjs`). |
 | `npm run build` | Rebuild `log-triage.html` from `src/` (inlines CSS, modules, shared cases, demo log). |
 
@@ -93,7 +93,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 - **Browser:** `build.js` inlines the identical file into `log-triage.html`; opening it with `?selftest` executes the suite and reports pass/fail counts and failing case names.
 - **Guarantee:** any behavior change must be expressed as a case update, so Node CI and the in-browser self-test can never disagree.
 
-## E2e scope (Playwright — 45 specs: 37 app + 8 stress)
+## E2e scope (Playwright — 48 specs: 40 app + 8 stress)
 
 App suite (37 specs) — coverage includes:
 

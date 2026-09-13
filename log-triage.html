@@ -165,6 +165,24 @@ table.rules input[type=text] { width: 100%; font-family: var(--mono); font-size:
 .two-col > div { flex: 1; min-width: 300px; }
 .issue { padding: 6px 10px; border: 1px solid var(--border); border-radius: 8px; margin: 4px 0; display: flex; justify-content: space-between; gap: 8px; cursor: pointer; }
 .issue:hover { border-color: var(--accent); }
+/* issue scan: severity-grouped collapsible tree */
+.iss-group { border: 1px solid var(--border); border-radius: 8px; margin: 6px 0; }
+.iss-group > summary { display: flex; align-items: center; gap: 8px; padding: 6px 10px; cursor: pointer; font-weight: 600; list-style: none; }
+.iss-group > summary::-webkit-details-marker { display: none; }
+.iss-group > summary::before { content: '▸'; color: var(--muted); font-size: 11px; }
+.iss-group[open] > summary::before { content: '▾'; }
+.iss-group > summary:hover { background: var(--surface2); border-radius: 8px; }
+.iss-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; flex: none; }
+.iss-kind { text-transform: uppercase; font-size: 12px; letter-spacing: .4px; }
+.iss-group > .issue { margin-left: 20px; margin-right: 8px; }
+.iss-crit .iss-dot { background: var(--err); }
+.iss-high .iss-dot { background: var(--warn); }
+.iss-med  .iss-dot { background: var(--accent); }
+.iss-low  .iss-dot { background: var(--muted); }
+.iss-crit .iss-kind { color: var(--err); }
+.iss-high .iss-kind { color: var(--warn); }
+.iss-med  .iss-kind { color: var(--accent); }
+.iss-low  .iss-kind { color: var(--muted); }
 canvas#histo { width: 100%; height: 120px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
 
 /* search */
@@ -1930,6 +1948,16 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     { kind: 'suspend', pattern: 'pm: suspend|suspend (entry|exit|attempt|not allowed|failed)|failed to suspend|going to sleep|waking up from|wake reason|wakeup reason|freeze of tasks|freezing of tasks|abort_suspend|suspend to ram|early suspend|late resume|suspended for \\d', on: true },
   ];
 
+  // severity tiers drive the color coding in the analysis issue list:
+  // crit (red) — app/runtime fatal; high (orange) — stability/resource loss;
+  // med (blue) — resource & policy problems; low (grey) — state changes
+  const ISSUE_SEVERITY = {
+    crash: 'crit', watchdog: 'crit',
+    anr: 'high', mem: 'high', 'proc-death': 'high', subsys: 'high',
+    thermal: 'med', storage: 'med', binder: 'med', selinux: 'med', boot: 'med',
+    connectivity: 'low', auth: 'low', suspend: 'low',
+  };
+
   /** Scan records against issue groups; at most one finding per line (first
    * matching group wins), capped at 200. nameOf formats a fileId for display. */
   function issueScan(records, groups, nameOf) {
@@ -1951,7 +1979,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     return out;
   }
 
-  return { DEFAULT_ISSUE_GROUPS, issueScan };
+  return { DEFAULT_ISSUE_GROUPS, ISSUE_SEVERITY, issueScan };
 }));
 
 /* Log Triage — lzma.js: pure-JS LZMA1 + LZMA2 decoder (no WASM, no deps).
@@ -4190,6 +4218,30 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   }
 
   /* ---------------- analysis panel ---------------- */
+  /* Issue list: group findings by kind into a collapsible tree, sorted by
+   * severity (crit → low), count descending inside a tier. */
+  function issueTreeHtml(issues) {
+    const sev = LT.ISSUE_SEVERITY || {};
+    const RANK = { crit: 0, high: 1, med: 2, low: 3 };
+    const byKind = new Map();
+    for (const it of issues) {
+      if (!byKind.has(it.kind)) byKind.set(it.kind, []);
+      byKind.get(it.kind).push(it);
+    }
+    const tier = (k) => RANK[sev[k]] != null ? RANK[sev[k]] : RANK.low;
+    const kinds = [...byKind.keys()].sort((a, b) =>
+      tier(a) - tier(b) || byKind.get(b).length - byKind.get(a).length || a.localeCompare(b));
+    return kinds.map((k, gi) => {
+      const list = byKind.get(k);
+      const s = sev[k] || 'low';
+      return '<details class="iss-group iss-' + s + '"' + (gi === 0 ? ' open' : '') + '>' +
+        '<summary><span class="iss-dot"></span><span class="iss-kind">' + esc(k) + '</span>' +
+        '<span class="count-pill">' + list.length + '</span></summary>' +
+        list.map((it) => '<div class="issue" data-seq="' + it.seq + '"><span><b>' + esc(it.kind) + '</b> — ' + esc(it.snippet) + '</span><span class="muted">' + esc(it.file) + ':' + it.lineNo + '</span></div>').join('') +
+        '</details>';
+    }).join('');
+  }
+
   function renderAnalysis() {
     const p = $('analysis-panel');
     const st = store.stats();
@@ -4243,7 +4295,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       '<div id="issue-groups">' + issueGroupRows() + '</div>' +
       '<div class="rowline"><button id="btn-issue-add">+ Add rule</button><button id="btn-issue-restore" title="restore the built-in keyword groups">Restore defaults</button></div>' +
       '</details>' +
-      (issues.length ? issues.map((i) => '<div class="issue" data-seq="' + i.seq + '"><span><b>' + i.kind + '</b> — ' + esc(i.snippet) + '</span><span class="muted">' + esc(i.file) + ':' + i.lineNo + '</span></div>').join('') : '<span class="muted">no issue keywords found</span>') +
+      (issues.length ? issueTreeHtml(issues) : '<span class="muted">no issue keywords found</span>') +
       '<h2>PII census (kept lines, sample)</h2>' +
       '<div class="card-row">' + Object.keys(census).map((k) => '<div class="stat-card"><div class="v">' + census[k] + '</div><div class="k">' + esc(k) + '</div></div>').join('') + '</div>';
 
@@ -4252,8 +4304,9 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     fileSel.onchange = () => { state.analysisFile = fileSel.value; renderAnalysis(); };
 
     drawHistogram(recs);
-    p.querySelectorAll('.issue').forEach((el, idx) => {
-      el.onclick = () => { const it = issues[idx]; if (it && it.rec) jumpToRecord(it.rec); };
+    const issueBySeq = new Map(issues.map((it) => [String(it.seq), it]));
+    p.querySelectorAll('.issue').forEach((el) => {
+      el.onclick = () => { const it = issueBySeq.get(el.dataset.seq); if (it && it.rec) jumpToRecord(it.rec); };
     });
     bindIssueEditor(p);
   }
@@ -6294,6 +6347,13 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       'D ThermalService: status changed to LIGHT',
     ]), GROUPS, (id) => id);
     eq(found.length, 0, 'no false positives, got: ' + JSON.stringify(found.map((f) => f.kind + ':' + f.snippet)));
+  });
+
+  T('issues', 'every built-in kind has a severity tier for color coding', () => {
+    const sev = SRC.ISSUE_SEVERITY;
+    ok(sev && typeof sev === 'object', 'severity map exported');
+    for (const g of GROUPS) ok(sev[g.kind], 'severity defined for ' + g.kind);
+    ok(Object.keys(sev).every((k) => ['crit', 'high', 'med', 'low'].includes(sev[k])), 'only known tiers');
   });
 
   T('issues', 'a line matching multiple groups is reported once (first match wins)', () => {

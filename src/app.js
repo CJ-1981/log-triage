@@ -999,6 +999,30 @@
   }
 
   /* ---------------- analysis panel ---------------- */
+  /* Issue list: group findings by kind into a collapsible tree, sorted by
+   * severity (crit → low), count descending inside a tier. */
+  function issueTreeHtml(issues) {
+    const sev = LT.ISSUE_SEVERITY || {};
+    const RANK = { crit: 0, high: 1, med: 2, low: 3 };
+    const byKind = new Map();
+    for (const it of issues) {
+      if (!byKind.has(it.kind)) byKind.set(it.kind, []);
+      byKind.get(it.kind).push(it);
+    }
+    const tier = (k) => RANK[sev[k]] != null ? RANK[sev[k]] : RANK.low;
+    const kinds = [...byKind.keys()].sort((a, b) =>
+      tier(a) - tier(b) || byKind.get(b).length - byKind.get(a).length || a.localeCompare(b));
+    return kinds.map((k, gi) => {
+      const list = byKind.get(k);
+      const s = sev[k] || 'low';
+      return '<details class="iss-group iss-' + s + '"' + (gi === 0 ? ' open' : '') + '>' +
+        '<summary><span class="iss-dot"></span><span class="iss-kind">' + esc(k) + '</span>' +
+        '<span class="count-pill">' + list.length + '</span></summary>' +
+        list.map((it) => '<div class="issue" data-seq="' + it.seq + '"><span><b>' + esc(it.kind) + '</b> — ' + esc(it.snippet) + '</span><span class="muted">' + esc(it.file) + ':' + it.lineNo + '</span></div>').join('') +
+        '</details>';
+    }).join('');
+  }
+
   function renderAnalysis() {
     const p = $('analysis-panel');
     const st = store.stats();
@@ -1052,7 +1076,7 @@
       '<div id="issue-groups">' + issueGroupRows() + '</div>' +
       '<div class="rowline"><button id="btn-issue-add">+ Add rule</button><button id="btn-issue-restore" title="restore the built-in keyword groups">Restore defaults</button></div>' +
       '</details>' +
-      (issues.length ? issues.map((i) => '<div class="issue" data-seq="' + i.seq + '"><span><b>' + i.kind + '</b> — ' + esc(i.snippet) + '</span><span class="muted">' + esc(i.file) + ':' + i.lineNo + '</span></div>').join('') : '<span class="muted">no issue keywords found</span>') +
+      (issues.length ? issueTreeHtml(issues) : '<span class="muted">no issue keywords found</span>') +
       '<h2>PII census (kept lines, sample)</h2>' +
       '<div class="card-row">' + Object.keys(census).map((k) => '<div class="stat-card"><div class="v">' + census[k] + '</div><div class="k">' + esc(k) + '</div></div>').join('') + '</div>';
 
@@ -1061,8 +1085,9 @@
     fileSel.onchange = () => { state.analysisFile = fileSel.value; renderAnalysis(); };
 
     drawHistogram(recs);
-    p.querySelectorAll('.issue').forEach((el, idx) => {
-      el.onclick = () => { const it = issues[idx]; if (it && it.rec) jumpToRecord(it.rec); };
+    const issueBySeq = new Map(issues.map((it) => [String(it.seq), it]));
+    p.querySelectorAll('.issue').forEach((el) => {
+      el.onclick = () => { const it = issueBySeq.get(el.dataset.seq); if (it && it.rec) jumpToRecord(it.rec); };
     });
     bindIssueEditor(p);
   }

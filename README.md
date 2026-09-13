@@ -65,7 +65,7 @@ The same viewer in the light **Paper** theme:
 - **Navigation** — click a search result, sidebar bookmark, or issue-scan entry to jump to the line: the per-file selection auto-switches to the matched file and transient filters that would hide the target (quick search, level chips, time range, ★ only-bookmarks) are auto-cleared; lines beyond the kept-line cap open an explanatory drawer; a go-to-line box in the viewer toolbar takes a line number + Enter.
 - **Collapsible files panel** — toggle via the header "☰ Files" button (state persisted; auto-collapsed on narrow screens).
 - **Horizontal scrolling in nowrap mode** — the scroll range is sized from the longest line in the view, so long lines are fully reachable instead of ellipsis-truncated.
-- **Self-test** — `?selftest` runs the same 119-case suite in the browser that `node --test` executes (`tests/core-cases.js`).
+- **Self-test** — `?selftest` runs the same 131-case suite in the browser that `node --test` executes (`tests/core-cases.js`).
 
 ## Privacy and security
 
@@ -82,7 +82,7 @@ Requirements: Node.js 22.
 npm test          # Unit + bump suites (node:test)
 npm run test:gate # Unit tests + coverage gate (>=90% line / >=85% branch on core src modules)
 npm run build     # Build log-triage.html from src/
-npm run e2e       # Playwright end-to-end tests (45 specs: 37 app + 8 stress)
+npm run e2e       # Playwright end-to-end tests (48 specs: 40 app + 8 stress)
 npm run e2e:stress # Stress suite only (generated big fixture)
 npm run bump      # Semver bump from conventional commits (CI runs this automatically on main)
 ```

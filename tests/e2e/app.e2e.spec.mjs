@@ -1157,6 +1157,41 @@ test('text inputs get an inline ✕ clear button that empties and re-fires', asy
   assert.ok(dyn, 'dynamically rendered rule input wrapped on focus');
 });
 
+test('issue scan groups by kind with severity color coding', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => document.querySelectorAll('#analysis-panel details.iss-group').length > 0, null, { timeout: 8000 });
+  const groups = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#analysis-panel details.iss-group')).map((d) => ({
+      kind: d.querySelector('.iss-kind').textContent,
+      sev: d.className.includes('iss-crit') ? 'crit' : d.className.includes('iss-high') ? 'high'
+        : d.className.includes('iss-med') ? 'med' : 'low',
+      count: Number(d.querySelector('summary .count-pill').textContent),
+      open: d.open,
+      leaves: d.querySelectorAll('.issue').length,
+    })));
+  const totalLeaves = groups.reduce((s, g) => s + g.leaves, 0);
+  assert.ok(groups.length >= 4, 'multiple kinds grouped, got ' + groups.length);
+  assert.ok(totalLeaves > 0, 'leaf issues present inside groups');
+  // severity ordering: the first group must be a critical one
+  assert.strictEqual(groups[0].sev, 'crit', 'critical group sorted first: ' + JSON.stringify(groups.map((g) => [g.kind, g.sev])));
+  assert.strictEqual(groups[0].kind, 'crash', 'demo crash group present and first');
+  // every leaf belongs to its group and the counts match
+  for (const g of groups) assert.strictEqual(g.count, g.leaves, 'summary count matches children for ' + g.kind);
+  // highest-severity group starts open; the rest stay collapsed
+  assert.strictEqual(groups[0].open, true, 'first group auto-open');
+  assert.ok(groups.slice(1).every((g) => !g.open), 'remaining groups collapsed to save space');
+  // severity tiers only from the documented set
+  assert.ok(groups.every((g) => ['crit', 'high', 'med', 'low'].includes(g.sev)));
+  // clicking a leaf still jumps to the line (drawer opens)
+  await page.evaluate(() => document.querySelector('#analysis-panel details.iss-group[open] .issue').click());
+  await page.waitForTimeout(250);
+  const drawer = await page.evaluate(() => document.getElementById('drawer').textContent);
+  assert.ok(drawer.length > 10, 'leaf click jumps to the line');
+});
+
 test('loads a .7z archive: extracted files appear in the file list', { skip: !find7z() }, async () => {
   await fresh();
   await page.setInputFiles('#file-input', [sevenZipBundle()]);
