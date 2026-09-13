@@ -952,6 +952,39 @@ test('bookmarks panel Clear button removes all bookmarks at once', async () => {
     'second clear reports nothing to do');
 });
 
+test('bookmarks panel entries have an ✕ to remove individually', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  // bookmark the first two visible lines via the gutter (re-query rows between clicks)
+  await page.evaluate(() => document.querySelector('.vrow .bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  await page.evaluate(() => document.querySelectorAll('.vrow')[1].querySelector('.bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  await page.waitForTimeout(150);
+  const entries = () => page.evaluate(() =>
+    Array.from(document.querySelectorAll('#bookmark-list .bm-entry')).map((e) => e.dataset.ln));
+  let listed = await entries();
+  assert.deepStrictEqual(listed, ['1', '2'], 'two bookmarked entries listed, got ' + JSON.stringify(listed));
+  // ✕ on the first entry removes just that bookmark
+  await page.evaluate(() => document.querySelector('#bookmark-list .bm-entry .fx').click());
+  listed = await entries();
+  assert.deepStrictEqual(listed, ['2'], 'only the second bookmark remains, got ' + JSON.stringify(listed));
+  const counts = await page.evaluate(() => ({
+    pill: document.getElementById('bm-count').textContent,
+    status: document.getElementById('st-bm').textContent,
+    drawerClosed: document.getElementById('drawer').className !== 'open',
+  }));
+  assert.strictEqual(counts.pill, '1', 'panel count pill updated');
+  assert.strictEqual(counts.status, '1', 'status-bar bookmark counter updated');
+  assert.ok(counts.drawerClosed, '✕ does not trigger the jump/drawer');
+  // ✕ on the last entry empties the panel and drops the ★ chip
+  await page.evaluate(() => document.querySelector('#bookmark-list .bm-entry .fx').click());
+  listed = await entries();
+  assert.strictEqual(listed.length, 0, 'panel empty after last ✕');
+  const chipGone = await page.evaluate(() =>
+    !Array.from(document.querySelectorAll('.chip')).some((c) => c.textContent.includes('\u2605')));
+  assert.ok(chipGone, '\u2605 chip disappears when the last bookmark is removed');
+});
+
 test('loads a .7z archive: extracted files appear in the file list', { skip: !find7z() }, async () => {
   await fresh();
   await page.setInputFiles('#file-input', [sevenZipBundle()]);

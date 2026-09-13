@@ -58,8 +58,10 @@ header h1 span { color: var(--accent); }
 #bm-section { flex: 0 0 auto; height: 200px; }
 #side-drag { flex: none; height: 7px; cursor: ns-resize; background: var(--surface2); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 #side-drag:hover, #side-drag.active { background: var(--accent); }
-.bm-entry { padding: 6px 10px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12px; }
+.bm-entry { position: relative; padding: 6px 26px 6px 10px; border-bottom: 1px solid var(--border); cursor: pointer; font-size: 12px; }
 .bm-entry:hover { background: var(--surface2); }
+.bm-entry .fx { position: absolute; top: 6px; right: 6px; background: transparent; border: none; color: var(--muted); padding: 0 3px; font-size: 12px; cursor: pointer; }
+.bm-entry .fx:hover { color: var(--err); }
 .bm-entry .snippet { font-family: var(--mono); font-size: 11px; word-break: break-all; white-space: pre-wrap; }
 .bm-entry .meta { color: var(--muted); font-size: 11px; }
 .file-item { position: relative; padding: 7px 10px; padding-right: 26px; border-bottom: 1px solid var(--border); cursor: pointer; }

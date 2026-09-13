@@ -646,9 +646,16 @@
     list.innerHTML = all.map((b) => {
       const fname = b.key.split('|')[0];
       return '<div class="bm-entry" data-key="' + esc(b.key) + '" data-ln="' + b.lineNo + '">' +
+        '<button class="fx" title="remove this bookmark">✕</button>' +
         '<div class="snippet">' + esc(b.meta.snippet || '') + '</div>' +
         '<div class="meta">' + esc(fname) + ':' + b.lineNo + (b.note ? ' — <b>' + esc(b.note) + '</b>' : '') + '</div></div>';
     }).join('');
+  }
+  function removeBookmark(key, lineNo) {
+    bookmarksStore.remove(key, lineNo);
+    renderBookmarks(); renderChips(); updateStatus();
+    if (state.showOnlyBookmarked) rebuildView();
+    saveState();
   }
   function bookmarkKeyFor(fileId) {
     return LT.bookmarkFileKey(fileDisplayName(fileId), fileSizeOf(fileId), firstLineOf(files.find((x) => x.id === fileId)));
@@ -1774,6 +1781,11 @@
     $('bookmark-list').addEventListener('click', (e) => {
       const entry = e.target.closest('.bm-entry');
       if (!entry) return;
+      if (e.target.closest('.fx')) {
+        removeBookmark(entry.dataset.key, Number(entry.dataset.ln));
+        flash('bookmark removed (line ' + entry.dataset.ln + ')');
+        return;
+      }
       const rec = keptLineMap.get(entry.dataset.key.split('|')[0] + ':' + entry.dataset.ln);
       if (rec) { jumpToRecord(rec); return; }
       flash('that file is not loaded right now — bookmark kept for later');
