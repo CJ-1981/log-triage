@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.20.0 (2026-09-13)
+- feat: bookmarks panel Clear button removes entries whose file is not loaded
+
 ## 1.19.0 (2026-09-13)
 - feat: 7z archive support — pure-JS LZMA/LZMA2 decoder and 7z container (FR-26), zip extraction, archive export
 
