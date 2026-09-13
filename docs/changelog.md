@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.28.0 (2026-09-13)
+- feat: processing indicators for slow paths (analysis placeholder, deep-scan cancel, archive paint)
+- docs: describe Pages deployment in the release job (README, test-plan)
+- ci: deploy Pages from the release job (bot pushes never triggered the pages job)
+
 ## 1.27.0 (2026-09-13)
 - docs: test-plan spec list ordering (25-29) and tooltip spec 29
 - feat: explanatory tooltips on the Search tab rg option controls
