@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.21.0 (2026-09-13)
+- feat: theme picker as header icon button with dropdown (mobile single-line header)
+- docs: bring requirements/architecture/test-plan/README up to v1.20.0 state
+
 ## 1.20.0 (2026-09-13)
 - feat: bookmarks panel Clear button removes entries whose file is not loaded
 
