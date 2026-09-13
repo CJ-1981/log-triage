@@ -104,7 +104,7 @@ Status: implemented (v1.0.0; bookmarks Clear button in v1.20.0).
 - AC-2: Bookmarks are set on the gutter (with the `B` key), listed in a panel, and support notes.
 - AC-3: Bookmarks persist by file identity (name + size + first-line hash) and can be exported and imported.
 - AC-4: A detail drawer shows the full raw line and its metadata.
-- AC-5: The bookmarks panel has a Clear button that removes entries whose file is not currently loaded while keeping bookmarks of loaded files; the status line reports the removal ("cleared N bookmark(s) from M unloaded file(s)"), the count pill updates, and the ★ only-bookmarked view re-filters if active.
+- AC-5: The bookmarks panel has a Clear button that removes every bookmark in one click — including bookmarks of currently loaded files (v1.22.0 behavior; it originally only pruned entries of unloaded files). The status line reports the removal ("cleared N bookmark(s)"), the count pill and status-bar counter reset, the ★ only-bookmarked chip disappears when no bookmarks remain, and the ★ only-bookmarked view re-filters if active.
 
 ### FR-12 — Sanitized export
 

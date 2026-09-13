@@ -86,7 +86,7 @@ Implemented in G2–G8:
 | `src/store.js` | Kept-line store: streaming ingestion valve, global cap, per-file counters, retained `File` handles. |
 | `src/timeline.js` | Merged-timeline ordering (timestamp sort, file-order tiebreak) and the canvas histogram data. |
 | `src/selection.js` | Selection model: anchor / shift-range / ctrl-toggle / ctrl+A; masked copy with optional `file:lineNo:` prefixes. |
-| `src/bookmarks.js` | Bookmark storage keyed by file identity (name + size + first-line hash), notes, export/import, and `pruneExcept` for dropping entries of unloaded files (bookmarks panel Clear button). |
+| `src/bookmarks.js` | Bookmark storage keyed by file identity (name + size + first-line hash), notes, export/import, and `removeAll` behind the bookmarks panel Clear button. |
 | `src/exporter.js` | Sanitized exports: `.log`/`.txt`, `.csv`, `.json`, rg results, bookmarks; timestamped filenames. |
 | `src/archive.js` | Compressed-archive support (FR-26): detection of `.gz/.tar/.tar.gz/.tgz/.zip/.7z`, recursive extraction with progress, gzip via `DecompressionStream`, tar parse/write, zip central-directory reader (stored + deflate) and stored-entry writer, and re-packing extracts as archives. |
 | `src/format-7z.js` | 7z container (FR-26): signature + CRC32 verification, plain and `kEncodedHeader` (compressed) headers, pack/folder/substream/file-info parsing, UTF-16 names, empty files/dirs, digest verification; folder decoding for Copy/LZMA/LZMA2/Deflate coders; stored-entry `.7z` writer. |

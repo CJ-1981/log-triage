@@ -654,18 +654,14 @@
     return LT.bookmarkFileKey(fileDisplayName(fileId), fileSizeOf(fileId), firstLineOf(files.find((x) => x.id === fileId)));
   }
 
-  /* Clear button: drop bookmarks whose file is not currently loaded. */
-  function clearStaleBookmarks() {
-    const keep = files.map((f) => bookmarkKeyFor(f.id));
-    const keepSet = new Set(keep);
-    const removedCount = bookmarksStore.all().filter((b) => !keepSet.has(b.key)).length;
-    const removedKeys = bookmarksStore.pruneExcept(keep);
-    renderBookmarks(); updateStatus();
+  /* Clear button: remove every bookmark in one click (loaded files included). */
+  function clearAllBookmarks() {
+    const count = bookmarksStore.all().length;
+    bookmarksStore.removeAll();
+    renderBookmarks(); renderChips(); updateStatus();
     if (state.showOnlyBookmarked) rebuildView();
     saveState();
-    flash(removedKeys.length
-      ? 'cleared ' + removedCount + ' bookmark(s) from ' + removedKeys.length + ' unloaded file(s)'
-      : 'no stale bookmarks — all bookmarks belong to loaded files');
+    flash(count ? 'cleared ' + count + ' bookmark(s)' : 'no bookmarks to clear');
   }
   function fileSizeOf(fileId) {
     const f = files.find((x) => x.id === fileId);
@@ -1783,7 +1779,7 @@
       flash('that file is not loaded right now — bookmark kept for later');
       setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
     });
-    $('clear-bookmarks').onclick = clearStaleBookmarks;
+    $('clear-bookmarks').onclick = clearAllBookmarks;
 
     // debounced: start matching only after typing pauses
     let rgTimer = null;

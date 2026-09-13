@@ -910,13 +910,13 @@ function sevenZipBundle() {
   return sevenZipFixture;
 }
 
-test('bookmarks panel Clear button removes entries from unloaded files', async () => {
+test('bookmarks panel Clear button removes all bookmarks at once', async () => {
   await fresh();
   await click('btn-demo');
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
   // bookmark one demo line via the gutter
   await page.evaluate(() => document.querySelector('.vrow .bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
-  // seed a stale bookmark from an unloaded file via the persisted-state format
+  // seed another bookmark from an unloaded file via the persisted-state format
   await page.evaluate(() => {
     const s = JSON.parse(localStorage.getItem('log_triage_state_v1') || '{}');
     s.bookmarks = s.bookmarks || {};
@@ -930,13 +930,26 @@ test('bookmarks panel Clear button removes entries from unloaded files', async (
     Array.from(document.querySelectorAll('#bookmark-list .bm-entry')).map((e) => e.textContent));
   let listed = await entries();
   assert.strictEqual(listed.length, 2, 'live + stale entries listed: ' + listed.join(' | '));
+  // Clear wipes everything — including the loaded file's valid bookmarks
   await click('clear-bookmarks');
   listed = await entries();
-  assert.strictEqual(listed.length, 1, 'only the live bookmark remains: ' + listed.join(' | '));
-  assert.match(listed[0], /demo\.log/, 'surviving entry belongs to the loaded demo file');
-  assert.doesNotMatch(listed.join(' '), /ghost\.log/, 'stale entry is gone');
+  assert.strictEqual(listed.length, 0, 'all bookmarks removed: ' + listed.join(' | '));
+  const count = await page.evaluate(() => ({
+    pill: document.getElementById('bm-count').textContent,
+    status: document.getElementById('st-bm').textContent,
+    chipGone: !Array.from(document.querySelectorAll('.chip')).some((c) => c.textContent.includes('\u2605')),
+  }));
+  assert.strictEqual(count.pill, '0', 'panel count pill reset');
+  assert.strictEqual(count.status, '0', 'status-bar bookmark counter reset');
+  assert.ok(count.chipGone, '\u2605 only-bookmarked chip disappears when no bookmarks remain');
   const flashText = await page.evaluate(() => document.getElementById('st-progress').textContent);
-  assert.match(flashText, /cleared 1 bookmark/, 'status line confirms: ' + flashText);
+  assert.match(flashText, /cleared 2 bookmarks?/, 'status line confirms: ' + flashText);
+  // clearing again is a clean no-op
+  await click('clear-bookmarks');
+  assert.match(
+    await page.evaluate(() => document.getElementById('st-progress').textContent),
+    /no bookmarks/,
+    'second clear reports nothing to do');
 });
 
 test('loads a .7z archive: extracted files appear in the file list', { skip: !find7z() }, async () => {

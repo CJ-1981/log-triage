@@ -39,7 +39,7 @@ Version reference: v1.20.0. Development was test-driven and proceeded through qu
 ### G5 — Store, timeline, selection, bookmarks
 
 - Entry criteria: G4 complete.
-- Exit criteria: sequential multi-file ingestion with per-file and overall progress and cancel; 8 MB newline valve handles chunked/multibyte boundaries; global kept-line cap (default 100k, configurable) enforced with amortized FIFO trim and exact per-file counters; `File` handles retained for deep scan; merged timeline sorts by timestamp with file-order tiebreak and attaches null-timestamp (stack trace) lines to their predecessor; virtualized viewer smooth at 100k+ rows; wrap toggle with measured-height cache; selection (anchor / shift-range / ctrl-toggle / ctrl+A) copies with optional `file:lineNo:` prefixes and honors mask state; bookmarks persist by file identity and survive reload; bookmarks-panel Clear button prunes entries of unloaded files (`pruneExcept` shared case + e2e); coverage gate green on `store`, `timeline`, `selection`, `bookmarks`.
+- Exit criteria: sequential multi-file ingestion with per-file and overall progress and cancel; 8 MB newline valve handles chunked/multibyte boundaries; global kept-line cap (default 100k, configurable) enforced with amortized FIFO trim and exact per-file counters; `File` handles retained for deep scan; merged timeline sorts by timestamp with file-order tiebreak and attaches null-timestamp (stack trace) lines to their predecessor; virtualized viewer smooth at 100k+ rows; wrap toggle with measured-height cache; selection (anchor / shift-range / ctrl-toggle / ctrl+A) copies with optional `file:lineNo:` prefixes and honors mask state; bookmarks persist by file identity and survive reload; bookmarks-panel Clear button wipes all bookmarks in one click (`removeAll` shared case + e2e incl. ★ chip reset); coverage gate green on `store`, `timeline`, `selection`, `bookmarks`.
 - Status: **done**.
 
 ### G6 — Exporters and bump tooling
@@ -116,7 +116,7 @@ App suite (30 specs) — coverage includes:
 17. ★ only-bookmarks chip in the level-chips row: appears with a live bookmarked count when bookmarks exist in scope, click toggles the filter, hidden otherwise.
 18. `.7z` ingest: a real 7-Zip-built archive (solid LZMA2, subfolder, file names with directories) is loaded through the file input; both extracted entries appear in the file list, the inner log is detected as logcat, and line counts match (skips when no 7-Zip CLI; CI installs `p7zip-full`).
 19. Archive export: the export tab re-packs the extract as `.7z` (format dropdown) — the download's first bytes are the 7z signature `37 7A BC AF 27 1C` and the status line confirms (same skip condition).
-20. Bookmarks-panel Clear button: a live demo bookmark plus an injected stale entry (unloaded `ghost.log`) are both listed; Clear removes exactly the stale entry, keeps the live one, and the status line reports the removal.
+20. Bookmarks-panel Clear button: a live demo bookmark plus an injected stale entry (unloaded `ghost.log`) are both listed; Clear wipes **all** bookmarks — count pill and status-bar counter reset to 0, the ★ chip disappears, and the status line reports "cleared 2 bookmark(s)"; a second click is a clean no-op.
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 
