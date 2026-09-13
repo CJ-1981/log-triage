@@ -173,17 +173,20 @@
         const ap = $('archive-progress');
         ap.classList.add('visible');
         $('archive-progress-msg').textContent = 'extracting ' + f.name + '…';
+        let innerFiles = null;
         try {
           const buf = new Uint8Array(await f.arrayBuffer());
           const innerEntries = await LT.extractArchive(f.name, buf, 0, (msg) => {
             $('archive-progress-msg').textContent = msg;
           });
-          ap.classList.remove('visible');
-          const innerFiles = innerEntries.map((e) => new File([e.data], e.name, { type: 'text/plain' }));
-          await loadFiles(innerFiles);
+          innerFiles = innerEntries.map((e) => new File([e.data], e.name, { type: 'text/plain' }));
         } catch (err) {
           flash('archive extraction failed: ' + err.message);
+        } finally {
+          // never leave the full-screen progress overlay up after a failure
+          ap.classList.remove('visible');
         }
+        if (innerFiles) await loadFiles(innerFiles);
         continue;
       }
       const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
@@ -304,6 +307,7 @@
   let charW = 0;            // measured monospace character width (px)
 
   function onKeptChanged() {
+    bmKeyCache.clear(); // kept rows (and thus file identity lines) changed
     filterQuickInit();
     rebuildView();
     renderChips();
@@ -529,10 +533,6 @@
     return f ? f.name : fileId;
   }
 
-  function currentFileKey() {
-    const f = files.find((x) => x.id === (state.activeFile || ''));
-    return LT.bookmarkFileKey(f ? f.name : '*', f ? f.size : 0, firstLineOf(f));
-  }
   function firstLineOf(f) {
     if (!f) return '*';
     const st = store.kept.find((r) => r.fileId === f.id);
@@ -636,18 +636,20 @@
     if (state.showOnlyBookmarked) rebuildView(); else { updateStatus(); renderRows(); }
     saveState();
   }
+  let bmRows = []; // bookmark entries currently rendered, index == data-idx
   function renderBookmarks() {
     const list = $('bookmark-list');
     if (!list) return;
     const all = bookmarksStore.all();
+    bmRows = all;
     $('bm-count').textContent = all.length;
     if (!all.length) {
       list.innerHTML = '<div class="muted" style="padding:8px 10px">no bookmarks yet — click ☆ in the gutter or press B</div>';
       return;
     }
-    list.innerHTML = all.map((b) => {
+    list.innerHTML = all.map((b, i) => {
       const fname = b.key.split('|')[0];
-      return '<div class="bm-entry" data-key="' + esc(b.key) + '" data-ln="' + b.lineNo + '">' +
+      return '<div class="bm-entry" data-idx="' + i + '" data-ln="' + b.lineNo + '">' +
         '<button class="fx" title="remove this bookmark">✕</button>' +
         '<div class="snippet">' + esc(b.meta.snippet || '') + '</div>' +
         '<div class="meta">' + esc(fname) + ':' + b.lineNo + (b.note ? ' — <b>' + esc(b.note) + '</b>' : '') + '</div></div>';
@@ -660,8 +662,15 @@
     else if (state.showOnlyBookmarked) rebuildView();
     saveState();
   }
+  // memoized per file: firstLineOf() scans store.kept, and callers run per
+  // kept row / per scroll frame — invalidation happens in onKeptChanged()
+  const bmKeyCache = new Map();
   function bookmarkKeyFor(fileId) {
-    return LT.bookmarkFileKey(fileDisplayName(fileId), fileSizeOf(fileId), firstLineOf(files.find((x) => x.id === fileId)));
+    if (bmKeyCache.has(fileId)) return bmKeyCache.get(fileId);
+    const f = files.find((x) => x.id === fileId);
+    const k = LT.bookmarkFileKey(f ? f.name : fileId, f ? f.size : 0, firstLineOf(f));
+    bmKeyCache.set(fileId, k);
+    return k;
   }
 
   /* Clear button: remove every bookmark in one click (loaded files included). */
@@ -675,11 +684,6 @@
     saveState();
     flash(count ? 'cleared ' + count + ' bookmark(s)' : 'no bookmarks to clear');
   }
-  function fileSizeOf(fileId) {
-    const f = files.find((x) => x.id === fileId);
-    return f ? f.size : 0;
-  }
-
   function showDrawer(rec) {
     if (!rec) return;
     const d = $('drawer');
@@ -1532,11 +1536,7 @@
 
   function setBmOnly(on) {
     state.showOnlyBookmarked = on;
-    try {
-      window.__bmonlyDebug = { on: on, arrLen: store.kept.length, err: null };
-    } catch (e) { window.__bmonlyDebug = { err: String(e) }; }
     saveState(); rebuildView();
-    window.__bmonlyDebug = Object.assign(window.__bmonlyDebug || {}, { shown: filteredCount });
   }
 
   function flash(msg) {
@@ -1786,12 +1786,14 @@
     $('bookmark-list').addEventListener('click', (e) => {
       const entry = e.target.closest('.bm-entry');
       if (!entry) return;
+      const row = bmRows[Number(entry.dataset.idx)];
+      if (!row) return;
       if (e.target.closest('.fx')) {
-        removeBookmark(entry.dataset.key, Number(entry.dataset.ln));
-        flash('bookmark removed (line ' + entry.dataset.ln + ')');
+        removeBookmark(row.key, row.lineNo);
+        flash('bookmark removed (line ' + row.lineNo + ')');
         return;
       }
-      const rec = keptLineMap.get(entry.dataset.key.split('|')[0] + ':' + entry.dataset.ln);
+      const rec = keptLineMap.get(row.key.split('|')[0] + ':' + row.lineNo);
       if (rec) { jumpToRecord(rec); return; }
       flash('that file is not loaded right now — bookmark kept for later');
       setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
@@ -1879,7 +1881,6 @@
     };
     $('mask-preview-in').oninput = previewMask;
 
-    ;['exp-txt'].forEach(() => {});
     $('exp-txt').onclick = () => exportRecords('txt');
     $('exp-csv').onclick = () => exportRecords('csv');
     $('exp-json').onclick = () => exportRecords('json');

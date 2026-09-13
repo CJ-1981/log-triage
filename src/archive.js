@@ -64,14 +64,29 @@
       let allZero = true;
       for (let i = 0; i < 512; i++) { if (header[i] !== 0) { allZero = false; break; } }
       if (allZero) break;
+      // header checksum: sum of all bytes with the chksum field read as spaces
+      let sum = 0;
+      for (let i = 0; i < 512; i++) sum += i >= 148 && i < 156 ? 32 : header[i];
+      const chkStr = dec.decode(header.subarray(148, 156)).replace(/[\0\s]/g, '');
+      const chk = parseInt(chkStr, 8);
+      if (chkStr && !isNaN(chk) && chk !== sum) throw new Error('tar: header checksum mismatch at offset ' + offset);
       let nameEnd = 0;
       while (nameEnd < 100 && header[nameEnd] !== 0) nameEnd++;
-      const name = dec.decode(header.subarray(0, nameEnd));
+      let name = dec.decode(header.subarray(0, nameEnd));
+      if (header[124] & 0x80) throw new Error('tar: base-256 sizes are not supported');
       const sizeStr = dec.decode(header.subarray(124, 136)).replace(/[\0\s]/g, '');
       const size = parseInt(sizeStr, 8) || 0;
+      // ustar prefix extends names beyond 100 chars
+      if (dec.decode(header.subarray(257, 262)) === 'ustar') {
+        let pEnd = 345;
+        while (pEnd < 500 && header[pEnd] !== 0) pEnd++;
+        const prefix = dec.decode(header.subarray(345, pEnd));
+        if (prefix) name = prefix + '/' + name;
+      }
       const type = header[156];
       offset += 512;
       if (type === 0 || type === 48) {
+        if (offset + size > data.length) throw new Error('tar: truncated entry ' + name);
         entries.push({ name, data: new Uint8Array(data.subarray(offset, offset + size)) });
       }
       offset += Math.ceil(size / 512) * 512;
@@ -110,6 +125,7 @@
   }
 
   function writeZipStored(entries) {
+    if (entries.length > 65535) throw new Error('zip: too many entries for a non-zip64 archive (' + entries.length + ')');
     const enc = new TextEncoder();
     const chunks = [];
     const central = [];
@@ -117,6 +133,8 @@
     for (const entry of entries) {
       const nameBytes = enc.encode(entry.name);
       const data = entry.data;
+      if (data.length > 0xffffffff - 1) throw new Error('zip: entry too large for a non-zip64 archive: ' + entry.name);
+      if (offset > 0xffffffff - 1) throw new Error('zip: archive too large for a non-zip64 archive');
       const crc = crc32(data);
       const lfh = new Uint8Array(30 + nameBytes.length);
       const lv = new DataView(lfh.buffer);
@@ -161,6 +179,20 @@
     return result;
   }
 
+  /* Untrusted-header guards: archives are attacker/user-controlled bytes, so
+   * extraction caps nesting depth and cumulative output instead of allocating
+   * whatever a header claims (decompression-bomb protection). */
+  const MAX_DEPTH = 12;
+  const MAX_ENTRY_BYTES = 512 * 1024 * 1024;   // per extracted file
+  const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024; // per extractArchive call
+  let extractedBudget = MAX_TOTAL_BYTES;
+
+  function budgetTake(n) {
+    if (n > MAX_ENTRY_BYTES) throw new Error('archive entry too large (' + n + ' bytes claimed)');
+    if (n > extractedBudget) throw new Error('archive expands beyond the ' + MAX_TOTAL_BYTES + ' byte safety cap');
+    extractedBudget -= n;
+  }
+
   async function extractZip(data, depth, base, onProgress) {
     const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
     let eocd = -1;
@@ -177,6 +209,7 @@
       if (cd + 46 > data.length || dv.getUint32(cd, true) !== 0x02014b50) throw new Error('zip: bad central directory');
       const flags = dv.getUint16(cd + 8, true);
       const method = dv.getUint16(cd + 10, true);
+      const crc = dv.getUint32(cd + 16, true);
       const compSize = dv.getUint32(cd + 20, true);
       const uncompSize = dv.getUint32(cd + 24, true);
       const nameLen = dv.getUint16(cd + 28, true);
@@ -188,9 +221,11 @@
       if (name.endsWith('/')) continue; // directory entry
       if (flags & 1) throw new Error('zip: encrypted entries are not supported (' + name + ')');
       if (uncompSize === 0xffffffff || localOff === 0xffffffff) throw new Error('zip: zip64 entries are not supported');
+      if (localOff + 30 > data.length || dv.getUint32(localOff, true) !== 0x04034b50) throw new Error('zip: corrupt local header for ' + name);
       const lnLen = dv.getUint16(localOff + 26, true);
       const leLen = dv.getUint16(localOff + 28, true);
       const start = localOff + 30 + lnLen + leLen;
+      if (start + compSize > data.length) throw new Error('zip: truncated entry ' + name);
       const raw = data.subarray(start, start + compSize);
       let inner;
       if (method === 0) {
@@ -200,6 +235,9 @@
       } else {
         throw new Error('zip: unsupported compression method ' + method);
       }
+      if (inner.length !== uncompSize) throw new Error('zip: size mismatch for ' + name);
+      // flags bit 3 (streaming) defers CRC to a data descriptor we do not parse
+      if (!(flags & 8) && crc32(inner) !== crc) throw new Error('zip: CRC mismatch for ' + name);
       const sub = await extractArchive(name, inner, depth + 1, onProgress);
       for (const s of sub) { s.name = base + '/' + s.name; out.push(s); }
     }
@@ -211,6 +249,7 @@
     const decoded = [];
     for (let i = 0; i < parsed.folders.length; i++) {
       onProgress('decompressing ' + name + ' (block ' + (i + 1) + '/' + parsed.folders.length + ')');
+      budgetTake(parsed.folders[i].outSize); // claimed decoded size, before allocating it
       decoded.push(await F7.decode7zFolder(data, parsed.folders[i]));
     }
     const real = parsed.files.filter((f) => !f.isDir);
@@ -228,6 +267,10 @@
 
   async function extractArchive(name, data, depth, onProgress) {
     if (!onProgress) onProgress = () => {};
+    depth = depth || 0; // guard against NaN depth arithmetic if omitted
+    if (depth === 0) extractedBudget = MAX_TOTAL_BYTES;
+    if (depth > MAX_DEPTH) throw new Error('archive nesting too deep (over ' + MAX_DEPTH + ' levels) at ' + name);
+    budgetTake(data.length);
     if (depth > 0) onProgress('extracting ' + name + ' (level ' + depth + ')');
     const type = detectArchiveType(name);
     if (!type) return [{ name, data }];

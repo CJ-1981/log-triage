@@ -50,9 +50,12 @@ export function commitsSince(tag, runGit) {
 }
 
 export function updateReadme(text, version) {
+  let out = text;
   const marker = /<!--\s*version:[^>]*-->/;
-  if (marker.test(text)) return text.replace(marker, `<!-- version: ${version} -->`);
-  return text;
+  if (marker.test(out)) out = out.replace(marker, `<!-- version: ${version} -->`);
+  // human-readable release line, kept in sync with the marker
+  out = out.replace(/^Current release: v\d+\.\d+\.\d+.*$/m, `Current release: v${version}`);
+  return out;
 }
 
 export function changelogEntry(version, dateStr, commits) {
@@ -102,6 +105,7 @@ function main() {
     console.log(`bump: no release-worthy commits since ${tag || 'start'} — keeping ${pkg.version}`);
     return;
   }
+  const prev = pkg.version;
   pkg.version = next;
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
 
@@ -115,7 +119,7 @@ function main() {
     const old = readFileSync(changelogPath, 'utf8');
     writeFileSync(changelogPath, updateChangelog(old, changelogEntry(next, today, commits)));
   }
-  console.log(`bump: ${pkg.version && next} -> ${next} (${parseBumpType(commits)}) from ${commits.length} commit(s) since ${tag || 'start'}`);
+  console.log(`bump: ${prev} -> ${next} (${parseBumpType(commits)}) from ${commits.length} commit(s) since ${tag || 'start'}`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) main();

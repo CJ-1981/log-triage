@@ -118,10 +118,11 @@ test('extractArchive unpacks stored zip entries and recurses', { skip: !hasStrea
 test('extractArchive unpacks deflate zip entries', { skip: !hasStreams }, async () => {
   const zlib = require('node:zlib');
   const enc = (s) => new TextEncoder().encode(s);
-  const file = { name: 'deflated.log', raw: enc('deflate me, deflate me, deflate me\n'.repeat(10)) };
-  const comp = zlib.deflateRawSync(file.raw);
+  const content = enc('deflate me, deflate me, deflate me\n'.repeat(10));
+  const comp = zlib.deflateRawSync(content);
+  const crc = ar.crc32(content);
   // hand-build a minimal zip: local header + data + central dir + EOCD (method 8)
-  const nameB = enc(file.name);
+  const nameB = enc('deflated.log');
   const parts = [];
   const lfh = new Uint8Array(30 + nameB.length);
   const lv = new DataView(lfh.buffer);
@@ -129,9 +130,9 @@ test('extractArchive unpacks deflate zip entries', { skip: !hasStreams }, async 
   lv.setUint16(4, 20, true);
   lv.setUint16(8, 0, true); // flags
   lv.setUint16(10, 8, true); // method deflate
-  lv.setUint32(14, ar.crc32(file.raw), true);
+  lv.setUint32(14, crc, true);
   lv.setUint32(18, comp.length, true);
-  lv.setUint32(22, file.raw.length, true);
+  lv.setUint32(22, content.length, true);
   lv.setUint16(26, nameB.length, true);
   lfh.set(nameB, 30);
   parts.push(lfh, comp);
@@ -140,8 +141,9 @@ test('extractArchive unpacks deflate zip entries', { skip: !hasStreams }, async 
   cv.setUint32(0, 0x02014b50, true);
   cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
   cv.setUint16(10, 8, true);
+  cv.setUint32(16, crc, true);
   cv.setUint32(20, comp.length, true);
-  cv.setUint32(24, file.raw.length, true);
+  cv.setUint32(24, content.length, true);
   cv.setUint16(28, nameB.length, true);
   cv.setUint32(42, 0, true);
   cd.set(nameB, 46);
@@ -163,7 +165,7 @@ test('extractArchive unpacks deflate zip entries', { skip: !hasStreams }, async 
   const out = await ar.extractArchive('packed.zip', zipBuf);
   assert.strictEqual(out.length, 1);
   assert.strictEqual(out[0].name, 'packed/deflated.log');
-  assert.deepStrictEqual(out[0].data, file.raw);
+  assert.deepStrictEqual(out[0].data, content);
 });
 
 test('extractArchive rejects encrypted zip entries', { skip: !hasStreams }, async () => {
@@ -241,6 +243,7 @@ function craftZip(entries) {
     cv.setUint32(0, 0x02014b50, true);
     cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
     cv.setUint16(10, c.e.method || 0, true);
+    cv.setUint32(16, ar.crc32(c.e.data || new Uint8Array(0)), true);
     cv.setUint32(20, c.e.zip64 ? 0xffffffff : c.size, true);
     cv.setUint32(24, c.e.zip64 ? 0xffffffff : c.size, true);
     cv.setUint16(28, c.nameB.length, true);
@@ -291,4 +294,112 @@ test('buildArchive gz fallback concatenates and compresses', { skip: !hasStreams
   const gz = await ar.buildArchive(entries, 'gz');
   const back = await ar.gunzipData(gz);
   assert.strictEqual(new TextDecoder().decode(back), 'concat a\nconcat b\n');
+});
+
+// --- untrusted-header guards (review hardening) ---
+
+test('extractArchive rejects zip entries with corrupted payload (CRC)', { skip: !hasStreams }, async () => {
+  const raw = new TextEncoder().encode('verify my crc please\n');
+  const zipBuf = craftZip([{ name: 'ok.log', data: raw }]);
+  // flip a payload byte inside the local entry (after the 30+name header)
+  const nameLen = new TextEncoder().encode('ok.log').length;
+  zipBuf[30 + nameLen + 2] ^= 0xff;
+  await assert.rejects(() => ar.extractArchive('crc.zip', zipBuf), /CRC mismatch/i);
+});
+
+test('extractArchive caps archive nesting depth', { skip: !hasStreams }, async () => {
+  let blob = new TextEncoder().encode('deep\n');
+  for (let i = 0; i < 25; i++) blob = await ar.gzipData(blob);
+  // one .gz suffix per level keeps the recursion going until the cap trips
+  await assert.rejects(() => ar.extractArchive('deep' + '.gz'.repeat(25), blob), /nesting too deep/i);
+});
+
+test('extractArchive enforces the expansion budget', async () => {
+  // crafted 7z header claiming a 3 GiB copy-coded folder from 4 packed bytes:
+  // the guard must refuse BEFORE allocating what the header claims
+  const F7 = require('../src/format-7z.js');
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x06, 0x00, 0x01, 0x09, 0x04, 0x00, // pack info: 1 stream, 4 bytes
+    0x07, 0x0b, 0x01, 0x00, 0x01, 0x01, 0x00, // 1 copy coder
+    0x0c, 0xff, 0x00, 0x00, 0x00, 0xc0, 0x00, 0x00, 0x00, 0x00, // unpack size 3 GiB
+    0x00, 0x00,
+    0x05, 0x01, 0x11, 0x0d, 0x00, 0x61, 0x00, 0x2e, 0x00, 0x6c, 0x00, 0x6f, 0x00, 0x67, 0x00, 0x00, 0x00,
+    0x00, 0x00,
+  ]);
+  const payload = new Uint8Array([0x41, 0x42, 0x43, 0x44]);
+  const buf = new Uint8Array(32 + payload.length + header.length);
+  buf.set([0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c, 0x00, 0x04], 0);
+  const dv = new DataView(buf.buffer);
+  dv.setBigUint64(12, BigInt(payload.length), true);
+  dv.setBigUint64(20, BigInt(header.length), true);
+  dv.setUint32(28, F7.crc32(header), true);
+  dv.setUint32(8, F7.crc32(buf.subarray(12, 32)), true);
+  buf.set(payload, 32);
+  buf.set(header, 32 + payload.length);
+  await assert.rejects(() => ar.extractArchive('bomb.7z', buf), /too large|safety cap/i);
+});
+
+test('extractArchive rejects truncated tar entries', async () => {
+  const tarBuf = ar.writeTar([{ name: 'a.log', data: new TextEncoder().encode('x'.repeat(1000)) }]);
+  await assert.rejects(() => ar.extractArchive('cut.tar', tarBuf.subarray(0, 600)), /truncated entry/i);
+});
+
+test('extractArchive unpacks tar and nested tar.gz entries', { skip: !hasStreams }, async () => {
+  const inner = await ar.gzipData(new TextEncoder().encode('nested gz inside tar\n'));
+  const tarBuf = ar.writeTar([
+    { name: 'plain.log', data: new TextEncoder().encode('plain tar line\n') },
+    { name: 'inner.log.gz', data: inner },
+  ]);
+  const out = await ar.extractArchive('bundle.tar', tarBuf);
+  assert.deepStrictEqual(out.map((e) => e.name).sort(), ['bundle/inner.log', 'bundle/plain.log']);
+  assert.strictEqual(new TextDecoder().decode(out.find((e) => e.name === 'bundle/plain.log').data), 'plain tar line\n');
+  assert.strictEqual(new TextDecoder().decode(out.find((e) => e.name === 'bundle/inner.log').data), 'nested gz inside tar\n');
+});
+
+test('parseTar rejects headers with a bad checksum', () => {
+  const tarBuf = ar.writeTar([{ name: 'a.log', data: new TextEncoder().encode('flip me\n') }]);
+  tarBuf[3] ^= 0xff; // a name byte: checksum no longer matches
+  assert.throws(() => ar.parseTar(tarBuf), /header checksum mismatch/i);
+});
+
+test('parseTar rejects base-256 sizes', () => {
+  const tarBuf = ar.writeTar([{ name: 'a.log', data: new TextEncoder().encode('base256\n') }]);
+  tarBuf[124] |= 0x80; // GNU base-256 size marker
+  // restore a valid checksum so only the base-256 guard trips
+  let sum = 0;
+  for (let i = 0; i < 512; i++) sum += i >= 148 && i < 156 ? 32 : tarBuf[i];
+  tarBuf.set(new TextEncoder().encode(sum.toString(8).padStart(6, '0') + '\0 '), 148);
+  assert.throws(() => ar.parseTar(tarBuf), /base-256/i);
+});
+
+test('parseTar joins the ustar prefix for long names', () => {
+  // hand-built ustar header: name field + prefix field (345..499)
+  const enc = new TextEncoder();
+  const header = new Uint8Array(512);
+  const name = 'leaf.log';
+  const prefix = 'a'.repeat(50) + '/' + 'b'.repeat(50);
+  header.set(enc.encode(name), 0);
+  header.set(enc.encode(prefix), 345);
+  header.set(enc.encode('0000644\0'), 100);
+  header.set(enc.encode('00000000012\0'), 124); // size 10 octal
+  header.set(enc.encode('        '), 148);
+  header[156] = 48;
+  header.set(enc.encode('ustar\0'), 257);
+  header.set(enc.encode('00'), 263);
+  let sum = 0;
+  for (let i = 0; i < 512; i++) sum += i >= 148 && i < 156 ? 32 : header[i];
+  header.set(enc.encode(sum.toString(8).padStart(6, '0') + '\0 '), 148);
+  const data = new Uint8Array(512 + 512);
+  data.set(header, 0);
+  data.set(enc.encode('0123456789'), 512);
+  const entries = ar.parseTar(data);
+  assert.strictEqual(entries.length, 1);
+  assert.strictEqual(entries[0].name, prefix + '/' + name);
+});
+
+test('decodeFolderSync rejects implausible 7z compression ratios', async () => {
+  const F7 = require('../src/format-7z.js');
+  const folder = { codec: 'copy', props: null, outSize: 1 << 30, packOffset: 0, packSize: 4, crc: null };
+  assert.throws(() => F7.decodeFolderSync(new Uint8Array(8), folder), /implausible compression ratio/i);
 });

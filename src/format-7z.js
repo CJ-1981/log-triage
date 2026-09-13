@@ -300,6 +300,10 @@
 
   function decodeFolderSync(data, folder) {
     if (folder.codec === 'deflate') throw new Error('7z: deflate coder needs async decode');
+    // decompression-bomb guard: never allocate what an implausible header claims
+    if (folder.outSize > 4096 * folder.packSize + 1048576) {
+      throw new Error('7z: implausible compression ratio (' + folder.packSize + ' packed -> ' + folder.outSize + ' unpacked)');
+    }
     let out;
     if (folder.codec === 'copy') {
       if (folder.packSize !== folder.outSize) throw new Error('7z: copy coder size mismatch');
@@ -308,7 +312,7 @@
       out = LZ.lzma2Decode(data, folder.packOffset, folder.packOffset + folder.packSize, folder.outSize);
     } else if (folder.codec === 'lzma') {
       if (!folder.props || !folder.props.length) throw new Error('7z: LZMA coder missing properties');
-      out = LZ.lzmaDecode(data, folder.packOffset, folder.outSize, folder.props[0]);
+      out = LZ.lzmaDecode(data, folder.packOffset, folder.outSize, folder.props[0], folder.packOffset + folder.packSize);
     } else {
       throw new Error('7z: unsupported codec ' + folder.codec);
     }

@@ -3,7 +3,7 @@
 /* Minimal static file server for local browser testing (no dependencies). */
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
-import { extname, join, normalize, dirname } from 'node:path';
+import { extname, join, normalize, dirname, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const root = normalize(join(dirname(fileURLToPath(import.meta.url)), '..'));
@@ -19,7 +19,7 @@ createServer(async (req, res) => {
     let p = decodeURIComponent(new URL(req.url, 'http://x').pathname);
     if (p === '/') p = '/log-triage.html';
     const file = normalize(join(root, p));
-    if (!file.startsWith(root)) { res.writeHead(403); res.end(); return; }
+    if (file !== root && !file.startsWith(root + sep)) { res.writeHead(403); res.end(); return; }
     const data = await readFile(file);
     res.writeHead(200, { 'content-type': MIME[extname(file)] || 'application/octet-stream' });
     res.end(data);

@@ -39,12 +39,14 @@
     // range decoder state (attached per chunk via rcInit)
     let src = null;
     let p = 0;
+    let hardEnd = 0;
     let code = 0;
     let range = 0xFFFFFFFF;
 
-    function rcInit(nextSrc, pos) {
+    function rcInit(nextSrc, pos, end) {
       src = nextSrc;
       p = pos;
+      hardEnd = end == null ? src.length : Math.min(end, src.length);
       // one zero byte, then a 32-bit big-endian code
       if (src[p] !== 0) throw new Error('lzma: corrupt stream (bad range coder init)');
       p++;
@@ -55,7 +57,7 @@
 
     function normalize() {
       while (range < TOP) {
-        if (p >= src.length) throw new Error('lzma: unexpected end of stream');
+        if (p >= hardEnd) throw new Error('lzma: unexpected end of stream');
         range = (range << 8) >>> 0;
         code = ((code << 8) | src[p++]) >>> 0;
       }
@@ -212,11 +214,13 @@
     return { rcInit, decode };
   }
 
-  /** Raw LZMA1 stream (no header, no end marker): decode exactly outSize bytes. */
-  function lzmaDecode(src, pos, outSize, props) {
+  /** Raw LZMA1 stream (no header, no end marker): decode exactly outSize bytes.
+   * Optional `end` bounds the readable input (a folder's packed stream), so a
+   * corrupt stream cannot decode into the neighbouring pack data. */
+  function lzmaDecode(src, pos, outSize, props, end) {
     const out = new Uint8Array(outSize);
     const dec = createDecoderState(props, out, 0, 0);
-    dec.rcInit(src, pos);
+    dec.rcInit(src, pos, end);
     dec.decode(outSize);
     return out;
   }

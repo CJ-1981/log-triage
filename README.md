@@ -6,7 +6,7 @@
 
 **Log Triage** is a privacy-first log triage tool that runs entirely in your browser. Drop one or more log files onto a single self-contained HTML page and get instant format detection, parsing, filtering, ripgrep-style search, PII masking, analysis, and sanitized export — with no server, no uploads, and no telemetry. Your files never leave your machine.
 
-Current release: v1.15.0
+Current release: v1.22.1
 
 ## Screenshots
 
@@ -82,7 +82,7 @@ Requirements: Node.js 22.
 npm test          # Unit + bump suites (node:test)
 npm run test:gate # Unit tests + coverage gate (>=90% line / >=85% branch on core src modules)
 npm run build     # Build log-triage.html from src/
-npm run e2e       # Playwright end-to-end tests (40 specs: 32 app + 8 stress)
+npm run e2e       # Playwright end-to-end tests (43 specs: 35 app + 8 stress)
 npm run e2e:stress # Stress suite only (generated big fixture)
 npm run bump      # Semver bump from conventional commits (CI runs this automatically on main)
 ```
@@ -105,6 +105,7 @@ log-triage/
 │   ├── parser.js          # logcat / syslog / CLF / ISO-8601 / MM-DD / plain parsers
 │   └── …                  # masks, pii-provider, filters, levels, search, store,
 │                          # timeline, selection, bookmarks, exporter, themes,
+│                          # pii-remote (Presidio/LLM adapters),
 │                          # archive, lzma, format-7z,
 │                          # app.js + app-filecache.js (UI glue)
 ├── tests/

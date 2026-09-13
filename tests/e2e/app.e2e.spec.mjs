@@ -22,14 +22,14 @@ before(async () => {
     env: { ...process.env, PORT: String(PORT) },
   });
   // wait until the server reports its bound port (works for OS-assigned ports too)
-  await new Promise((res) => {
+  await new Promise((res, rej) => {
     const onData = (d) => {
       const m = String(d).match(/SERVER_PORT:(\d+)/);
       if (m) res(Number(m[1]));
     };
     server.stdout.on('data', onData);
     server.stderr.on('data', onData);
-    setTimeout(res, 3000);
+    setTimeout(() => rej(new Error('static server did not report SERVER_PORT within 3s')), 3000);
   }).then((p) => { PORT = p; });
   await new Promise((res) => { server.stdout.on('data', () => res()); setTimeout(res, 300); });
   browser = await chromium.launch();
@@ -48,6 +48,12 @@ after(async () => {
 afterEach(async () => {
   const errs = page && page.__pageErrors ? page.__pageErrors.splice(0) : [];
   assert.strictEqual(errs.length, 0, 'uncaught page errors: ' + errs.join(' | '));
+});
+
+// all specs share one page: a test that fails mid-run must not leak its
+// phone-width viewport into the next spec (review 2026-09)
+afterEach(async () => {
+  if (page) await page.setViewportSize({ width: 1440, height: 900 });
 });
 
 async function fresh(hash) {
@@ -1028,6 +1034,37 @@ test('★ filter releases when the last bookmark is removed individually', async
   const starSel = await page.evaluate(() =>
     Array.from(document.querySelectorAll('.chip')).some((c) => c.textContent.includes('\u2605') && c.classList.contains('sel')));
   assert.ok(!starSel, '★ chip not left in selected state');
+});
+
+test('Providers tab: local default, remote banner, readable connection error', async () => {
+  await fresh();
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=pii]').click());
+  // local regex engine is the default and shows no remote warning
+  assert.strictEqual(await page.evaluate(() => document.getElementById('pii-provider').value), 'local');
+  assert.ok(await page.evaluate(() => document.getElementById('pii-remote-warn').classList.contains('hidden')));
+  // switching to the Presidio sidecar shows the warning banner + its settings
+  await page.evaluate(() => {
+    const s = document.getElementById('pii-provider');
+    s.value = 'presidio';
+    s.dispatchEvent(new Event('change'));
+  });
+  assert.ok(await page.evaluate(() => !document.getElementById('pii-remote-warn').classList.contains('hidden')), 'remote warning visible');
+  assert.ok(await page.evaluate(() => !document.getElementById('pii-presidio-box').classList.contains('hidden')), 'presidio settings visible');
+  // Test connection against an unroutable port surfaces a readable status
+  // (and must not throw — the pageerror guard in afterEach enforces that,
+  // which is what would have caught the unbundled pii-remote.js module)
+  await page.evaluate(() => { document.getElementById('pii-presidio-url').value = 'http://127.0.0.1:1'; });
+  await click('btn-pii-test');
+  await page.waitForFunction(() => document.getElementById('pii-test-status').textContent.length > 3, null, { timeout: 15000 });
+  const status = await page.evaluate(() => document.getElementById('pii-test-status').textContent);
+  assert.doesNotMatch(status, /^testing/, 'test-connection finished with a status: ' + status);
+  // back to local: banner hides again
+  await page.evaluate(() => {
+    const s = document.getElementById('pii-provider');
+    s.value = 'local';
+    s.dispatchEvent(new Event('change'));
+  });
+  assert.ok(await page.evaluate(() => document.getElementById('pii-remote-warn').classList.contains('hidden')), 'warning hidden again for local');
 });
 
 test('loads a .7z archive: extracted files appear in the file list', { skip: !find7z() }, async () => {
