@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.22.3 (2026-09-13)
+- fix: post-merge review follow-ups (archive budget semantics, zip claim reserve)
+
 ## 1.22.2 (2026-09-13)
 - fix: code-review hardening (review/v1.22.x)
 
