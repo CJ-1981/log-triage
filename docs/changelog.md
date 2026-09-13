@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.22.2 (2026-09-13)
+- fix: code-review hardening (review/v1.22.x)
+
 ## 1.22.1 (2026-09-13)
 - fix: ★ only-bookmarked filter no longer sticks after bookmarks run out
 
