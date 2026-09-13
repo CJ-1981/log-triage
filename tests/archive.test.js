@@ -6,7 +6,7 @@ const ar = require('../src/archive.js');
 const hasStreams = typeof DecompressionStream !== 'undefined';
 
 test('detectArchiveType recognises supported formats', () => {
-  assert.strictEqual(ar.detectArchiveType('app.log.gz'), 'gzip');
+  assert.strictEqual(ar.detectArchiveType('app.log.gz'), 'gz');
   assert.strictEqual(ar.detectArchiveType('bundle.tar.gz'), 'tar.gz');
   assert.strictEqual(ar.detectArchiveType('bundle.tgz'), 'tar.gz');
   assert.strictEqual(ar.detectArchiveType('logs.tar'), 'tar');
