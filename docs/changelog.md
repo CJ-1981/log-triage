@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.25.0 (2026-09-13)
+- feat: drawer TID + copy buttons; universal inline ✕ clear for text inputs
+
 ## 1.24.0 (2026-09-13)
 - feat: expand built-in issue-scan catalog to 14 groups (Android expert review)
 
