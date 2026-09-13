@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.16.0 (2026-09-13)
+- chore: rebuild log-triage.html at current version
+- feat: PII Providers tab — Presidio/LLM settings, CORS proxy, test connection, scan; fix missing pii-llm-timeout input causing boot crash
+
 ## 1.15.0 (2026-09-12)
 - feat: per-file ✕ removal with cache purge; collapsible search groups; issue-scan editor; analysis file scoping; ★ bookmark badge chip; auto-switch on search/bookmark jump; responsive mobile layout; config tab; coverage gate per-file overrides
 - feat: collapsible per-file search result groups; analysis tab file selector scoping; per-file bookmark cleanup on file removal; stress suite port-detection and server-lifecycle fixes
