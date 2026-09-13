@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.26.0 (2026-09-13)
+- feat: severity-grouped issue scan tree; docs refresh
+
 ## 1.25.0 (2026-09-13)
 - feat: drawer TID + copy buttons; universal inline ✕ clear for text inputs
 
