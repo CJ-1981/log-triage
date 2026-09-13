@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.21.1 (2026-09-13)
+- fix: bookmarks Clear button wipes all bookmarks in one click
+
 ## 1.21.0 (2026-09-13)
 - feat: theme picker as header icon button with dropdown (mobile single-line header)
 - docs: bring requirements/architecture/test-plan/README up to v1.20.0 state
