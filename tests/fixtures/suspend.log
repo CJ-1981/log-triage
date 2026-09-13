@@ -1,0 +1,14 @@
+09-11 22:13:58.900  1000  2000 I PowerManagerService: Going to sleep due to timeout (uid 1000, screenOffTimeout=30000ms)
+09-11 22:13:59.100  1000  2000 D PowerManagerService: SleepScheduled
+09-11 22:14:00.010     0     0 I kernel  : PM: Syncing filesystems ... done.
+09-11 22:14:00.900     0     0 I kernel  : Freeze of tasks initiated
+09-11 22:14:01.010     0     0 I kernel  : PM: suspend entry (sleep 0-3 s2ram)
+09-11 22:14:31.500     0     0 I kernel  : PM: Wake reason: POWER_KEY WAKESTAT
+09-11 22:14:31.600     0     0 I kernel  : PM: suspend exit
+09-11 22:14:31.700     0     0 I kernel  : PM: Suspended for 30.512 seconds
+09-11 22:14:31.900  1000  2000 I PowerManagerService: Waking up from sleep (uid=1000, reason=POWER_BUTTON, detail=power_key)
+09-11 22:15:02.100  1000  1234 W PowerManagerService: Suspend attempt failed with error -16 (device busy)
+09-11 22:15:02.200     0     0 E kernel  : PM: Some devices failed to suspend
+09-11 22:15:02.300     0     0 W kernel  : Freezing of tasks aborted after 20.004 seconds
+09-11 22:15:02.400     0     0 W kernel  : PM: abort_suspend
+09-11 22:15:03.000  1000  1234 E PowerManagerService: Suspend not allowed because a wake lock is held (display wakelock)

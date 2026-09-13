@@ -914,7 +914,7 @@
     state.rules = p.rules || [];
     state.quick = p.quick || '';
     state.levels = p.levels || [];
-    state.issueGroups = Array.isArray(p.issueGroups) ? JSON.parse(JSON.stringify(p.issueGroups)) : JSON.parse(JSON.stringify(DEFAULT_ISSUE_GROUPS));
+    state.issueGroups = Array.isArray(p.issueGroups) ? JSON.parse(JSON.stringify(p.issueGroups)) : JSON.parse(JSON.stringify(LT.DEFAULT_ISSUE_GROUPS));
     state.timeFrom = p.timeFrom || ''; state.timeTo = p.timeTo || '';
     state.maskEnabled = p.maskEnabled || {};
     state.customMasks = p.customMasks || [];
@@ -1083,7 +1083,7 @@
       saveState(); renderAnalysis();
     };
     p.querySelector('#btn-issue-restore').onclick = () => {
-      state.issueGroups = JSON.parse(JSON.stringify(DEFAULT_ISSUE_GROUPS));
+      state.issueGroups = JSON.parse(JSON.stringify(LT.DEFAULT_ISSUE_GROUPS));
       saveState(); renderAnalysis();
     };
   }
@@ -1107,32 +1107,11 @@
     for (const r of records) { const k = normMsg(r.msg || r.raw); m[k] = (m[k] || 0) + 1; }
     return Object.keys(m).map((k) => ({ k, n: m[k] })).sort((a, b) => b.n - a.n).slice(0, n);
   }
-  const DEFAULT_ISSUE_GROUPS = [
-    { kind: 'crash', pattern: 'fatal exception|tombstone|beginning of crash', on: true },
-    { kind: 'anr', pattern: '\\banr in |input dispatching timed out', on: true },
-    { kind: 'proc-death', pattern: 'has died|am_proc_died|force stopping', on: true },
-    { kind: 'connectivity', pattern: 'connectivityservice|networkmonitor|data_disconnected|wifiservice|deactivatedatacall', on: true },
-    { kind: 'auth', pattern: 'auth error|auth blocked|authentication failed|token refresh|credential|failed password|password check failed', on: true },
-  ];
   function getIssueGroups() {
-    return (state.issueGroups || DEFAULT_ISSUE_GROUPS).filter((g) => g.on && g.pattern);
+    return (state.issueGroups || LT.DEFAULT_ISSUE_GROUPS).filter((g) => g.on && g.pattern);
   }
   function issueScan(records) {
-    const out = [];
-    const regexes = [];
-    for (const g of getIssueGroups()) {
-      try { regexes.push({ kind: g.kind, re: new RegExp(g.pattern, 'i') }); } catch (e) { /* bad user pattern: skip */ }
-    }
-    for (const r of records) {
-      for (const g of regexes) {
-        if (g.re.test(r.raw)) {
-          out.push({ kind: g.kind, snippet: (r.msg || r.raw).slice(0, 110), file: fileDisplayName(r.fileId), lineNo: r.lineNo, seq: r.seq, rec: r });
-          break;
-        }
-      }
-      if (out.length >= 200) break;
-    }
-    return out;
+    return LT.issueScan(records, getIssueGroups(), fileDisplayName);
   }
   function piiCensus(records) {
     const eng = new LT.MaskEngine();
@@ -1575,7 +1554,15 @@
   function boot() {
     loadState();
     if (!Array.isArray(state.issueGroups)) {
-      state.issueGroups = JSON.parse(JSON.stringify(DEFAULT_ISSUE_GROUPS));
+      state.issueGroups = JSON.parse(JSON.stringify(LT.DEFAULT_ISSUE_GROUPS));
+    } else {
+      // migration: persisted groups from an older build miss newer built-in
+      // rules (e.g. suspend-to-RAM) — append any default group that is absent
+      for (const d of LT.DEFAULT_ISSUE_GROUPS) {
+        if (!state.issueGroups.some((g) => g.kind === d.kind)) {
+          state.issueGroups.push(JSON.parse(JSON.stringify(d)));
+        }
+      }
     }
     if (location.search.indexOf('selftest') >= 0) { runSelfTest(); return; }
 

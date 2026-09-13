@@ -86,6 +86,7 @@ Status: implemented (v1.0.0).
 - AC-2: A canvas time histogram renders the loaded time span.
 - AC-3: Issue scan flags crash (`FATAL EXCEPTION`, tombstone), ANR (`ANR in`, `Input dispatching timed out`), process death (`has died`, `am_proc_died`, `Force stopping`), connectivity (`ConnectivityService`, `NetworkMonitor`, `DATA_DISCONNECTED`, `deactivateDataCall`), and auth (`Auth Error`, `credential`, `token`) patterns.
 - AC-4: A PII census summarizes findings per rule, and a per-file comparison presents counts side by side.
+- AC-5: A built-in **suspend** group (v1.23.0) flags suspend-to-RAM activity and failures in kernel + framework lines: `PM: suspend entry/exit`, `Suspend attempt`, `failed to suspend`, `suspend not allowed`, `wake reason` / `Wakeup reason`, `Going to sleep`, `Waking up from`, `Freeze of tasks` (and `Freezing of tasks`), `abort_suspend`, `Suspend to RAM`, `early suspend`, `late resume`, `Suspended for <n>`. Generic words like "suspension" or "wake-up alarm" are false-positive-guarded by shared cases; sessions persisted before the group existed receive it via boot migration.
 
 ### FR-10 — Virtualized log viewer
 

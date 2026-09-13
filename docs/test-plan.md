@@ -64,7 +64,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 
 - **Shared cases:** 119 shared logic cases plus a theme check pass in both runners — `node --test` and the browser `?selftest` page each report **120 passed / 0 failed** (the suite has grown with the feature gates: archives/7z, bookmark management).
 - **Coverage gate:** green on all core `src/` modules (≥ 90% line / ≥ 85% branch enforced by `node tools/coverage-gate.mjs`); current new-module numbers: `lzma.js` 100%/93%, `format-7z.js` 100%/86%, `archive.js` 96%/89%, `bookmarks.js` 96%/87%.
-- **E2e:** Playwright suite **43/43 green** (35 app + 8 stress) locally (spec lists below).
+- **E2e:** Playwright suite **45/45 green** (37 app + 8 stress) locally (spec lists below).
 - **Error guard:** every e2e test ends with an `afterEach` assertion of zero uncaught page errors (`page.on(pageerror)` plus an in-page `window.__errs` tally) — the guard that would have caught the v1.1.x file-switch `ReferenceError` (see Retrospective R1).
 - **Performance / big file:** a 300 MB / 3,380,636-line synthetic log was fully streamed and counted in ~31 s in Chromium (~108 MB/s), with exact per-file counters, FIFO trim at the 100k kept-line cap, and zero page errors. Throughput in hidden/background tabs is lower because browsers throttle them; the app uses a `MessageChannel` yield (ADR-0006) to minimize this effect.
 
@@ -72,7 +72,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 
 - Enforced by `node tools/coverage-gate.mjs` on Node 22 using `node:test`.
 - Thresholds **per core `src/` module**: ≥ 90% line coverage and ≥ 85% branch coverage.
-- Exempt from the gate: the UI glue modules (`src/app.js`, `src/app-filecache.js` — never loaded under `node --test`), `build.js`, and the tests themselves. Every other `src/` module must produce a coverage row; a module no test loads fails the gate instead of vanishing silently.
+- Exempt from the gate: the UI glue modules (`src/app.js`, `src/app-filecache.js` — never loaded under `node --test`), `build.js`, and the tests themselves. Every other `src/` module must produce a coverage row; a module no test loads fails the gate instead of vanishing silently. Small modules where the never-taken browser fork of the UMD header dominates the branch count (`pii-remote.js`, `issues.js`) carry explicit per-module thresholds in the gate's OVERRIDES table.
 - The gate runs locally (`npm run test:gate`) and in CI; a merge below the threshold is blocked.
 
 ## Commands
@@ -81,7 +81,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 | --- | --- |
 | `npm test` | Run the Node unit suites (`node:test`, Node 22): shared logic cases + bump-tooling suite. |
 | `npm run test:gate` | Run unit tests with coverage and enforce ≥ 90% line / ≥ 85% branch per core module. |
-| `npm run e2e` | Run the Playwright end-to-end suite (43 specs: 35 app + 8 stress) against the built `log-triage.html`. |
+| `npm run e2e` | Run the Playwright end-to-end suite (45 specs: 37 app + 8 stress) against the built `log-triage.html`. |
 | `npm run e2e:stress` | Run only the stress suite against the generated big fixture (`tools/genbig.mjs`). |
 | `npm run build` | Rebuild `log-triage.html` from `src/` (inlines CSS, modules, shared cases, demo log). |
 
@@ -93,9 +93,9 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 - **Browser:** `build.js` inlines the identical file into `log-triage.html`; opening it with `?selftest` executes the suite and reports pass/fail counts and failing case names.
 - **Guarantee:** any behavior change must be expressed as a case update, so Node CI and the in-browser self-test can never disagree.
 
-## E2e scope (Playwright — 43 specs: 35 app + 8 stress)
+## E2e scope (Playwright — 45 specs: 37 app + 8 stress)
 
-App suite (35 specs) — coverage includes:
+App suite (37 specs) — coverage includes:
 
 1. `?selftest` page runs and reports green.
 2. Demo load: format detection, level chips, and masking indications correct.
@@ -121,6 +121,8 @@ App suite (35 specs) — coverage includes:
 22. Theme 🎨 icon dropdown: opens from the header icon, applies the picked theme and persists across reload, closes on selection and outside click; at a 390px viewport the icon keeps the header on a single line.
 23. ★ filter release: with ★ only-bookmarked active, Clear (and removing the last bookmark via its ✕) auto-deactivates the filter so all lines show again — reloading the same file keeps the viewer usable; the selected ★ chip can always be clicked off.
 24. Providers tab (FR-25 guard): local engine is the default with no remote banner; switching to Presidio shows the warning banner and settings; Test connection against an unroutable port yields a readable status with zero uncaught page errors (the assertion class that would have caught the once-unbundled `pii-remote.js`).
+25. Suspend issue group: a `suspend.log` fixture (kernel `PM: suspend entry/exit`, wake reason, freeze aborts, suspend-not-allowed) yields 12 flagged issues in the analysis tab, all attributed to the suspend group; `SleepScheduled` and the filesystem-sync line stay unflagged as false-positive guards.
+26. Issue-groups migration: a persisted five-group session (pre-suspend) receives the suspend rule on boot via the boot migration, with the legacy groups preserved.
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 

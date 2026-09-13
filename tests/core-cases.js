@@ -1039,5 +1039,77 @@
     eq(bm.all().length, 1);
   });
 
+  /* ============================== issue scan (Android logcat) ============================== */
+
+  const GROUPS = SRC.DEFAULT_ISSUE_GROUPS;
+  const recs = (lines) => lines.map((l, i) => ({ seq: i, lineNo: i + 1, fileId: 'f1', raw: l, msg: l }));
+
+  T('issues', 'built-in groups cover crash, ANR, process death, connectivity, auth, suspend', () => {
+    deepEq(GROUPS.map((g) => g.kind).sort(), ['anr', 'auth', 'connectivity', 'crash', 'proc-death', 'suspend']);
+    for (const g of GROUPS) ok(g.pattern.length > 3, 'each group has a non-trivial pattern');
+  });
+
+  T('issues', 'suspend-to-RAM transitions and wake reasons are flagged', () => {
+    const found = SRC.issueScan(recs([
+      '09-11 22:14:01.100  1000  2000 I PowerManagerService: Going to sleep due to timeout (uid 1000)',
+      '09-11 22:14:05.010     0     0 I kernel  : PM: suspend entry (sleep 0-3 s2ram)',
+      '09-11 22:14:40.500     0     0 I kernel  : PM: suspend exit',
+      '09-11 22:14:41.000     0     0 I kernel  : PM: Wake reason: POWER_KEY',
+      '09-11 22:15:00.100  1000  1234 E SST     : Error in freeze of tasks aborted after 20.001s',
+      '09-11 22:16:00.100  1000  1234 W PM      : suspend not allowed because a wake lock is held',
+      '09-11 22:17:00.000     0     0 I kernel  : PM: Suspended for 12.345 seconds',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 7, 'every suspend/resume line flagged');
+    ok(found.every((f) => f.kind === 'suspend'), 'all attributed to the suspend group');
+  });
+
+  T('issues', 'suspend failures are flagged', () => {
+    const found = SRC.issueScan(recs([
+      'kernel: PM: Some devices failed to suspend',
+      'kernel: PM: abort_suspend',
+      '09-11 22:20:00.000  1000  1234 E AlarmManager: suspend attempt failed with error',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 3);
+    ok(found.every((f) => f.kind === 'suspend'));
+  });
+
+  T('issues', 'a line matching multiple groups is reported once (first match wins)', () => {
+    const found = SRC.issueScan(recs(['FATAL EXCEPTION in ConnectivityService monitor']), GROUPS, (id) => id);
+    eq(found.length, 1);
+    eq(found[0].kind, 'crash');
+  });
+
+  T('issues', 'issue scan false-positive guards', () => {
+    const found = SRC.issueScan(recs([
+      'ActivityManager: Start proc 1234:com.lotus.hmi/u0a12 for activity',
+      'AudioService: playback resumed after temporary suspension of audio focus',
+      'SensorHub: resumed sensor batching',
+      'D WifiHal: scan interval wake-up alarm scheduled',
+      'chatty: uid=1000 identical 5 lines',
+      'DisplayManager: desired display request suspended display state unchanged',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 0, 'none of the noise lines flagged, got: ' + JSON.stringify(found.map((f) => f.kind + ':' + f.snippet)));
+  });
+
+  T('issues', 'disabled and invalid groups are skipped; cap respected', () => {
+    const groups = [
+      { kind: 'off', pattern: 'everything', on: false },
+      { kind: 'bad', pattern: '([unclosed', on: true },
+      { kind: 'hit', pattern: 'match me', on: true },
+    ];
+    eq(SRC.issueScan(recs(['match me once']), groups, (id) => id).length, 1);
+    const many = [];
+    for (let i = 0; i < 300; i++) many.push('match me ' + i);
+    eq(SRC.issueScan(recs(many), groups, (id) => id).length, 200, 'scan capped at 200 entries');
+  });
+
+  T('issues', 'defensive defaults: omitted nameOf, groups, or records', () => {
+    eq(SRC.issueScan(recs(['x']), null, (id) => id).length, 0, 'null groups scan nothing');
+    eq(SRC.issueScan(undefined, GROUPS, (id) => id).length, 0, 'null records scan nothing');
+    const found = SRC.issueScan(recs(['match me']), [{ kind: 'x', pattern: 'match me', on: true }]);
+    eq(found.length, 1, 'nameOf omitted: scan still works');
+    eq(found[0].file, 'f1', 'fileId passthrough when no formatter given');
+  });
+
   return { CASES, eq, deepEq, ok };
 }));

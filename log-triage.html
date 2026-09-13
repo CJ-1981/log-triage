@@ -1882,6 +1882,50 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   return { THEMES, REQUIRED_VARS, DEFAULT_THEME, themeNames, themeCompletenessErrors, generateCss };
 }));
 
+/* Log Triage — issues.js: Android logcat issue-scan rule set (FR-22).
+ * DEFAULT_ISSUE_GROUPS drive the analysis tab's issue scan and its rule
+ * editor; patterns are case-insensitive regex alternations matched against
+ * the raw line. Pure logic — the UI (app.js) supplies record scope and the
+ * file-name formatter. */
+(function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const DEFAULT_ISSUE_GROUPS = [
+    { kind: 'crash', pattern: 'fatal exception|tombstone|beginning of crash', on: true },
+    { kind: 'anr', pattern: '\\banr in |input dispatching timed out', on: true },
+    { kind: 'proc-death', pattern: 'has died|am_proc_died|force stopping', on: true },
+    { kind: 'connectivity', pattern: 'connectivityservice|networkmonitor|data_disconnected|wifiservice|deactivatedatacall', on: true },
+    { kind: 'auth', pattern: 'auth error|auth blocked|authentication failed|token refresh|credential|failed password|password check failed', on: true },
+    // suspend-to-RAM: kernel PM transitions, framework sleep/wake, wake
+    // reasons, and suspend failures — tight alternations so generic words
+    // like "suspension" or "wake-up alarm" do not match
+    { kind: 'suspend', pattern: 'pm: suspend|suspend (entry|exit|attempt|not allowed|failed)|failed to suspend|going to sleep|waking up from|wake reason|wakeup reason|freeze of tasks|freezing of tasks|abort_suspend|suspend to ram|early suspend|late resume|suspended for \\d', on: true },
+  ];
+
+  /** Scan records against issue groups; at most one finding per line (first
+   * matching group wins), capped at 200. nameOf formats a fileId for display. */
+  function issueScan(records, groups, nameOf) {
+    const out = [];
+    const name = nameOf || ((id) => id);
+    const regexes = [];
+    for (const g of groups || []) {
+      try { regexes.push({ kind: g.kind, re: new RegExp(g.pattern, 'i') }); } catch (e) { /* bad user pattern: skip */ }
+    }
+    for (const r of records || []) {
+      for (const g of regexes) {
+        if (g.re.test(r.raw)) {
+          out.push({ kind: g.kind, snippet: (r.msg || r.raw).slice(0, 110), file: name(r.fileId), lineNo: r.lineNo, seq: r.seq, rec: r });
+          break;
+        }
+      }
+      if (out.length >= 200) break;
+    }
+    return out;
+  }
+
+  return { DEFAULT_ISSUE_GROUPS, issueScan };
+}));
+
 /* Log Triage — lzma.js: pure-JS LZMA1 + LZMA2 decoder (no WASM, no deps).
  * Decodes raw LZMA1 streams (7z coder id 03 01 01) and chunked LZMA2 streams
  * (7z coder id 21) into a caller-sized Uint8Array. Encoding is deliberately
@@ -4033,7 +4077,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     state.rules = p.rules || [];
     state.quick = p.quick || '';
     state.levels = p.levels || [];
-    state.issueGroups = Array.isArray(p.issueGroups) ? JSON.parse(JSON.stringify(p.issueGroups)) : JSON.parse(JSON.stringify(DEFAULT_ISSUE_GROUPS));
+    state.issueGroups = Array.isArray(p.issueGroups) ? JSON.parse(JSON.stringify(p.issueGroups)) : JSON.parse(JSON.stringify(LT.DEFAULT_ISSUE_GROUPS));
     state.timeFrom = p.timeFrom || ''; state.timeTo = p.timeTo || '';
     state.maskEnabled = p.maskEnabled || {};
     state.customMasks = p.customMasks || [];
@@ -4202,7 +4246,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       saveState(); renderAnalysis();
     };
     p.querySelector('#btn-issue-restore').onclick = () => {
-      state.issueGroups = JSON.parse(JSON.stringify(DEFAULT_ISSUE_GROUPS));
+      state.issueGroups = JSON.parse(JSON.stringify(LT.DEFAULT_ISSUE_GROUPS));
       saveState(); renderAnalysis();
     };
   }
@@ -4226,32 +4270,11 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     for (const r of records) { const k = normMsg(r.msg || r.raw); m[k] = (m[k] || 0) + 1; }
     return Object.keys(m).map((k) => ({ k, n: m[k] })).sort((a, b) => b.n - a.n).slice(0, n);
   }
-  const DEFAULT_ISSUE_GROUPS = [
-    { kind: 'crash', pattern: 'fatal exception|tombstone|beginning of crash', on: true },
-    { kind: 'anr', pattern: '\\banr in |input dispatching timed out', on: true },
-    { kind: 'proc-death', pattern: 'has died|am_proc_died|force stopping', on: true },
-    { kind: 'connectivity', pattern: 'connectivityservice|networkmonitor|data_disconnected|wifiservice|deactivatedatacall', on: true },
-    { kind: 'auth', pattern: 'auth error|auth blocked|authentication failed|token refresh|credential|failed password|password check failed', on: true },
-  ];
   function getIssueGroups() {
-    return (state.issueGroups || DEFAULT_ISSUE_GROUPS).filter((g) => g.on && g.pattern);
+    return (state.issueGroups || LT.DEFAULT_ISSUE_GROUPS).filter((g) => g.on && g.pattern);
   }
   function issueScan(records) {
-    const out = [];
-    const regexes = [];
-    for (const g of getIssueGroups()) {
-      try { regexes.push({ kind: g.kind, re: new RegExp(g.pattern, 'i') }); } catch (e) { /* bad user pattern: skip */ }
-    }
-    for (const r of records) {
-      for (const g of regexes) {
-        if (g.re.test(r.raw)) {
-          out.push({ kind: g.kind, snippet: (r.msg || r.raw).slice(0, 110), file: fileDisplayName(r.fileId), lineNo: r.lineNo, seq: r.seq, rec: r });
-          break;
-        }
-      }
-      if (out.length >= 200) break;
-    }
-    return out;
+    return LT.issueScan(records, getIssueGroups(), fileDisplayName);
   }
   function piiCensus(records) {
     const eng = new LT.MaskEngine();
@@ -4694,7 +4717,15 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   function boot() {
     loadState();
     if (!Array.isArray(state.issueGroups)) {
-      state.issueGroups = JSON.parse(JSON.stringify(DEFAULT_ISSUE_GROUPS));
+      state.issueGroups = JSON.parse(JSON.stringify(LT.DEFAULT_ISSUE_GROUPS));
+    } else {
+      // migration: persisted groups from an older build miss newer built-in
+      // rules (e.g. suspend-to-RAM) — append any default group that is absent
+      for (const d of LT.DEFAULT_ISSUE_GROUPS) {
+        if (!state.issueGroups.some((g) => g.kind === d.kind)) {
+          state.issueGroups.push(JSON.parse(JSON.stringify(d)));
+        }
+      }
     }
     if (location.search.indexOf('selftest') >= 0) { runSelfTest(); return; }
 
@@ -6084,6 +6115,78 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     // the store stays usable afterwards
     bm.toggle('a', 1, {});
     eq(bm.all().length, 1);
+  });
+
+  /* ============================== issue scan (Android logcat) ============================== */
+
+  const GROUPS = SRC.DEFAULT_ISSUE_GROUPS;
+  const recs = (lines) => lines.map((l, i) => ({ seq: i, lineNo: i + 1, fileId: 'f1', raw: l, msg: l }));
+
+  T('issues', 'built-in groups cover crash, ANR, process death, connectivity, auth, suspend', () => {
+    deepEq(GROUPS.map((g) => g.kind).sort(), ['anr', 'auth', 'connectivity', 'crash', 'proc-death', 'suspend']);
+    for (const g of GROUPS) ok(g.pattern.length > 3, 'each group has a non-trivial pattern');
+  });
+
+  T('issues', 'suspend-to-RAM transitions and wake reasons are flagged', () => {
+    const found = SRC.issueScan(recs([
+      '09-11 22:14:01.100  1000  2000 I PowerManagerService: Going to sleep due to timeout (uid 1000)',
+      '09-11 22:14:05.010     0     0 I kernel  : PM: suspend entry (sleep 0-3 s2ram)',
+      '09-11 22:14:40.500     0     0 I kernel  : PM: suspend exit',
+      '09-11 22:14:41.000     0     0 I kernel  : PM: Wake reason: POWER_KEY',
+      '09-11 22:15:00.100  1000  1234 E SST     : Error in freeze of tasks aborted after 20.001s',
+      '09-11 22:16:00.100  1000  1234 W PM      : suspend not allowed because a wake lock is held',
+      '09-11 22:17:00.000     0     0 I kernel  : PM: Suspended for 12.345 seconds',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 7, 'every suspend/resume line flagged');
+    ok(found.every((f) => f.kind === 'suspend'), 'all attributed to the suspend group');
+  });
+
+  T('issues', 'suspend failures are flagged', () => {
+    const found = SRC.issueScan(recs([
+      'kernel: PM: Some devices failed to suspend',
+      'kernel: PM: abort_suspend',
+      '09-11 22:20:00.000  1000  1234 E AlarmManager: suspend attempt failed with error',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 3);
+    ok(found.every((f) => f.kind === 'suspend'));
+  });
+
+  T('issues', 'a line matching multiple groups is reported once (first match wins)', () => {
+    const found = SRC.issueScan(recs(['FATAL EXCEPTION in ConnectivityService monitor']), GROUPS, (id) => id);
+    eq(found.length, 1);
+    eq(found[0].kind, 'crash');
+  });
+
+  T('issues', 'issue scan false-positive guards', () => {
+    const found = SRC.issueScan(recs([
+      'ActivityManager: Start proc 1234:com.lotus.hmi/u0a12 for activity',
+      'AudioService: playback resumed after temporary suspension of audio focus',
+      'SensorHub: resumed sensor batching',
+      'D WifiHal: scan interval wake-up alarm scheduled',
+      'chatty: uid=1000 identical 5 lines',
+      'DisplayManager: desired display request suspended display state unchanged',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 0, 'none of the noise lines flagged, got: ' + JSON.stringify(found.map((f) => f.kind + ':' + f.snippet)));
+  });
+
+  T('issues', 'disabled and invalid groups are skipped; cap respected', () => {
+    const groups = [
+      { kind: 'off', pattern: 'everything', on: false },
+      { kind: 'bad', pattern: '([unclosed', on: true },
+      { kind: 'hit', pattern: 'match me', on: true },
+    ];
+    eq(SRC.issueScan(recs(['match me once']), groups, (id) => id).length, 1);
+    const many = [];
+    for (let i = 0; i < 300; i++) many.push('match me ' + i);
+    eq(SRC.issueScan(recs(many), groups, (id) => id).length, 200, 'scan capped at 200 entries');
+  });
+
+  T('issues', 'defensive defaults: omitted nameOf, groups, or records', () => {
+    eq(SRC.issueScan(recs(['x']), null, (id) => id).length, 0, 'null groups scan nothing');
+    eq(SRC.issueScan(undefined, GROUPS, (id) => id).length, 0, 'null records scan nothing');
+    const found = SRC.issueScan(recs(['match me']), [{ kind: 'x', pattern: 'match me', on: true }]);
+    eq(found.length, 1, 'nameOf omitted: scan still works');
+    eq(found[0].file, 'f1', 'fileId passthrough when no formatter given');
   });
 
   return { CASES, eq, deepEq, ok };

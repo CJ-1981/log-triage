@@ -623,7 +623,7 @@ test('config tab exports and imports filter/mask/issue-scan configuration', asyn
   const fs = await import('node:fs');
   const cfg = JSON.parse(fs.readFileSync(path, 'utf8'));
   assert.strictEqual(cfg.masks.enabled.vin, false, 'exported config carries the disabled vin rule');
-  assert.strictEqual(cfg.issueGroups.length, 5, 'five issue-scan groups exported');
+  assert.strictEqual(cfg.issueGroups.length, 6, 'six issue-scan groups exported (incl. suspend)');
   // re-enable vin, then import the config: it must be disabled again
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
   await page.evaluate(() => document.querySelector('[data-mask="vin"]').click());
@@ -1065,6 +1065,41 @@ test('Providers tab: local default, remote banner, readable connection error', a
     s.dispatchEvent(new Event('change'));
   });
   assert.ok(await page.evaluate(() => document.getElementById('pii-remote-warn').classList.contains('hidden')), 'warning hidden again for local');
+});
+
+test('issue scan flags suspend-to-RAM transitions with the built-in suspend group', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'suspend.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent !== '0', null, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  const issues = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#analysis-panel .issue')).map((e) => e.textContent));
+  // 12 of the 14 lines are suspend events; "SleepScheduled" and the filesystem
+  // sync line are intentionally neutral
+  assert.strictEqual(issues.length, 12, 'suspend/resume lines listed as issues, got ' + issues.length);
+  assert.ok(issues.every((t) => t.toLowerCase().includes('suspend')), 'all attributed to the suspend group: ' + issues[0]);
+});
+
+test('issueGroups migration appends the suspend rule to older persisted sessions', async () => {
+  await fresh();
+  // a session persisted before the suspend group existed: five legacy groups
+  await page.evaluate(() => {
+    const s = JSON.parse(localStorage.getItem('log_triage_state_v1') || '{}');
+    s.issueGroups = [
+      { kind: 'crash', pattern: 'fatal exception|tombstone|beginning of crash', on: true },
+      { kind: 'anr', pattern: '\\banr in |input dispatching timed out', on: true },
+      { kind: 'proc-death', pattern: 'has died|am_proc_died|force stopping', on: true },
+      { kind: 'connectivity', pattern: 'connectivityservice|networkmonitor|data_disconnected|wifiservice|deactivatedatacall', on: true },
+      { kind: 'auth', pattern: 'auth error|auth blocked|authentication failed|token refresh|credential|failed password|password check failed', on: true },
+    ];
+    localStorage.setItem('log_triage_state_v1', JSON.stringify(s));
+  });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  const rows = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#analysis-panel input[data-ig-k="kind"]')).map((i) => i.value));
+  assert.ok(rows.includes('suspend'), 'suspend rule appended by migration, got: ' + rows.join(', '));
+  assert.strictEqual(rows.length, 6, 'legacy groups preserved alongside the new rule');
 });
 
 test('loads a .7z archive: extracted files appear in the file list', { skip: !find7z() }, async () => {

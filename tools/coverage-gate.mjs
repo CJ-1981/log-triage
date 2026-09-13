@@ -12,6 +12,9 @@ import path from 'node:path';
 const LINE_MIN = 90;
 const BRANCH_MIN = 85;
 const OVERRIDES = { 'pii-remote.js': { line: 95, branch: 75 } }; // new module, actively developed
+// small module: the never-taken browser fork of the UMD header is a large
+// share of its branches and is uncoverable under node --test
+OVERRIDES['issues.js'] = { line: 95, branch: 80 };
 const EXEMPT = [/src[\\/]app(-.*)?\.js$/]; // UI glue: never loaded under node --test
 
 function collectTestFiles(root) {
