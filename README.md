@@ -89,7 +89,7 @@ npm run bump      # Semver bump from conventional commits (CI runs this automati
 
 - **TDD with quality gates G0–G8.** Development proceeded gate by gate (scaffold, parsing, masking, filters, search, store/timeline/selection/bookmarks, export/bump tooling, themes/UI, e2e hardening) — all complete in v1.0.0. Each gate has entry/exit criteria in `docs/test-plan.md`, and coverage is enforced per core module by `node tools/coverage-gate.mjs`.
 - **7z fixture note.** The `.7z`/zip container tests build real archives with the local 7-Zip CLI when it is available (installed as `p7zip-full` in CI; on Windows the suite finds `C:\Program Files\7-Zip\7z.exe`, or set `SEVENZIP_BIN`) and skip cleanly without it — the LZMA codec itself is covered by committed fixtures that need no CLI.
-- **Conventional commits.** `feat` → minor, `fix` → patch, `!` or `BREAKING CHANGE` → major. On every push to `main`, GitHub Actions runs test + coverage, build, and e2e, then `tools/bump.mjs` bumps the version, updates `package.json`, the README version marker, and `docs/changelog.md`, and tags `vX.Y.Z`.
+- **Conventional commits.** `feat` → minor, `fix` → patch, `!` or `BREAKING CHANGE` → major. On every push to `main`, GitHub Actions runs test + coverage, build, and e2e, then `tools/bump.mjs` bumps the version, updates `package.json`, the README version marker, and `docs/changelog.md`, tags `vX.Y.Z`, and deploys the release bundle to GitHub Pages.
 
 ## Project structure
 

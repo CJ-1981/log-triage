@@ -9,7 +9,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 ### G0 — Scaffold, build pipeline, CI
 
 - Entry criteria: repository initialized; `package.json` with npm scripts in place.
-- Exit criteria: `node build.js` produces a working single-file `log-triage.html` from UMD `src/` modules; `node tools/coverage-gate.mjs` runs and enforces thresholds; GitHub Actions CI (`.github/workflows/ci.yml`) runs test + coverage, build, e2e, and the automatic semver bump on main; `?selftest` page runs the shared suite green.
+- Exit criteria: `node build.js` produces a working single-file `log-triage.html` from UMD `src/` modules; `node tools/coverage-gate.mjs` runs and enforces thresholds; GitHub Actions CI (`.github/workflows/ci.yml`) runs test + coverage, build, e2e, and the automatic semver bump on main; the release job also deploys the release-versioned bundle to GitHub Pages (the release commit is pushed with GITHUB_TOKEN, which never triggers workflow runs, so the deploy must live in the same job); `?selftest` page runs the shared suite green.
 - Status: **done**.
 
 ### G1 — Format autodetection and parsers
