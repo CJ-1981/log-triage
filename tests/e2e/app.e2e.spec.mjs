@@ -1102,6 +1102,28 @@ test('issueGroups migration appends the suspend rule to older persisted sessions
   assert.strictEqual(rows.length, 14, 'legacy groups preserved alongside the new rules');
 });
 
+test('search tab rg options have explanatory tooltips', async () => {
+  await fresh();
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
+  const titles = await page.evaluate(() => ({
+    fixed: document.getElementById('rg-fixed').closest('label').title,
+    word: document.getElementById('rg-word').closest('label').title,
+    invert: document.getElementById('rg-invert').closest('label').title,
+    cs: document.getElementById('rg-case').title,
+    mode: document.getElementById('rg-mode').title,
+    before: document.getElementById('rg-before').closest('label').title,
+    after: document.getElementById('rg-after').closest('label').title,
+    scan: document.getElementById('btn-deepscan').title,
+  }));
+  for (const [k, v] of Object.entries(titles)) assert.ok(v && v.length > 15, k + ' needs an explanatory tooltip');
+  assert.match(titles.fixed, /-F/);
+  assert.match(titles.word, /-w/);
+  assert.match(titles.invert, /-v/);
+  assert.match(titles.mode, /-c/);
+  assert.match(titles.before, /[Bb]efore/);
+  assert.match(titles.after, /[Aa]fter/);
+});
+
 test('drawer shows TID next to PID and copy buttons for the line', async () => {
   await fresh();
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);

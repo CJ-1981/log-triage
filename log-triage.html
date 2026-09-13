@@ -319,15 +319,22 @@ table.rules { min-width: 620px; }
       <!-- SEARCH -->
       <div class="tab" id="tab-search">
         <div id="vtools">
-          <input type="text" id="rg-pattern" placeholder="search pattern (regex by default)…" style="flex:1;max-width:420px;font-family:var(--mono)">
-          <label><input type="checkbox" class="toggle" id="rg-fixed"> -F fixed</label>
-          <label><input type="checkbox" class="toggle" id="rg-word"> -w word</label>
-          <label><input type="checkbox" class="toggle" id="rg-invert"> -v invert</label>
-          <select id="rg-case"><option value="smart">smart case</option><option value="insensitive">-i insensitive</option><option value="sensitive">sensitive</option></select>
-          <select id="rg-mode"><option value="rows">matches</option><option value="count">-c count</option><option value="files">-l files</option></select>
-          <label>-B<input type="text" id="rg-before" value="0" style="width:36px"></label>
-          <label>-A<input type="text" id="rg-after" value="0" style="width:36px"></label>
-          <button id="btn-deepscan" class="primary">Deep scan files</button>
+          <input type="text" id="rg-pattern" placeholder="search pattern (regex by default)…" style="flex:1;max-width:420px;font-family:var(--mono)" title="ripgrep-style search over the kept lines — plain text or regular expression">
+          <label title="Fixed strings (-F): match the text literally — regex special characters like . * ( ) [ ] lose their meaning">
+            <input type="checkbox" class="toggle" id="rg-fixed"> -F fixed</label>
+          <label title="Whole word (-w): match only complete words — 'error' will not match 'errors' or 'terror'">
+            <input type="checkbox" class="toggle" id="rg-word"> -w word</label>
+          <label title="Invert (-v): show every line that does NOT match the pattern">
+            <input type="checkbox" class="toggle" id="rg-invert"> -v invert</label>
+          <select id="rg-case" title="Case sensitivity — smart (ripgrep default): case-insensitive unless the pattern contains uppercase; -i: always insensitive; sensitive: always case-sensitive">
+            <option value="smart">smart case</option><option value="insensitive">-i insensitive</option><option value="sensitive">sensitive</option></select>
+          <select id="rg-mode" title="Result mode: matches = list matching lines, -c = match count per file, -l = only names of files with matches">
+            <option value="rows">matches</option><option value="count">-c count</option><option value="files">-l files</option></select>
+          <label title="Context before (-B): deep scan also shows this many lines BEFORE each match — 1 line = 0">
+            -B<input type="text" id="rg-before" value="0" style="width:36px"></label>
+          <label title="Context after (-A): deep scan also shows this many lines AFTER each match — 1 line = 0">
+            -A<input type="text" id="rg-after" value="0" style="width:36px"></label>
+          <button id="btn-deepscan" class="primary" title="Deep scan: re-read the COMPLETE files from disk, ignoring the kept-line cap — finds matches that are no longer in memory; the instant results above only cover kept lines">Deep scan files</button>
           <button id="btn-rg-collapse" title="collapse all file groups">Collapse all</button>
           <button id="btn-rg-expand" title="expand all file groups">Expand all</button>
           <button id="btn-rg-export">Export results</button>
