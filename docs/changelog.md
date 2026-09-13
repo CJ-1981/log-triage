@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.17.0 (2026-09-13)
+- fix: archive test expected 'gzip' but module returns 'gz'
+- feat: archive support (.gz/.tar/.tar.gz/.zip), ★ star badge chip in chips row, config tab, responsive mobile, file cache — all e2e 35/35
+- feat: PII Providers tab (Presidio/LLM with CORS proxy), ★ chip filter, archive support, responsive mobile, config tab
+- docs: update README, requirements and test-plan to v1.15.0 state (FR-25 implemented, 35 e2e specs)
+
 ## 1.16.0 (2026-09-13)
 - chore: rebuild log-triage.html at current version
 - feat: PII Providers tab — Presidio/LLM settings, CORS proxy, test connection, scan; fix missing pii-llm-timeout input causing boot crash
