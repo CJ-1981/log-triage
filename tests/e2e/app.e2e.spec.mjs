@@ -985,6 +985,51 @@ test('bookmarks panel entries have an ✕ to remove individually', async () => {
   assert.ok(chipGone, '\u2605 chip disappears when the last bookmark is removed');
 });
 
+test('★ filter releases when bookmarks are cleared so logs show again', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  // bookmark line 1 via the gutter, then press the ★ chip
+  await page.evaluate(() => document.querySelector('.vrow .bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  await page.evaluate(() => {
+    const star = Array.from(document.querySelectorAll('.chip')).find((c) => c.textContent.includes('\u2605'));
+    star.click();
+  });
+  await page.waitForTimeout(150);
+  assert.strictEqual(await page.evaluate(() => document.getElementById('st-shown').textContent), '1', '★ filter shows only the bookmarked line');
+  // Clear all bookmarks from the panel
+  await click('clear-bookmarks');
+  await page.waitForTimeout(150);
+  assert.strictEqual(await page.evaluate(() => document.getElementById('st-shown').textContent), '44', 'all lines visible again after Clear');
+  const starSel = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.chip')).some((c) => c.textContent.includes('\u2605') && c.classList.contains('sel')));
+  assert.ok(!starSel, '★ chip not left in selected state');
+  // loading the same file again keeps the viewer fully usable
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
+  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 2, null, { timeout: 8000 });
+  assert.strictEqual(await page.evaluate(() => document.getElementById('st-shown').textContent), '88', 'both copies fully visible after re-load');
+});
+
+test('★ filter releases when the last bookmark is removed individually', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await page.evaluate(() => document.querySelector('.vrow .bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  await page.evaluate(() => {
+    const star = Array.from(document.querySelectorAll('.chip')).find((c) => c.textContent.includes('\u2605'));
+    star.click();
+  });
+  await page.waitForTimeout(150);
+  assert.strictEqual(await page.evaluate(() => document.getElementById('st-shown').textContent), '1');
+  // remove the only bookmark via its ✕ in the panel
+  await page.evaluate(() => document.querySelector('#bookmark-list .bm-entry .fx').click());
+  await page.waitForTimeout(150);
+  assert.strictEqual(await page.evaluate(() => document.getElementById('st-shown').textContent), '44', 'all lines visible after removing the last bookmark');
+  const starSel = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.chip')).some((c) => c.textContent.includes('\u2605') && c.classList.contains('sel')));
+  assert.ok(!starSel, '★ chip not left in selected state');
+});
+
 test('loads a .7z archive: extracted files appear in the file list', { skip: !find7z() }, async () => {
   await fresh();
   await page.setInputFiles('#file-input', [sevenZipBundle()]);

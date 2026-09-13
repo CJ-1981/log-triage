@@ -375,7 +375,9 @@
       b.title = 'show only bookmarked lines';
       b.innerHTML = '<span style="color:var(--warn)">★</span><span class="n">' + bmInView + '</span>';
       b.onclick = () => {
-        if (bmInView === 0) { flash('no bookmarks in this view'); return; }
+        // a selected ★ chip must always toggle off — even with zero bookmarks,
+        // otherwise the filter would be stuck showing an empty view
+        if (bmInView === 0 && !state.showOnlyBookmarked) { flash('no bookmarks in this view'); return; }
         setBmOnly(!state.showOnlyBookmarked);
       };
       row.appendChild(b);
@@ -654,7 +656,8 @@
   function removeBookmark(key, lineNo) {
     bookmarksStore.remove(key, lineNo);
     renderBookmarks(); renderChips(); updateStatus();
-    if (state.showOnlyBookmarked) rebuildView();
+    if (state.showOnlyBookmarked && !bookmarksStore.all().length) setBmOnly(false);
+    else if (state.showOnlyBookmarked) rebuildView();
     saveState();
   }
   function bookmarkKeyFor(fileId) {
@@ -666,7 +669,9 @@
     const count = bookmarksStore.all().length;
     bookmarksStore.removeAll();
     renderBookmarks(); renderChips(); updateStatus();
-    if (state.showOnlyBookmarked) rebuildView();
+    // with no bookmarks left the ★ filter would show nothing and its chip
+    // would be un-toggleable — release it so the logs come back
+    if (state.showOnlyBookmarked) setBmOnly(false);
     saveState();
     flash(count ? 'cleared ' + count + ' bookmark(s)' : 'no bookmarks to clear');
   }
