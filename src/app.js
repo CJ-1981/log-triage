@@ -1504,27 +1504,88 @@
     document.body.dataset.theme = state.theme;
     sel.onchange = () => { state.theme = sel.value; document.body.dataset.theme = sel.value; saveState(); };
 
-  function bindPiiProviderUi() {
-    const sel = $('pii-provider');
-    sel.value = state.pii.active;
-    const applyWarning = () => {
+    // --- PII Providers tab ---
+    const piiSel = $('pii-provider');
+    piiSel.value = state.pii.active;
+    const applyPiiWarning = () => {
       const remote = state.pii.active !== 'local';
-      const el = $('pii-remote-warn');
-      if (remote) {
-        el.classList.remove('hidden');
-        el.textContent = 'REMOTE — data leaves this machine';
-      } else {
-        el.classList.add('hidden');
+      $('pii-remote-warn').classList.toggle('hidden', !remote);
+      $('pii-remote-warn').textContent = 'REMOTE — data leaves this machine';
+      $('pii-presidio-box').classList.toggle('hidden', state.pii.active !== 'presidio');
+      $('pii-llm-box').classList.toggle('hidden', state.pii.active !== 'llm');
+    };
+    applyPiiWarning();
+    piiSel.onchange = () => {
+      state.pii.active = piiSel.value;
+      applyPiiWarning(); saveState();
+    };
+    const piiFields = [
+      ['pii-presidio-url', 'presidio', 'url'],
+      ['pii-presidio-path', 'presidio', 'path'],
+      ['pii-presidio-lang', 'presidio', 'language'],
+      ['pii-presidio-threshold', 'presidio', 'threshold', Number],
+      ['pii-presidio-timeout', 'presidio', 'timeoutMs', Number],
+      ['pii-llm-url', 'llm', 'url'],
+      ['pii-llm-key', 'llm', 'apiKey'],
+      ['pii-llm-model', 'llm', 'model'],
+      ['pii-llm-max', 'llm', 'maxLines', Number],
+      ['pii-llm-temp', 'llm', 'temperature', Number],
+      ['pii-llm-timeout', 'llm', 'timeoutMs', Number],
+      ['pii-proxy-url', 'proxy', 'url'],
+    ];
+    piiFields.forEach(([id, sect, key, Conv]) => {
+      const el = $(id);
+      el.value = state.pii[sect] && state.pii[sect][key] != null ? state.pii[sect][key] : '';
+      el.onchange = () => {
+        const v = Conv ? Conv(el.value) : el.value;
+        if (!state.pii[sect]) state.pii[sect] = {};
+        state.pii[sect][key] = v;
+        saveState();
+      };
+    });
+    $('pii-proxy-on').onchange = (e) => {
+      state.pii.proxy.enabled = e.target.checked;
+      saveState();
+    };
+    const proxyFetch = (url, opts) => {
+      const target = state.pii.proxy.enabled && state.pii.proxy.url
+        ? state.pii.proxy.url.replace(/\/+$/, '') + '/' + url
+        : url;
+      return fetch(target, opts);
+    };
+    $('btn-pii-test').onclick = async () => {
+      const kind = state.pii.active;
+      const s = kind === 'presidio' ? state.pii.presidio : state.pii.llm;
+      const st = $('pii-test-status');
+      st.textContent = 'testing…';
+      st.textContent = kind === 'local' ? 'local engine — always available'
+        : JSON.stringify(await LT.testConnection(Object.assign({ kind }, s, { proxyUrl: state.pii.proxy.enabled ? state.pii.proxy.url : '' }), proxyFetch));
+    };
+    $('btn-pii-scan').onclick = async () => {
+      const kind = state.pii.active;
+      if (kind === 'local') { flash('local regex engine already runs in real time'); return; }
+      const sampleN = Math.min(2000, Number($('pii-scan-sample').value) || 2000);
+      const sample = store.kept.slice(0, sampleN).map((r) => r.raw);
+      const st = $('pii-findings');
+      st.innerHTML = '<span class="muted">scanning ' + sample.length + ' lines…</span>';
+      try {
+        const prov = state.pii.active === 'presidio'
+          ? LT.createRemoteAnalyzer('presidio', Object.assign({}, state.pii.presidio, {
+              proxyUrl: state.pii.proxy.enabled ? state.pii.proxy.url : '',
+            }), { fetchImpl: proxyFetch })
+          : LT.createRemoteAnalyzer('llm', Object.assign({}, state.pii.llm, {
+              proxyUrl: state.pii.proxy.enabled ? state.pii.proxy.url : '',
+            }), { fetchImpl: proxyFetch });
+        const findings = await prov.analyze(sample);
+        const byType = {};
+        for (const f of findings) byType[f.type] = (byType[f.type] || 0) + 1;
+        st.innerHTML = Object.keys(byType).map((k) =>
+          '<div class="stat-card"><div class="v">' + byType[k] + '</div><div class="k">' + esc(k) + '</div></div>'
+        ).join('') || '<span class="muted">no findings</span>';
+      } catch (err) {
+        st.innerHTML = '<span class="rule-err">scan failed: ' + esc(err.message) + '</span>';
       }
     };
-    applyWarning();
-    sel.onchange = () => {
-      state.pii.active = sel.value;
-      applyWarning(); saveState();
-    };
-  }
-
-  bindPiiProviderUi();
 
     const applySide = () => {
       document.getElementById('main').classList.toggle('side-hidden', !!state.sideHidden);
