@@ -113,9 +113,9 @@
     eq(SRC.detectTs('at 1787611054935'), null);
   });
 
-  T('parse', 'logcat threadtime full record', () => {
+  T('parse', 'logcat threadtime full record (pid AND tid)', () => {
     const r = SRC.parseLine('08-24 15:37:01.123  1234  5678 I ActivityManager: Start proc', 'logcat');
-    deepEq(r, { ts: '08-24 15:37:01.123', level: 'I', tag: 'ActivityManager', pid: '1234', msg: 'Start proc' });
+    deepEq(r, { ts: '08-24 15:37:01.123', level: 'I', tag: 'ActivityManager', pid: '1234', tid: '5678', msg: 'Start proc' });
   });
 
   T('parse', 'logcat tag containing colons splits on first ": "', () => {
@@ -196,7 +196,7 @@
 
   T('parse', 'plain line without tokens: all null but message kept', () => {
     const r = SRC.parseLine('plain continuation text', 'plain');
-    deepEq(r, { ts: null, level: null, tag: null, pid: null, msg: 'plain continuation text' });
+    deepEq(r, { ts: null, level: null, tag: null, pid: null, tid: null, msg: 'plain continuation text' });
   });
 
   T('parse', 'severity token matching is word-bounded', () => {

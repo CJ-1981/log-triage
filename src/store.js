@@ -60,7 +60,7 @@
       this._file(fileId).bytes += n;
     }
 
-    /** add(fileId, lineNo, raw, rec, kept) — rec: {ts, level, tag, pid, msg} */
+    /** add(fileId, lineNo, raw, rec, kept) — rec: {ts, level, tag, pid, tid, msg} */
     add(fileId, lineNo, raw, rec, kept) {
       const f = this._file(fileId);
       const r = rec || {};
@@ -74,7 +74,7 @@
       const entry = {
         fileId, file: fileId, lineNo, raw,
         ts: r.ts || null, level: r.level || null, tag: r.tag || null,
-        pid: r.pid || null, msg: r.msg != null ? r.msg : raw,
+        pid: r.pid || null, tid: r.tid || null, msg: r.msg != null ? r.msg : raw,
         seq: this._keptTotal,
       };
       this.kept.push(entry);

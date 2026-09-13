@@ -688,13 +688,27 @@
     if (!rec) return;
     const d = $('drawer');
     d.className = 'open';
+    const maskedLine = engine.maskLine(rec.raw);
     d.innerHTML = '<h3>Line ' + rec.lineNo + ' — ' + esc(fileDisplayName(rec.fileId)) +
       '<button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
       '<dl>' +
-      dv('ts', rec.ts) + dv('level', rec.level) + dv('tag', rec.tag) + dv('pid', rec.pid) +
-      '<div><dt>masked</dt><dd>' + esc(engine.maskLine(rec.raw)) + '</dd></div>' +
-      '<div><dt>raw</dt><dd class="raw">' + esc(rec.raw) + '</dd></div>' +
+      dv('ts', rec.ts) + dv('level', rec.level) + dv('tag', rec.tag) +
+      dv('pid', rec.pid) + dv('tid', rec.tid) +
+      '<div><dt>masked <button type="button" class="drawer-cp" data-what="masked" title="copy masked line">copy</button></dt><dd>' + esc(maskedLine) + '</dd></div>' +
+      '<div><dt>raw <button type="button" class="drawer-cp" data-what="raw" title="copy raw line">copy</button></dt><dd class="raw">' + esc(rec.raw) + '</dd></div>' +
       '</dl>';
+    for (const btn of d.querySelectorAll('.drawer-cp')) {
+      btn.onclick = async () => {
+        const text = btn.dataset.what === 'raw' ? rec.raw : maskedLine;
+        try {
+          await navigator.clipboard.writeText(text);
+          btn.textContent = 'copied ✓';
+        } catch (err) {
+          btn.textContent = 'copy failed';
+        }
+        setTimeout(() => { btn.textContent = 'copy'; }, 1500);
+      };
+    }
   }
   function dv(k, v) { return '<div><dt>' + k + '</dt><dd>' + esc(v == null ? '—' : String(v)) + '</dd></div>'; }
 
@@ -1550,6 +1564,49 @@
     body.innerHTML = '<p><b>' + pass + ' passed, ' + fail + ' failed</b> (' + cases.length + ' logic cases + theme check)</p>' + rows.join('');
   }
 
+  /* ---------------- universal inline ✕ clear for text inputs ---------------- */
+  /* Wraps a text input in a .clr-wrap span (transferring flex styles so row
+   * layout is preserved) and appends an ✕ button that empties the field and
+   * re-fires input/change so the app's live filters react. */
+  function makeClearable(input) {
+    if (!input || input.dataset.clearable === '1' || input.type !== 'text') return;
+    input.dataset.clearable = '1';
+    const wrap = document.createElement('span');
+    wrap.className = 'clr-wrap';
+    const inline = input.getAttribute('style') || '';
+    if (inline.includes('flex')) {
+      wrap.setAttribute('style', inline);
+      input.removeAttribute('style');
+    }
+    input.before(wrap);
+    wrap.append(input);
+    // preserve row layout: a CSS/inline flex on the input must move to the
+    // wrapper, which is now the flex child of the row
+    const cs = getComputedStyle(input);
+    if (cs.flex && cs.flex !== '0 1 auto') {
+      wrap.style.flex = cs.flex;
+      if (cs.minWidth && cs.minWidth !== 'auto') wrap.style.minWidth = cs.minWidth;
+      if (cs.maxWidth && cs.maxWidth !== 'none') wrap.style.maxWidth = cs.maxWidth;
+    }
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'clr-btn hidden';
+    btn.title = 'clear';
+    btn.textContent = '✕';
+    btn.tabIndex = -1;
+    wrap.append(btn);
+    const sync = () => btn.classList.toggle('hidden', !input.value);
+    input.addEventListener('input', sync);
+    btn.addEventListener('click', () => {
+      input.value = '';
+      sync();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.focus();
+    });
+    sync();
+  }
+
   /* ---------------- boot ---------------- */
   function boot() {
     loadState();
@@ -1904,8 +1961,15 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 
-  // test/automation hook: programmatic file loading (used by manual big-file checks)
-  if (typeof window !== 'undefined') window.LT_INGEST = (files) => loadFiles(files);
+    // inline ✕ clear for every text input (static fields + dynamically
+    // rendered rows: wrapped lazily on first focus)
+    document.querySelectorAll('input[type=text]').forEach(makeClearable);
+    document.addEventListener('focusin', (e) => {
+      if (e.target && e.target.matches && e.target.matches('input[type=text]')) makeClearable(e.target);
+    });
 
-  return { boot, runSelfTest };
+    // test/automation hook: programmatic file loading (used by manual big-file checks)
+    if (typeof window !== 'undefined') window.LT_INGEST = (files) => loadFiles(files);
+
+    return { boot, runSelfTest };
 }));

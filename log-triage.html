@@ -51,6 +51,14 @@ header h1 span { color: var(--accent); }
 .theme-opt.active { color: var(--accent); font-weight: 600; }
 .theme-opt .tick { visibility: hidden; }
 .theme-opt.active .tick { visibility: visible; }
+/* inline ✕ clear for text inputs */
+.clr-wrap { position: relative; display: inline-flex; align-items: center; max-width: 100%; }
+.clr-wrap > input { flex: 1 1 auto; padding-right: 20px; font-family: inherit; font-size: inherit; color: inherit; }
+.clr-btn { position: absolute; right: 2px; border: none; background: transparent; color: var(--muted); padding: 0 3px; font-size: 11px; line-height: 1; cursor: pointer; }
+.clr-btn:hover { color: var(--fg); }
+/* drawer copy buttons (masked/raw rows) */
+.drawer-cp { border: none; background: transparent; color: var(--accent); cursor: pointer; font-size: 11px; padding: 0 4px; }
+.drawer-cp:hover { text-decoration: underline; }
 
 #main { flex: 1; display: flex; min-height: 0; }
 #main.side-hidden #sidebar { display: none; }
@@ -615,13 +623,13 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     return m ? LEVEL_MAP[m[1].toLowerCase()] : null;
   }
 
-  function record(ts, level, tag, pid, msg) {
-    return { ts: ts || null, level: level || null, tag: tag || null, pid: pid || null, msg: msg };
+  function record(ts, level, tag, pid, msg, tid) {
+    return { ts: ts || null, level: level || null, tag: tag || null, pid: pid || null, tid: tid || null, msg: msg };
   }
 
   function parseLogcat(line) {
     const m = RE_LOGCAT.exec(line);
-    if (m) return record(m[1] + ' ' + m[2], m[5], m[6], m[3], m[7]);
+    if (m) return record(m[1] + ' ' + m[2], m[5], m[6], m[3], m[7], m[4]);
     return record(null, null, null, null, line); // continuation line: bypasses level filters
   }
 
@@ -660,7 +668,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     return record(null, levelFromTokens(line), null, null, line);
   }
 
-  /** parseLine(line, format) -> { ts, level, tag, pid, msg } */
+  /** parseLine(line, format) -> { ts, level, tag, pid, tid, msg } (tid only for logcat threadtime) */
   function parseLine(line, format) {
     switch (format) {
       case 'logcat': return parseLogcat(line);
@@ -1460,7 +1468,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       this._file(fileId).bytes += n;
     }
 
-    /** add(fileId, lineNo, raw, rec, kept) — rec: {ts, level, tag, pid, msg} */
+    /** add(fileId, lineNo, raw, rec, kept) — rec: {ts, level, tag, pid, tid, msg} */
     add(fileId, lineNo, raw, rec, kept) {
       const f = this._file(fileId);
       const r = rec || {};
@@ -1474,7 +1482,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       const entry = {
         fileId, file: fileId, lineNo, raw,
         ts: r.ts || null, level: r.level || null, tag: r.tag || null,
-        pid: r.pid || null, msg: r.msg != null ? r.msg : raw,
+        pid: r.pid || null, tid: r.tid || null, msg: r.msg != null ? r.msg : raw,
         seq: this._keptTotal,
       };
       this.kept.push(entry);
@@ -3871,13 +3879,27 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     if (!rec) return;
     const d = $('drawer');
     d.className = 'open';
+    const maskedLine = engine.maskLine(rec.raw);
     d.innerHTML = '<h3>Line ' + rec.lineNo + ' — ' + esc(fileDisplayName(rec.fileId)) +
       '<button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
       '<dl>' +
-      dv('ts', rec.ts) + dv('level', rec.level) + dv('tag', rec.tag) + dv('pid', rec.pid) +
-      '<div><dt>masked</dt><dd>' + esc(engine.maskLine(rec.raw)) + '</dd></div>' +
-      '<div><dt>raw</dt><dd class="raw">' + esc(rec.raw) + '</dd></div>' +
+      dv('ts', rec.ts) + dv('level', rec.level) + dv('tag', rec.tag) +
+      dv('pid', rec.pid) + dv('tid', rec.tid) +
+      '<div><dt>masked <button type="button" class="drawer-cp" data-what="masked" title="copy masked line">copy</button></dt><dd>' + esc(maskedLine) + '</dd></div>' +
+      '<div><dt>raw <button type="button" class="drawer-cp" data-what="raw" title="copy raw line">copy</button></dt><dd class="raw">' + esc(rec.raw) + '</dd></div>' +
       '</dl>';
+    for (const btn of d.querySelectorAll('.drawer-cp')) {
+      btn.onclick = async () => {
+        const text = btn.dataset.what === 'raw' ? rec.raw : maskedLine;
+        try {
+          await navigator.clipboard.writeText(text);
+          btn.textContent = 'copied ✓';
+        } catch (err) {
+          btn.textContent = 'copy failed';
+        }
+        setTimeout(() => { btn.textContent = 'copy'; }, 1500);
+      };
+    }
   }
   function dv(k, v) { return '<div><dt>' + k + '</dt><dd>' + esc(v == null ? '—' : String(v)) + '</dd></div>'; }
 
@@ -4733,6 +4755,49 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     body.innerHTML = '<p><b>' + pass + ' passed, ' + fail + ' failed</b> (' + cases.length + ' logic cases + theme check)</p>' + rows.join('');
   }
 
+  /* ---------------- universal inline ✕ clear for text inputs ---------------- */
+  /* Wraps a text input in a .clr-wrap span (transferring flex styles so row
+   * layout is preserved) and appends an ✕ button that empties the field and
+   * re-fires input/change so the app's live filters react. */
+  function makeClearable(input) {
+    if (!input || input.dataset.clearable === '1' || input.type !== 'text') return;
+    input.dataset.clearable = '1';
+    const wrap = document.createElement('span');
+    wrap.className = 'clr-wrap';
+    const inline = input.getAttribute('style') || '';
+    if (inline.includes('flex')) {
+      wrap.setAttribute('style', inline);
+      input.removeAttribute('style');
+    }
+    input.before(wrap);
+    wrap.append(input);
+    // preserve row layout: a CSS/inline flex on the input must move to the
+    // wrapper, which is now the flex child of the row
+    const cs = getComputedStyle(input);
+    if (cs.flex && cs.flex !== '0 1 auto') {
+      wrap.style.flex = cs.flex;
+      if (cs.minWidth && cs.minWidth !== 'auto') wrap.style.minWidth = cs.minWidth;
+      if (cs.maxWidth && cs.maxWidth !== 'none') wrap.style.maxWidth = cs.maxWidth;
+    }
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'clr-btn hidden';
+    btn.title = 'clear';
+    btn.textContent = '✕';
+    btn.tabIndex = -1;
+    wrap.append(btn);
+    const sync = () => btn.classList.toggle('hidden', !input.value);
+    input.addEventListener('input', sync);
+    btn.addEventListener('click', () => {
+      input.value = '';
+      sync();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+      input.focus();
+    });
+    sync();
+  }
+
   /* ---------------- boot ---------------- */
   function boot() {
     loadState();
@@ -5087,10 +5152,17 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
   else boot();
 
-  // test/automation hook: programmatic file loading (used by manual big-file checks)
-  if (typeof window !== 'undefined') window.LT_INGEST = (files) => loadFiles(files);
+    // inline ✕ clear for every text input (static fields + dynamically
+    // rendered rows: wrapped lazily on first focus)
+    document.querySelectorAll('input[type=text]').forEach(makeClearable);
+    document.addEventListener('focusin', (e) => {
+      if (e.target && e.target.matches && e.target.matches('input[type=text]')) makeClearable(e.target);
+    });
 
-  return { boot, runSelfTest };
+    // test/automation hook: programmatic file loading (used by manual big-file checks)
+    if (typeof window !== 'undefined') window.LT_INGEST = (files) => loadFiles(files);
+
+    return { boot, runSelfTest };
 }));
 
 </script>
@@ -5211,9 +5283,9 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     eq(SRC.detectTs('at 1787611054935'), null);
   });
 
-  T('parse', 'logcat threadtime full record', () => {
+  T('parse', 'logcat threadtime full record (pid AND tid)', () => {
     const r = SRC.parseLine('08-24 15:37:01.123  1234  5678 I ActivityManager: Start proc', 'logcat');
-    deepEq(r, { ts: '08-24 15:37:01.123', level: 'I', tag: 'ActivityManager', pid: '1234', msg: 'Start proc' });
+    deepEq(r, { ts: '08-24 15:37:01.123', level: 'I', tag: 'ActivityManager', pid: '1234', tid: '5678', msg: 'Start proc' });
   });
 
   T('parse', 'logcat tag containing colons splits on first ": "', () => {
@@ -5294,7 +5366,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
 
   T('parse', 'plain line without tokens: all null but message kept', () => {
     const r = SRC.parseLine('plain continuation text', 'plain');
-    deepEq(r, { ts: null, level: null, tag: null, pid: null, msg: 'plain continuation text' });
+    deepEq(r, { ts: null, level: null, tag: null, pid: null, tid: null, msg: 'plain continuation text' });
   });
 
   T('parse', 'severity token matching is word-bounded', () => {

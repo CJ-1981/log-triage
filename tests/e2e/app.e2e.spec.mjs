@@ -1102,6 +1102,61 @@ test('issueGroups migration appends the suspend rule to older persisted sessions
   assert.strictEqual(rows.length, 14, 'legacy groups preserved alongside the new rules');
 });
 
+test('drawer shows TID next to PID and copy buttons for the line', async () => {
+  await fresh();
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  // open the drawer on row 2 (the VIN line): masked and raw differ there.
+  // the viewer opens the drawer on mousedown (delegated at #vspacer)
+  await page.evaluate(() => {
+    document.querySelectorAll('.vrow')[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+  await page.waitForTimeout(200);
+  const drawer = await page.evaluate(() => document.getElementById('drawer').textContent);
+  assert.ok(drawer.includes('tid'), 'drawer lists tid');
+  assert.ok(drawer.includes('5678'), 'tid value 5678 shown');
+  assert.ok(drawer.includes('1234'), 'pid value 1234 shown');
+  // raw copy: contains the raw VIN
+  await page.evaluate(() => document.querySelector('#drawer .drawer-cp[data-what=raw]').click());
+  await page.waitForTimeout(150);
+  const raw = await page.evaluate(() => navigator.clipboard.readText());
+  assert.ok(raw.includes('YV4AB9CD12EF34567'), 'raw copy carries the raw VIN');
+  // masked copy: carries the masked token, never the raw VIN
+  await page.evaluate(() => document.querySelector('#drawer .drawer-cp[data-what=masked]').click());
+  await page.waitForTimeout(150);
+  const masked = await page.evaluate(() => navigator.clipboard.readText());
+  assert.ok(masked.includes('YV4**********4567'), 'masked copy carries the masked VIN: ' + masked);
+  assert.ok(!masked.includes('YV4AB9CD12EF34567'), 'masked copy leaks no raw VIN');
+});
+
+test('text inputs get an inline ✕ clear button that empties and re-fires', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await page.fill('#quick', 'AudioService');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent !== '44');
+  const state = () => page.evaluate(() => {
+    const wrap = document.getElementById('quick').closest('.clr-wrap');
+    const btn = wrap && wrap.querySelector('.clr-btn');
+    return { wrapped: !!wrap, hidden: !btn || btn.classList.contains('hidden'), val: document.getElementById('quick').value };
+  });
+  let s = await state();
+  assert.ok(s.wrapped && !s.hidden, 'clear button visible while text is entered: ' + JSON.stringify(s));
+  await page.evaluate(() => document.getElementById('quick').closest('.clr-wrap').querySelector('.clr-btn').click());
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, { timeout: 5000 });
+  s = await state();
+  assert.strictEqual(s.val, '', 'input emptied by ✕');
+  assert.ok(s.hidden, 'clear button hidden once empty');
+  // dynamically rendered rows (filter rule editor) become clearable on focus
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await page.evaluate(() => document.getElementById('btn-add-rule').click());
+  await page.evaluate(() => document.querySelector('#rule-rows input[type=text]').focus());
+  const dyn = await page.evaluate(() =>
+    !!document.querySelector('#rule-rows input[type=text]').closest('.clr-wrap'));
+  assert.ok(dyn, 'dynamically rendered rule input wrapped on focus');
+});
+
 test('loads a .7z archive: extracted files appear in the file list', { skip: !find7z() }, async () => {
   await fresh();
   await page.setInputFiles('#file-input', [sevenZipBundle()]);

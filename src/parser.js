@@ -57,13 +57,13 @@
     return m ? LEVEL_MAP[m[1].toLowerCase()] : null;
   }
 
-  function record(ts, level, tag, pid, msg) {
-    return { ts: ts || null, level: level || null, tag: tag || null, pid: pid || null, msg: msg };
+  function record(ts, level, tag, pid, msg, tid) {
+    return { ts: ts || null, level: level || null, tag: tag || null, pid: pid || null, tid: tid || null, msg: msg };
   }
 
   function parseLogcat(line) {
     const m = RE_LOGCAT.exec(line);
-    if (m) return record(m[1] + ' ' + m[2], m[5], m[6], m[3], m[7]);
+    if (m) return record(m[1] + ' ' + m[2], m[5], m[6], m[3], m[7], m[4]);
     return record(null, null, null, null, line); // continuation line: bypasses level filters
   }
 
@@ -102,7 +102,7 @@
     return record(null, levelFromTokens(line), null, null, line);
   }
 
-  /** parseLine(line, format) -> { ts, level, tag, pid, msg } */
+  /** parseLine(line, format) -> { ts, level, tag, pid, tid, msg } (tid only for logcat threadtime) */
   function parseLine(line, format) {
     switch (format) {
       case 'logcat': return parseLogcat(line);
