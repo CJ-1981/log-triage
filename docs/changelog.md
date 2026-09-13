@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.19.0 (2026-09-13)
+- feat: 7z archive support — pure-JS LZMA/LZMA2 decoder and 7z container (FR-26), zip extraction, archive export
+
 ## 1.18.0 (2026-09-13)
 - feat: archive support (.gz/.tar/.zip recursive decompress + recompress for export), PII Providers tab wiring, progress overlay; fix: issue editor materialization
 
