@@ -623,7 +623,7 @@ test('config tab exports and imports filter/mask/issue-scan configuration', asyn
   const fs = await import('node:fs');
   const cfg = JSON.parse(fs.readFileSync(path, 'utf8'));
   assert.strictEqual(cfg.masks.enabled.vin, false, 'exported config carries the disabled vin rule');
-  assert.strictEqual(cfg.issueGroups.length, 6, 'six issue-scan groups exported (incl. suspend)');
+  assert.strictEqual(cfg.issueGroups.length, 14, 'all fourteen issue-scan groups exported');
   // re-enable vin, then import the config: it must be disabled again
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
   await page.evaluate(() => document.querySelector('[data-mask="vin"]').click());
@@ -1099,7 +1099,7 @@ test('issueGroups migration appends the suspend rule to older persisted sessions
   const rows = await page.evaluate(() =>
     Array.from(document.querySelectorAll('#analysis-panel input[data-ig-k="kind"]')).map((i) => i.value));
   assert.ok(rows.includes('suspend'), 'suspend rule appended by migration, got: ' + rows.join(', '));
-  assert.strictEqual(rows.length, 6, 'legacy groups preserved alongside the new rule');
+  assert.strictEqual(rows.length, 14, 'legacy groups preserved alongside the new rules');
 });
 
 test('loads a .7z archive: extracted files appear in the file list', { skip: !find7z() }, async () => {

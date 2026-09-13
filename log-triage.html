@@ -1891,11 +1891,31 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   'use strict';
 
   const DEFAULT_ISSUE_GROUPS = [
-    { kind: 'crash', pattern: 'fatal exception|tombstone|beginning of crash', on: true },
-    { kind: 'anr', pattern: '\\banr in |input dispatching timed out', on: true },
-    { kind: 'proc-death', pattern: 'has died|am_proc_died|force stopping', on: true },
-    { kind: 'connectivity', pattern: 'connectivityservice|networkmonitor|data_disconnected|wifiservice|deactivatedatacall', on: true },
-    { kind: 'auth', pattern: 'auth error|auth blocked|authentication failed|token refresh|credential|failed password|password check failed', on: true },
+    // native + Java crashes: debuggerd signals, ART aborts, kernel panics
+    { kind: 'crash', pattern: 'fatal exception|tombstone|beginning of crash|fatal signal \\d|abort message|check failed:|crash_dump|kernel panic|bug: unable to handle', on: true },
+    // ANRs: framework text, event-log record, and the forced finish/completion
+    { kind: 'anr', pattern: '\\banr in |input dispatching timed out|am_anr|force finishing|force completing', on: true },
+    // system_server / subsystem watchdogs (before proc-death so the kill line
+    // is classified as a watchdog event)
+    { kind: 'watchdog', pattern: 'watchdog (kill|timeout|expired)|blocked in monitor|\\bwdog\\b', on: true },
+    // memory pressure: lmkd/kernel-LMK kills, OOM, allocation failures
+    { kind: 'mem', pattern: 'lowmemorykiller|lmkd|oom.?kill|out of memory|outofmemoryerror|cannot allocate memory|\\benomem\\b', on: true },
+    // binder buffer exhaustion and oversized transactions
+    { kind: 'binder', pattern: 'failed binder transaction|binder_alloc_buf|transactiontoolargeexception|undelivered transaction', on: true },
+    { kind: 'selinux', pattern: 'avc:\\s*denied|securityexception|permission denial', on: true },
+    // thermal: only severity/critical/throttle events, not status polling
+    { kind: 'thermal', pattern: 'thermal.*(critical|shutdown|throttl)|critical temperature|over.?temp', on: true },
+    { kind: 'storage', pattern: 'enospc|no space left|install_failed|insufficient storage|too many open files|read-only file system|buffer i/o error', on: true },
+    // modem / subsystem restarts and ramdumps (connectivity loss with no
+    // framework-side pattern)
+    { kind: 'subsys', pattern: 'subsys.?restart|subsystem restart|ramdump|modem (crash|reset|restart)', on: true },
+    // boot loops, restart/shutdown reasons, rescue-party mitigations
+    { kind: 'boot', pattern: 'critical process.*exited|too many crashes|rescueparty|service .zygote.|reboot(ing)?, reason|shutdown, reason|restart reason|boot reason|entering recovery|factory reset|wipe data', on: true },
+    { kind: 'proc-death', pattern: 'has died|am_proc_died|force stopping|service .+ died|received signal (9|11)', on: true },
+    { kind: 'connectivity', pattern: 'connectivityservice|networkmonitor|data_disconnected|wifiservice|deactivatedatacall|data stall|dns resolution failed|network lost', on: true },
+    // auth: failures only — bare "token refresh"/"credential" matched every
+    // successful silent refresh and benign credential-storage lines
+    { kind: 'auth', pattern: 'auth error|auth blocked|authentication failed|token refresh failed|token expired|token revoked|credential rejected|credential expired|invalid credential|failed password|password check failed', on: true },
     // suspend-to-RAM: kernel PM transitions, framework sleep/wake, wake
     // reasons, and suspend failures — tight alternations so generic words
     // like "suspension" or "wake-up alarm" do not match
@@ -6123,7 +6143,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   const recs = (lines) => lines.map((l, i) => ({ seq: i, lineNo: i + 1, fileId: 'f1', raw: l, msg: l }));
 
   T('issues', 'built-in groups cover crash, ANR, process death, connectivity, auth, suspend', () => {
-    deepEq(GROUPS.map((g) => g.kind).sort(), ['anr', 'auth', 'connectivity', 'crash', 'proc-death', 'suspend']);
+    deepEq(GROUPS.map((g) => g.kind).sort(), ['anr', 'auth', 'binder', 'boot', 'connectivity', 'crash', 'mem', 'proc-death', 'selinux', 'storage', 'subsys', 'suspend', 'thermal', 'watchdog']);
     for (const g of GROUPS) ok(g.pattern.length > 3, 'each group has a non-trivial pattern');
   });
 
@@ -6149,6 +6169,59 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     ]), GROUPS, (id) => id);
     eq(found.length, 3);
     ok(found.every((f) => f.kind === 'suspend'));
+  });
+
+  T('issues', 'native crash signals and kernel panics are flagged as crash', () => {
+    const found = SRC.issueScan(recs([
+      'F/libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0 in tid 1234',
+      "E ART     : Abort message: 'com.android.internal.util.Preconditions'",
+      'F DEBUG   : crash_dump64: obtaining output fd from tombstoned',
+      'kernel    : Kernel panic - not syncing: Attempted to kill init!',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 4);
+    ok(found.every((f) => f.kind === 'crash'));
+  });
+
+  T('issues', 'memory pressure, binder, selinux, watchdog, thermal, storage, boot, subsystem rules', () => {
+    const cases = [
+      ['lowmemorykiller: killing \'com.foo\' (1234) to free 2048kB', 'mem'],
+      ['lmkd      : killing \'com.bar\' (4321) adj 0 to free 64MB', 'mem'],
+      ['kernel    : Out of memory: Killed process 5678 (com.baz)', 'mem'],
+      ['B 1234  5678 E JavaBinder: *** FAILED BINDER TRANSACTION', 'binder'],
+      ['E Parcel  : TransactionTooLargeException: data Parcel size 2MB', 'binder'],
+      ['kernel    : avc:  denied { read } for pid 1234 scontext=u:r:untrusted_app tclass=file', 'selinux'],
+      ['E DatabaseUtils: SecurityException: permission denial: writing to settings', 'selinux'],
+      ['E Watchdog: *** WATCHDOG KILLING SYSTEM PROCESS: Blocked in monitor com.android.server.wm', 'watchdog'],
+      ['E thermal-engine: thermal shutdown: temp 95C exceeds critical limit', 'thermal'],
+      ['E PackageManager: INSTALL_FAILED_INSUFFICIENT_STORAGE for package com.foo', 'storage'],
+      ['E MediaProvider: No space left on device (errno 28)', 'storage'],
+      ['I init     : critical process \'system_server\' exited 4 times in 4 minutes; rebooting into recovery', 'boot'],
+      ['I RescueParty: Factor: 4, attempting factory reset', 'boot'],
+      ['E subsys-restart: subsystem_restart: Restarting subsystems: modem', 'subsys'],
+    ];
+    for (const [text, kind] of cases) {
+      const found = SRC.issueScan(recs([text]), GROUPS, (id) => id);
+      eq(found.length, 1, text.slice(0, 50));
+      eq(found[0].kind, kind, text.slice(0, 50));
+    }
+  });
+
+  T('issues', 'anr event-log entries and force-finishing are flagged', () => {
+    const found = SRC.issueScan(recs([
+      'I am_anr : [0,com.lotus.hmi/.MainActivity,100,803627610]',
+      'W ActivityManager: Force finishing activity ActivityRecord{abc u0 com.lotus.hmi/.Main t42}',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 2);
+    ok(found.every((f) => f.kind === 'anr'));
+  });
+
+  T('issues', 'auth pattern tightening: successful refresh is not an issue', () => {
+    const found = SRC.issueScan(recs([
+      'D Auth     : token refresh succeeded in 120ms',
+      'I SystemUIServer: credential-encrypted storage unlocked',
+      'D ThermalService: status changed to LIGHT',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 0, 'no false positives, got: ' + JSON.stringify(found.map((f) => f.kind + ':' + f.snippet)));
   });
 
   T('issues', 'a line matching multiple groups is reported once (first match wins)', () => {

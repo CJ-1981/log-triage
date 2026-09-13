@@ -62,7 +62,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 
 ## Verification evidence (v1.20.0)
 
-- **Shared cases:** 119 shared logic cases plus a theme check pass in both runners — `node --test` and the browser `?selftest` page each report **120 passed / 0 failed** (the suite has grown with the feature gates: archives/7z, bookmark management).
+- **Shared cases:** 130 shared logic cases plus a theme check pass in both runners — `node --test` and the browser `?selftest` page each report **131 passed / 0 failed** (the suite has grown with the feature gates: archives/7z, bookmark management, the expanded issue-scan catalog).
 - **Coverage gate:** green on all core `src/` modules (≥ 90% line / ≥ 85% branch enforced by `node tools/coverage-gate.mjs`); current new-module numbers: `lzma.js` 100%/93%, `format-7z.js` 100%/86%, `archive.js` 96%/89%, `bookmarks.js` 96%/87%.
 - **E2e:** Playwright suite **45/45 green** (37 app + 8 stress) locally (spec lists below).
 - **Error guard:** every e2e test ends with an `afterEach` assertion of zero uncaught page errors (`page.on(pageerror)` plus an in-page `window.__errs` tally) — the guard that would have caught the v1.1.x file-switch `ReferenceError` (see Retrospective R1).
@@ -122,6 +122,7 @@ App suite (37 specs) — coverage includes:
 23. ★ filter release: with ★ only-bookmarked active, Clear (and removing the last bookmark via its ✕) auto-deactivates the filter so all lines show again — reloading the same file keeps the viewer usable; the selected ★ chip can always be clicked off.
 24. Providers tab (FR-25 guard): local engine is the default with no remote banner; switching to Presidio shows the warning banner and settings; Test connection against an unroutable port yields a readable status with zero uncaught page errors (the assertion class that would have caught the once-unbundled `pii-remote.js`).
 25. Suspend issue group: a `suspend.log` fixture (kernel `PM: suspend entry/exit`, wake reason, freeze aborts, suspend-not-allowed) yields 12 flagged issues in the analysis tab, all attributed to the suspend group; `SleepScheduled` and the filesystem-sync line stay unflagged as false-positive guards.
+27. Expanded issue catalog (14 groups): shared cases pin native crash signals, lmkd/OOM memory pressure, binder transaction failures, SELinux denials, watchdog kills, thermal critical/shutdown, storage exhaustion, boot-loop/reason lines, modem subsystem restarts, ANR `am_anr`/`Force finishing`, and the auth tightening (successful token refresh / credential-encrypted storage / LIGHT thermal status are NOT flagged); Config-tab export carries all 14 groups and the boot migration appends missing built-ins to older persisted sessions.
 26. Issue-groups migration: a persisted five-group session (pre-suspend) receives the suspend rule on boot via the boot migration, with the legacy groups preserved.
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):

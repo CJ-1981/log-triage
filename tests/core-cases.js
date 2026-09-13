@@ -1045,7 +1045,7 @@
   const recs = (lines) => lines.map((l, i) => ({ seq: i, lineNo: i + 1, fileId: 'f1', raw: l, msg: l }));
 
   T('issues', 'built-in groups cover crash, ANR, process death, connectivity, auth, suspend', () => {
-    deepEq(GROUPS.map((g) => g.kind).sort(), ['anr', 'auth', 'connectivity', 'crash', 'proc-death', 'suspend']);
+    deepEq(GROUPS.map((g) => g.kind).sort(), ['anr', 'auth', 'binder', 'boot', 'connectivity', 'crash', 'mem', 'proc-death', 'selinux', 'storage', 'subsys', 'suspend', 'thermal', 'watchdog']);
     for (const g of GROUPS) ok(g.pattern.length > 3, 'each group has a non-trivial pattern');
   });
 
@@ -1071,6 +1071,59 @@
     ]), GROUPS, (id) => id);
     eq(found.length, 3);
     ok(found.every((f) => f.kind === 'suspend'));
+  });
+
+  T('issues', 'native crash signals and kernel panics are flagged as crash', () => {
+    const found = SRC.issueScan(recs([
+      'F/libc    : Fatal signal 11 (SIGSEGV), code 1 (SEGV_MAPERR), fault addr 0x0 in tid 1234',
+      "E ART     : Abort message: 'com.android.internal.util.Preconditions'",
+      'F DEBUG   : crash_dump64: obtaining output fd from tombstoned',
+      'kernel    : Kernel panic - not syncing: Attempted to kill init!',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 4);
+    ok(found.every((f) => f.kind === 'crash'));
+  });
+
+  T('issues', 'memory pressure, binder, selinux, watchdog, thermal, storage, boot, subsystem rules', () => {
+    const cases = [
+      ['lowmemorykiller: killing \'com.foo\' (1234) to free 2048kB', 'mem'],
+      ['lmkd      : killing \'com.bar\' (4321) adj 0 to free 64MB', 'mem'],
+      ['kernel    : Out of memory: Killed process 5678 (com.baz)', 'mem'],
+      ['B 1234  5678 E JavaBinder: *** FAILED BINDER TRANSACTION', 'binder'],
+      ['E Parcel  : TransactionTooLargeException: data Parcel size 2MB', 'binder'],
+      ['kernel    : avc:  denied { read } for pid 1234 scontext=u:r:untrusted_app tclass=file', 'selinux'],
+      ['E DatabaseUtils: SecurityException: permission denial: writing to settings', 'selinux'],
+      ['E Watchdog: *** WATCHDOG KILLING SYSTEM PROCESS: Blocked in monitor com.android.server.wm', 'watchdog'],
+      ['E thermal-engine: thermal shutdown: temp 95C exceeds critical limit', 'thermal'],
+      ['E PackageManager: INSTALL_FAILED_INSUFFICIENT_STORAGE for package com.foo', 'storage'],
+      ['E MediaProvider: No space left on device (errno 28)', 'storage'],
+      ['I init     : critical process \'system_server\' exited 4 times in 4 minutes; rebooting into recovery', 'boot'],
+      ['I RescueParty: Factor: 4, attempting factory reset', 'boot'],
+      ['E subsys-restart: subsystem_restart: Restarting subsystems: modem', 'subsys'],
+    ];
+    for (const [text, kind] of cases) {
+      const found = SRC.issueScan(recs([text]), GROUPS, (id) => id);
+      eq(found.length, 1, text.slice(0, 50));
+      eq(found[0].kind, kind, text.slice(0, 50));
+    }
+  });
+
+  T('issues', 'anr event-log entries and force-finishing are flagged', () => {
+    const found = SRC.issueScan(recs([
+      'I am_anr : [0,com.lotus.hmi/.MainActivity,100,803627610]',
+      'W ActivityManager: Force finishing activity ActivityRecord{abc u0 com.lotus.hmi/.Main t42}',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 2);
+    ok(found.every((f) => f.kind === 'anr'));
+  });
+
+  T('issues', 'auth pattern tightening: successful refresh is not an issue', () => {
+    const found = SRC.issueScan(recs([
+      'D Auth     : token refresh succeeded in 120ms',
+      'I SystemUIServer: credential-encrypted storage unlocked',
+      'D ThermalService: status changed to LIGHT',
+    ]), GROUPS, (id) => id);
+    eq(found.length, 0, 'no false positives, got: ' + JSON.stringify(found.map((f) => f.kind + ':' + f.snippet)));
   });
 
   T('issues', 'a line matching multiple groups is reported once (first match wins)', () => {
