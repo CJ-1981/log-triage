@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.22.1 (2026-09-13)
+- fix: ★ only-bookmarked filter no longer sticks after bookmarks run out
+
 ## 1.22.0 (2026-09-13)
 - feat: per-entry ✕ buttons in the bookmarks panel
 
