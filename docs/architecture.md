@@ -86,13 +86,13 @@ Implemented in G2–G8:
 | `src/store.js` | Kept-line store: streaming ingestion valve, global cap, per-file counters, retained `File` handles. |
 | `src/timeline.js` | Merged-timeline ordering (timestamp sort, file-order tiebreak) and the canvas histogram data. |
 | `src/selection.js` | Selection model: anchor / shift-range / ctrl-toggle / ctrl+A; masked copy with optional `file:lineNo:` prefixes. |
-| `src/bookmarks.js` | Bookmark storage keyed by file identity (name + size + first-line hash), notes, export/import. |
+| `src/bookmarks.js` | Bookmark storage keyed by file identity (name + size + first-line hash), notes, export/import, and `pruneExcept` for dropping entries of unloaded files (bookmarks panel Clear button). |
 | `src/exporter.js` | Sanitized exports: `.log`/`.txt`, `.csv`, `.json`, rg results, bookmarks; timestamped filenames. |
 | `src/archive.js` | Compressed-archive support (FR-26): detection of `.gz/.tar/.tar.gz/.tgz/.zip/.7z`, recursive extraction with progress, gzip via `DecompressionStream`, tar parse/write, zip central-directory reader (stored + deflate) and stored-entry writer, and re-packing extracts as archives. |
 | `src/format-7z.js` | 7z container (FR-26): signature + CRC32 verification, plain and `kEncodedHeader` (compressed) headers, pack/folder/substream/file-info parsing, UTF-16 names, empty files/dirs, digest verification; folder decoding for Copy/LZMA/LZMA2/Deflate coders; stored-entry `.7z` writer. |
 | `src/lzma.js` | Pure-JS LZMA1/LZMA2 decoder (ADR-0011): canonical range decoder + probability model, LZMA1 raw streams and chunked LZMA2 with dictionary-reset semantics; no WASM, no external code. |
 | `src/themes.js` | Six themes via `body[data-theme]` CSS variables (Midnight default). |
-| `src/selftest.js` | In-browser runner for the shared case suite (`?selftest`). |
+| `src/app.js` (selftest section) | In-browser runner for the shared case suite (`?selftest`) — no separate module; it is part of the app glue. |
 | `src/app-*.js` | UI glue: file list, viewer, analysis tab, search results panel, presets UI (exempt from coverage gates). |
 
 The shipped UI glue modules are `src/app.js` and `src/app-filecache.js` (IndexedDB file-cache wrapper for session restore — browser-only; both exempt from the coverage gate); the dev helpers `tools/serve.mjs` (static server), `tools/shots.mjs` (screenshot capture), `tools/genbig.mjs` (big-log generator — emits deterministic RAREJUMPMARKER lines every 100k lines for stable stress assertions), and `tools/debug-fileswitch.mjs` (deep-scan/file-switch debug probe) support e2e and performance verification and contribute no runtime code.
@@ -144,15 +144,15 @@ The masking engine is extensible behind a stable interface so new analysis backe
 }
 ```
 
-- **Registry.** Providers register by `id`; the built-in local regex engine is simply the default provider. A mock provider ships in v1 to exercise the interface end to end.
+- **Registry.** Providers register by `id`; the built-in local regex engine is simply the default provider. A mock provider ships to exercise the interface end to end.
 - **Findings.** `analyze()` returns offset-based findings `{ start, end, type, score }`. The masking engine converts findings into redactions; the analysis tab's PII census aggregates them per rule and per provider. Every finding carries its provider id so provenance is always visible.
-- **Future Presidio backend (proposed, ADR-0003).** Presidio would run as a localhost sidecar service on the user's machine — text still never leaves the machine, but the tool would talk to `localhost` over HTTP. `local: true`, gated behind an explicit user action.
-- **Future LLM backend (proposed, ADR-0003).** An LLM backend is remote by definition: data would leave the machine. It must be explicit opt-in, off by default, and show a persistent warning whenever active. It is documented in v1 but not wired.
-- **Security stance.** v1 ships with zero network code paths. The registry makes the boundary explicit (`local` flag), so any future remote provider is auditable: if `available()` can return true without the user having opted in, that is a bug.
+- **Presidio backend (implemented, ADR-0010).** Presidio runs as a localhost sidecar service on the user's machine — text still never leaves the machine, but the tool talks to `localhost` over HTTP. Gated behind an explicit user action in the Providers tab.
+- **LLM backend (implemented, ADR-0010).** An LLM backend is remote by definition: data leaves the machine. It is explicit opt-in, off by default, and shows a persistent warning banner whenever active; the API key is stored only in localStorage and never exported in config files.
+- **Security stance.** With the default local provider the app performs no network calls. The registry makes the boundary explicit (`local` flag), so remote providers stay auditable: if `available()` can return true without the user having opted in, that is a bug.
 
-### Planned: PII Providers tab (FR-25)
+### Providers tab (FR-25, implemented)
 
-Planned for v1.14.0 — design documented here and in ADR-0010; requirements in FR-25. The tab adds a provider dropdown (Local regex engine — default, always available / Presidio sidecar / LLM API), per-provider settings, a "Test connection" button, and a red warning banner whenever a remote (non-local) provider is active.
+Implemented in v1.17.x per ADR-0010; requirements in FR-25. The tab adds a provider dropdown (Local regex engine — default, always available / Presidio sidecar / LLM API), per-provider settings, a "Test connection" button, a sample scan, and a red warning banner whenever a remote (non-local) provider is active.
 
 Request flow:
 

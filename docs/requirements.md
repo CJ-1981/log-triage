@@ -1,6 +1,6 @@
 # Requirements
 
-Version reference: v1.12.1 (release). Requirements are numbered and testable; each functional requirement (FR) carries acceptance criteria (AC) that map directly to the shared test suite (`tests/core-cases.js`) and the Playwright e2e scope (see `docs/test-plan.md`). All requirements are implemented as of the v1.12.1 release.
+Version reference: v1.20.0 (release). Requirements are numbered and testable; each functional requirement (FR) carries acceptance criteria (AC) that map directly to the shared test suite (`tests/core-cases.js`) and the Playwright e2e scope (see `docs/test-plan.md`). All requirements are implemented as of the v1.20.0 release.
 
 ## Functional requirements
 
@@ -58,7 +58,7 @@ Status: implemented (v1.0.0).
 - AC-1: The `PiiProvider` interface `{ id, label, local, available(), analyze(lines) → findings[{start,end,type,score}] }` ships with a registry.
 - AC-2: A mock provider demonstrates registration and the finding flow end to end.
 - AC-3: Findings from any provider feed both masking and the PII census and are tagged by provider id.
-- AC-4: External backends (Presidio, LLM) are documented but not wired; v1 performs no network calls.
+- AC-4: External backends (Presidio, LLM) are wired via the Providers tab (FR-25) but off by default — the local regex engine is the default and the app performs no network calls unless a remote provider is explicitly enabled.
 
 ### FR-7 — Regex filter rules
 
@@ -98,12 +98,13 @@ Status: implemented (v1.0.0).
 
 ### FR-11 — Selection, copy, and bookmarks
 
-Status: implemented (v1.0.0).
+Status: implemented (v1.0.0; bookmarks Clear button in v1.20.0).
 
 - AC-1: Multiline selection supports click anchor, shift-click range, ctrl-click toggle, and ctrl+A; copying offers optional `file:lineNo:` prefixes and respects the current mask state.
 - AC-2: Bookmarks are set on the gutter (with the `B` key), listed in a panel, and support notes.
 - AC-3: Bookmarks persist by file identity (name + size + first-line hash) and can be exported and imported.
 - AC-4: A detail drawer shows the full raw line and its metadata.
+- AC-5: The bookmarks panel has a Clear button that removes entries whose file is not currently loaded while keeping bookmarks of loaded files; the status line reports the removal ("cleared N bookmark(s) from M unloaded file(s)"), the count pill updates, and the ★ only-bookmarked view re-filters if active.
 
 ### FR-12 — Sanitized export
 
@@ -113,6 +114,7 @@ Status: implemented (v1.0.0).
 - AC-2: Search results export as rg-style text or JSON; bookmarks export as JSON.
 - AC-3: Export honors the current mask rules (sanitized by default) and supports selection-only export.
 - AC-4: Exported filenames are timestamped `YYYY-MM-DD_HHmmss`.
+- AC-5: The extract can be re-packed as an archive mirroring the loaded file structure (`.zip`, `.tar`, `.tar.gz`, `.7z`); the `.7z` writer emits a valid stored container (see FR-26, ADR-0011).
 
 ### FR-13 — Presets
 
@@ -213,9 +215,9 @@ Status: implemented (v1.12.1).
 
 ### FR-25 — External PII analysis providers (Presidio / LLM)
 
-Status: **planned** (v1.14.0 target) — design documented (ADR-0010), not yet implemented.
+Status: implemented (v1.17.x — Providers tab with Presidio/LLM adapters, test connection, sample scan, CORS proxy mode). Design: ADR-0010.
 
-A "PII Providers" tab (or section) routes PII analysis beyond the built-in local regex engine to a Presidio sidecar or an LLM API, with the privacy safeguards from ADR-0003/ADR-0010.
+A "PII Providers" tab routes PII analysis beyond the built-in local regex engine to a Presidio sidecar or an LLM API, with the privacy safeguards from ADR-0003/ADR-0010.
 
 - AC-1: A provider dropdown offers Local regex engine (default, always available, fully offline) / Presidio sidecar / LLM API; switching providers is instant and applies per load.
 - AC-2: Presidio settings: service URL (default `http://127.0.0.1:3000`), analyze endpoint path, language, score threshold (0–1), entity-type filter list, and request timeout.
@@ -253,7 +255,7 @@ Status: implemented (v1.0.0).
 
 - 100% client-side processing; no server, no uploads; files never leave the machine.
 - No CDN resources, no external fonts, no telemetry.
-- Future external PII providers are opt-in and off by default; remote backends must warn that data would leave the machine (ADR-0003).
+- External PII providers are opt-in and off by default; the local regex engine is the default and performs no network calls; remote backends warn that data would leave the machine (ADR-0003, FR-25).
 
 ### NFR-3 — Offline single-file deliverable
 
@@ -268,9 +270,11 @@ Status: implemented (v1.0.0).
 - Coverage is enforced per core `src/` module: ≥ 90% line and ≥ 85% branch, via `node tools/coverage-gate.mjs` (Node 22, `node:test`).
 - CI blocks merges that fall below the gate. Exemptions: `src/app.js` UI glue, `build.js`, and tests themselves.
 
-## Out of scope for v1
+## Out of scope
 
-- Actual Presidio or LLM connectivity (interface and documentation only).
+- Actual Presidio or LLM *hosting* — the adapters and Providers tab ship, but users run their own sidecar or supply their own endpoint and API key (ADR-0010).
+- LZMA *encoding* for `.7z` export — exported `.7z` files are stored (copy-coded) containers (ADR-0011).
+- Encrypted-archive (AES-7z, password-zip) extraction.
 - Folder-recursive drop (multi-file selection only, no directory traversal).
 - Server or CLI mode.
 - Line editing.
