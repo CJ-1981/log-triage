@@ -17,6 +17,8 @@ jobs:
           node-version: 22
       - name: Install dependencies
         run: npm install
+      - name: Install 7-Zip CLI (7z archive fixtures)
+        run: sudo apt-get update && sudo apt-get install -y p7zip-full
       - name: Unit tests + coverage gate
         run: npm run test:gate
       - name: Build single-file HTML

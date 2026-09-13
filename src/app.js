@@ -1265,6 +1265,40 @@
     else if (kind === 'bookmarks') { blob = new Blob([LT.bookmarksToJson(bookmarksStore)], { type: 'application/json' }); fname = name('log-triage-bookmarks', 'json'); }
     if (blob) download(blob, fname);
   }
+
+  /* Archive export: group the masked kept lines by source file and re-pack
+   * them with the original (post-extraction) structure, e.g. bundle/a.log. */
+  async function exportArchive() {
+    const format = $('exp-archive-format').value;
+    const note = $('exp-archive-note');
+    const selectionOnly = $('exp-selection').checked;
+    let recs = selectionOnly && selection.count ? selection.indices().map((i) => view[i]) : store.kept;
+    if (state.viewMode === 'file' && state.activeFile) recs = recs.filter((r) => r.fileId === state.activeFile);
+    if (!recs.length) { note.textContent = 'nothing to export.'; return; }
+    const eng = new LT.MaskEngine();
+    for (const id of LT.builtinRuleIds()) eng.setEnabled(id, state.maskEnabled[id] !== false);
+    eng.custom = [];
+    for (const c of state.customMasks) eng.addCustom(c);
+    const fileById = {};
+    for (const f of files) fileById[f.id] = f;
+    const groups = new Map();
+    for (const r of recs) {
+      const key = r.fileId;
+      if (!groups.has(key)) groups.set(key, { name: (fileById[key] && fileById[key].name) || key + '.log', text: [] });
+      groups.get(key).text.push(state.maskOn ? eng.maskLine(r.raw) : r.raw);
+    }
+    const entries = [...groups.values()]
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .map((g) => ({ name: g.name, data: new TextEncoder().encode(g.text.join('\n') + '\n') }));
+    note.textContent = 'packing ' + entries.length + ' file(s), ' + recs.length + ' line(s) as .' + format + '…';
+    try {
+      const blob = new Blob([await LT.buildArchive(entries, format)], { type: 'application/octet-stream' });
+      download(blob, LT.timestampedName(new Date(), 'log-triage-extract', format));
+      note.textContent = 'exported ' + entries.length + ' file(s) as .' + format + (format === '7z' ? ' (stored, no recompression)' : '') + '.';
+    } catch (err) {
+      note.textContent = 'archive export failed: ' + err.message;
+    }
+  }
   function st() { return store.stats(); }
 
   function configPayload() {
@@ -1801,6 +1835,7 @@
     $('exp-csv').onclick = () => exportRecords('csv');
     $('exp-json').onclick = () => exportRecords('json');
     $('exp-bookmarks').onclick = () => exportRecords('bookmarks');
+    $('exp-archive').onclick = () => { exportArchive(); };
 
     // restore UI state
     $('quick').value = state.quick || '';

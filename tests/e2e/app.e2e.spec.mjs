@@ -3,9 +3,11 @@
  * Run: npm run build && npm run e2e  (CI installs playwright + chromium first). */
 import { test, before, after, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { join, dirname } from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
 import { chromium } from 'playwright';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -826,4 +828,75 @@ test('search result file groups are collapsible (multi-file)', async () => {
   assert.ok(drawer.length > 10, 'clicking a row inside a group jumps to the line (drawer opened)');
   await click('btn-rg-collapse');
   await click('btn-rg-expand');
+});
+
+// --- archive support: .7z ingest + archive export (skips without 7-Zip CLI) ---
+
+let sevenZipBin;
+function find7z() {
+  if (sevenZipBin !== undefined) return sevenZipBin;
+  for (const c of [process.env.SEVENZIP_BIN, '7z', '7za', 'C:\\Program Files\\7-Zip\\7z.exe']) {
+    if (!c) continue;
+    try {
+      const r = spawnSync(c, ['i'], { encoding: 'utf8' });
+      if (r.status === 0) { sevenZipBin = c; return c; }
+    } catch { /* not present */ }
+  }
+  sevenZipBin = '';
+  return null;
+}
+
+let sevenZipFixture;
+function sevenZipBundle() {
+  if (sevenZipFixture !== undefined) return sevenZipFixture;
+  const bin = find7z();
+  if (!bin) return null;
+  const dir = fs.mkdtempSync(join(os.tmpdir(), 'lt-e2e-7z-'));
+  const sample = [
+    '09-11 10:10:22.100  1234  5678 D WifiHal: associated rssi=-50',
+    '09-11 10:10:22.200  1234  5678 I WifiHal: scan complete',
+    '09-11 10:10:22.300  1234  5678 W WifiHal: beacon miss 1',
+    '09-11 10:10:22.400  1234  5678 E WifiHal: timeout waiting for driver',
+  ].join('\n') + '\n';
+  fs.writeFileSync(join(dir, 'a.log'), sample);
+  fs.mkdirSync(join(dir, 'sub'));
+  fs.writeFileSync(join(dir, 'sub', 'b.log'), sample.replace(/WifiHal/g, 'SensorHub'));
+  const r = spawnSync(bin, ['a', '-t7z', '-y', 'bundle.7z', 'a.log', 'sub', 'sub/b.log'], { cwd: dir, encoding: 'utf8' });
+  if (r.status !== 0) { sevenZipFixture = null; return null; }
+  sevenZipFixture = join(dir, 'bundle.7z');
+  return sevenZipFixture;
+}
+
+test('loads a .7z archive: extracted files appear in the file list', { skip: !find7z() }, async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [sevenZipBundle()]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent !== '0', null, { timeout: 15000 });
+  const names = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent));
+  assert.ok(names.includes('bundle/a.log'), 'bundle/a.log listed, got: ' + names.join(', '));
+  assert.ok(names.includes('bundle/sub/b.log'), 'bundle/sub/b.log listed, got: ' + names.join(', '));
+  const st = await status();
+  assert.strictEqual(st.fmt, 'logcat', 'inner log detected as logcat');
+  assert.strictEqual(st.total, '8', '4 lines per inner log');
+});
+
+test('archive export re-packs the extract (.7z stored) as a download', { skip: !find7z() }, async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [sevenZipBundle()]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent !== '0', null, { timeout: 15000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  await page.evaluate(() => {
+    const sel = document.getElementById('exp-archive-format');
+    sel.value = '7z';
+    sel.dispatchEvent(new Event('change'));
+  });
+  const downloadPromise = page.waitForEvent('download', { timeout: 8000 });
+  await click('exp-archive');
+  const download = await downloadPromise;
+  assert.match(download.suggestedFilename(), /\.7z$/);
+  const p = await download.path();
+  const magic = fs.readFileSync(p).subarray(0, 6);
+  assert.deepStrictEqual([...magic], [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c], 'download is a real 7z');
+  const note = await page.evaluate(() => document.getElementById('exp-archive-note').textContent);
+  assert.match(note, /exported/);
 });

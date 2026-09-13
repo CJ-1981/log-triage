@@ -64,7 +64,7 @@ Version reference: v1.13.0. Development was test-driven and proceeded through qu
 
 - **Shared cases:** 113 shared logic cases plus a theme check pass in both runners — `node --test` and the browser `?selftest` page each report **114 passed / 0 failed**.
 - **Coverage gate:** green on all core `src/` modules (≥ 90% line / ≥ 85% branch enforced by `node tools/coverage-gate.mjs`).
-- **E2e:** Playwright suite **35/35 green** (27 app + 8 stress) locally (spec lists below).
+- **E2e:** Playwright suite **37/37 green** (29 app + 8 stress) locally (spec lists below).
 - **Error guard:** every e2e test ends with an `afterEach` assertion of zero uncaught page errors (`page.on(pageerror)` plus an in-page `window.__errs` tally) — the guard that would have caught the v1.1.x file-switch `ReferenceError` (see Retrospective R1).
 - **Performance / big file:** a 300 MB / 3,380,636-line synthetic log was fully streamed and counted in ~31 s in Chromium (~108 MB/s), with exact per-file counters, FIFO trim at the 100k kept-line cap, and zero page errors. Throughput in hidden/background tabs is lower because browsers throttle them; the app uses a `MessageChannel` yield (ADR-0006) to minimize this effect.
 
@@ -81,7 +81,7 @@ Version reference: v1.13.0. Development was test-driven and proceeded through qu
 | --- | --- |
 | `npm test` | Run the Node unit suites (`node:test`, Node 22): shared logic cases + bump-tooling suite. |
 | `npm run test:gate` | Run unit tests with coverage and enforce ≥ 90% line / ≥ 85% branch per core module. |
-| `npm run e2e` | Run the Playwright end-to-end suite (35 specs: 27 app + 8 stress) against the built `log-triage.html`. |
+| `npm run e2e` | Run the Playwright end-to-end suite (37 specs: 29 app + 8 stress) against the built `log-triage.html`. |
 | `npm run e2e:stress` | Run only the stress suite against the generated big fixture (`tools/genbig.mjs`). |
 | `npm run build` | Rebuild `log-triage.html` from `src/` (inlines CSS, modules, shared cases, demo log). |
 
@@ -93,9 +93,9 @@ Version reference: v1.13.0. Development was test-driven and proceeded through qu
 - **Browser:** `build.js` inlines the identical file into `log-triage.html`; opening it with `?selftest` executes the suite and reports pass/fail counts and failing case names.
 - **Guarantee:** any behavior change must be expressed as a case update, so Node CI and the in-browser self-test can never disagree.
 
-## E2e scope (Playwright — 35 specs: 27 app + 8 stress)
+## E2e scope (Playwright — 37 specs: 29 app + 8 stress)
 
-App suite (27 specs) — coverage includes:
+App suite (29 specs) — coverage includes:
 
 1. `?selftest` page runs and reports green.
 2. Demo load: format detection, level chips, and masking indications correct.
@@ -114,6 +114,8 @@ App suite (27 specs) — coverage includes:
 15. File cache: a cached previous-session file reloads from IndexedDB on click; an entry without cached content renders greyed with a "file not found" badge and a removable ✕.
 16. Analysis file selector: scoping to one file or all updates every section; issue entries click-jump with auto-switch.
 17. ★ only-bookmarks chip in the level-chips row: appears with a live bookmarked count when bookmarks exist in scope, click toggles the filter, hidden otherwise.
+18. `.7z` ingest: a real 7-Zip-built archive (solid LZMA2, subfolder, file names with directories) is loaded through the file input; both extracted entries appear in the file list, the inner log is detected as logcat, and line counts match (skips when no 7-Zip CLI; CI installs `p7zip-full`).
+19. Archive export: the export tab re-packs the extract as `.7z` (format dropdown) — the download's first bytes are the 7z signature `37 7A BC AF 27 1C` and the status line confirms (same skip condition).
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 
@@ -133,6 +135,10 @@ Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run agains
 | `syslog.log` | syslog RFC 3164 | Mixed-severity syslog lines exercising severity-to-level mapping. |
 | `apache.log` | Apache CLF | Combined log format entries whose statuses map to I/W/E level chips. |
 | `service.log` | ISO-8601 | Service log with ISO-8601 timestamps, multiline stack traces (null-timestamp lines), and plain fallback lines. |
+| `lzma1.hex` / `lzma2.hex` | LZMA streams | Raw pack streams extracted from 7-Zip-built archives (LZMA1 with props `0x5D`, LZMA2 chunked), paired with `sample7z.txt` as the exact expected output — they exercise `src/lzma.js` byte-for-byte without needing the 7-Zip CLI. |
+| `sample7z.txt` | log-style text | The plaintext counterpart to the LZMA fixtures; also the content used for CLI-built container fixtures. |
+
+Container-level tests (`tests/format-7z.test.js`, zip extraction in `tests/archive.test.js`) build real archives at test time with the local 7-Zip CLI (solid, non-solid, copy, LZMA1, compressed header, encrypted) and **skip cleanly when no CLI is found** — set `SEVENZIP_BIN` to point at one. CI installs `p7zip-full` on ubuntu so the fixtures (and their coverage) run there; the crafted-buffer tests cover the remaining branches machine-independently.
 
 ## Retrospectives
 

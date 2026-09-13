@@ -17,6 +17,8 @@ module.exports = Object.assign({},
   require('./bookmarks.js'),
   require('./exporter.js'),
   require('./themes.js'),
+  require('./lzma.js'),
+  require('./format-7z.js'),
   require('./archive.js'),
 );
 

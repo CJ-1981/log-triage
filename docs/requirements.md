@@ -225,6 +225,18 @@ A "PII Providers" tab (or section) routes PII analysis beyond the built-in local
 - AC-6: Findings from the active provider use the shape `{line, start, end, type, score}` and merge into the PII census and can drive masking.
 - AC-7: Invalid endpoints and timeouts surface readable errors; the local regex engine remains the default and works fully offline.
 
+### FR-26 — Compressed archives (.gz / .tar / .tar.gz / .zip / .7z)
+
+Status: implemented (v1.17.x). Zip extraction was completed and 7z support added in the same gate.
+
+Log files often arrive packed, so the ingestion pipeline transparently looks inside archives: when a loaded file's name ends in `.gz`, `.tar`, `.tar.gz`/`.tgz`, `.zip`, or `.7z`, it is decompressed and each contained file flows through the same pipeline (detection, parsing, filtering, masking) as a regular file. Extraction is recursive without a depth limit — a `.7z` containing a `.tar.gz` containing a `.log` is unpacked fully — with per-entry progress shown in the archive progress overlay and the global cancel honored.
+
+- AC-1: gzip is decoded with the native `DecompressionStream`; tar is parsed and written by a pure-JS implementation; zip entries are read from the central directory with stored (method 0) and deflate (method 8) payloads inflated via `DecompressionStream('deflate-raw')`.
+- AC-2: `.7z` archives are parsed by a pure-JS container reader (`src/format-7z.js`): signature header with CRC32 verification, plain and `kEncodedHeader` (compressed) headers, pack info, folder/coder descriptions, substream sizes, CRC digests, file names (UTF-16), and empty files/directories. Codec support: Copy, LZMA (`03 01 01`), LZMA2 (`21`, via `src/lzma.js`), and Deflate (`03 04 01`). Encrypted (AES) archives, coder chains (delta/BCJ), and zip64 entries fail with explicit, readable errors.
+- AC-3: The LZMA decoder is pure JavaScript (no WASM, no CDN, single-file constraint preserved): a canonical range decoder and probability model for LZMA1 raw streams plus the chunked LZMA2 wrapper (stored chunks `0x01/0x02`, continuation chunks `0x80..0xDF` that carry decoder state across chunks, and full-reset chunks `0xE0..0xFF` with a fresh properties byte).
+- AC-4: Every extracted entry keeps its archive-relative path (`bundle/a.log`, `bundle/sub/b.log`) and recurses; CRC32 digests defined by the archive are verified after decoding, so corrupt payloads surface a CRC error instead of silent garbage.
+- AC-5: The export tab can re-pack the sanitized extract as an archive that mirrors the loaded structure: `.zip` (stored entries with CRCs), `.tar`, `.tar.gz`, and `.7z`. The `.7z` writer produces a valid container with Copy (stored) coders — structure fidelity without implementing LZMA encoding (ADR-0011); real 7-Zip opens the result (`7z t` passes).
+
 ## Non-functional requirements
 
 ### NFR-1 — Performance

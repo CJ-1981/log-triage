@@ -1,0 +1,30 @@
+09-11 10:10:22.123  1234  5678 D AudioService: status poll round 0 state=CONNECTED rssi=-50
+09-11 10:10:22.124  1234  5678 E AudioService: timeout waiting for driver, retry=0
+09-11 10:11:22.123  1234  5678 D WifiHal: status poll round 1 state=CONNECTED rssi=-50
+09-11 10:12:22.123  1234  5678 D PowerManager: status poll round 2 state=CONNECTED rssi=-50
+09-11 10:13:22.123  1234  5678 D SensorHub: status poll round 3 state=CONNECTED rssi=-50
+09-11 10:14:22.123  1234  5678 D ActivityManager: status poll round 4 state=CONNECTED rssi=-50
+09-11 10:15:22.123  1234  5678 D AudioService: status poll round 5 state=CONNECTED rssi=-50
+09-11 10:16:22.123  1234  5678 D WifiHal: status poll round 6 state=CONNECTED rssi=-50
+09-11 10:17:22.124  1234  5678 E WifiHal: timeout waiting for driver, retry=6
+09-11 10:18:22.123  1234  5678 D PowerManager: status poll round 7 state=CONNECTED rssi=-50
+09-11 10:19:22.123  1234  5678 D SensorHub: status poll round 8 state=CONNECTED rssi=-50
+09-11 10:20:22.123  1234  5678 D ActivityManager: status poll round 9 state=CONNECTED rssi=-50
+09-11 10:21:22.123  1234  5678 D AudioService: status poll round 10 state=CONNECTED rssi=-50
+09-11 10:22:22.123  1234  5678 D WifiHal: status poll round 11 state=CONNECTED rssi=-50
+09-11 10:23:22.123  1234  5678 D PowerManager: status poll round 12 state=CONNECTED rssi=-50
+09-11 10:24:22.124  1234  5678 E PowerManager: timeout waiting for driver, retry=5
+09-11 10:25:22.123  1234  5678 D SensorHub: status poll round 13 state=CONNECTED rssi=-50
+09-11 10:26:22.123  1234  5678 D ActivityManager: status poll round 14 state=CONNECTED rssi=-50
+09-11 10:27:22.123  1234  5678 D AudioService: status poll round 15 state=CONNECTED rssi=-50
+09-11 10:28:22.123  1234  5678 D WifiHal: status poll round 16 state=CONNECTED rssi=-50
+09-11 10:29:22.123  1234  5678 D PowerManager: status poll round 17 state=CONNECTED rssi=-50
+09-11 10:30:22.123  1234  5678 D SensorHub: status poll round 18 state=CONNECTED rssi=-50
+09-11 10:31:22.124  1234  5678 E SensorHub: timeout waiting for driver, retry=4
+09-11 10:32:22.123  1234  5678 D ActivityManager: status poll round 19 state=CONNECTED rssi=-50
+09-11 10:33:22.123  1234  5678 D AudioService: status poll round 20 state=CONNECTED rssi=-50
+09-11 10:34:22.123  1234  5678 D WifiHal: status poll round 21 state=CONNECTED rssi=-50
+09-11 10:35:22.123  1234  5678 D PowerManager: status poll round 22 state=CONNECTED rssi=-50
+09-11 10:36:22.123  1234  5678 D SensorHub: status poll round 23 state=CONNECTED rssi=-50
+09-11 10:37:22.124  1234  5678 E ActivityManager: timeout waiting for driver, retry=3
+09-11 10:38:22.123  1234  5678 D ActivityManager: status poll round 24 state=CONNECTED rssi=-50

@@ -1,9 +1,13 @@
 /* Log Triage — archive.js: compressed archive support (FR-26).
- * Detects, decompresses and re-creates .gz / .tar / .tar.gz / .tgz / .zip
- * archives recursively so log files inside archives flow through the same
- * pipeline as regular files. Browser-only for gzip (DecompressionStream). */
+ * Detects, decompresses and re-creates .gz / .tar / .tar.gz / .tgz / .zip /
+ * .7z archives recursively so log files inside archives flow through the same
+ * pipeline as regular files. gzip/zip-deflate use DecompressionStream, the
+ * 7z container (incl. LZMA/LZMA2) lives in format-7z.js + lzma.js. */
 (function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
+
+  const LT = typeof module === 'object' && module.exports ? null : (typeof self !== 'undefined' ? self.LT : {});
+  const F7 = LT && LT.parse7z ? LT : require('./format-7z.js');
 
   function detectArchiveType(name) {
     const n = String(name || '').toLowerCase();
@@ -11,11 +15,18 @@
     if (n.endsWith('.tar')) return 'tar';
     if (n.endsWith('.gz')) return 'gz';
     if (n.endsWith('.zip')) return 'zip';
+    if (n.endsWith('.7z')) return '7z';
     return null;
   }
 
   async function gunzipData(data) {
     const ds = new DecompressionStream('gzip');
+    const stream = new Blob([data]).stream().pipeThrough(ds);
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  async function inflateRaw(data) {
+    const ds = new DecompressionStream('deflate-raw');
     const stream = new Blob([data]).stream().pipeThrough(ds);
     return new Uint8Array(await new Response(stream).arrayBuffer());
   }
@@ -126,6 +137,9 @@
       const cv = new DataView(cd.buffer);
       cv.setUint32(0, 0x02014b50, true);
       cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+      cv.setUint32(16, c.crc, true);
+      cv.setUint32(20, c.size, true);
+      cv.setUint32(24, c.size, true);
       cv.setUint16(28, c.nameBytes.length, true);
       cv.setUint32(42, c.offset, true);
       cd.set(c.nameBytes, 46);
@@ -147,17 +161,90 @@
     return result;
   }
 
+  async function extractZip(data, depth, base, onProgress) {
+    const dv = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    let eocd = -1;
+    const min = Math.max(0, data.length - 65557);
+    for (let i = data.length - 22; i >= min; i--) {
+      if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+    }
+    if (eocd < 0) throw new Error('zip: end of central directory not found');
+    const count = dv.getUint16(eocd + 10, true);
+    let cd = dv.getUint32(eocd + 16, true);
+    const dec = new TextDecoder();
+    const out = [];
+    for (let n = 0; n < count; n++) {
+      if (cd + 46 > data.length || dv.getUint32(cd, true) !== 0x02014b50) throw new Error('zip: bad central directory');
+      const flags = dv.getUint16(cd + 8, true);
+      const method = dv.getUint16(cd + 10, true);
+      const compSize = dv.getUint32(cd + 20, true);
+      const uncompSize = dv.getUint32(cd + 24, true);
+      const nameLen = dv.getUint16(cd + 28, true);
+      const extraLen = dv.getUint16(cd + 30, true);
+      const cmtLen = dv.getUint16(cd + 32, true);
+      const localOff = dv.getUint32(cd + 42, true);
+      const name = dec.decode(data.subarray(cd + 46, cd + 46 + nameLen));
+      cd += 46 + nameLen + extraLen + cmtLen;
+      if (name.endsWith('/')) continue; // directory entry
+      if (flags & 1) throw new Error('zip: encrypted entries are not supported (' + name + ')');
+      if (uncompSize === 0xffffffff || localOff === 0xffffffff) throw new Error('zip: zip64 entries are not supported');
+      const lnLen = dv.getUint16(localOff + 26, true);
+      const leLen = dv.getUint16(localOff + 28, true);
+      const start = localOff + 30 + lnLen + leLen;
+      const raw = data.subarray(start, start + compSize);
+      let inner;
+      if (method === 0) {
+        inner = raw;
+      } else if (method === 8) {
+        inner = await inflateRaw(raw);
+      } else {
+        throw new Error('zip: unsupported compression method ' + method);
+      }
+      const sub = await extractArchive(name, inner, depth + 1, onProgress);
+      for (const s of sub) { s.name = base + '/' + s.name; out.push(s); }
+    }
+    return out;
+  }
+
+  async function extract7z(data, depth, base, name, onProgress) {
+    const parsed = F7.parse7z(data);
+    const decoded = [];
+    for (let i = 0; i < parsed.folders.length; i++) {
+      onProgress('decompressing ' + name + ' (block ' + (i + 1) + '/' + parsed.folders.length + ')');
+      decoded.push(await F7.decode7zFolder(data, parsed.folders[i]));
+    }
+    const real = parsed.files.filter((f) => !f.isDir);
+    const out = [];
+    for (let i = 0; i < real.length; i++) {
+      const f = real[i];
+      onProgress('extracting ' + f.name + ' (' + (i + 1) + '/' + real.length + ')');
+      const blob = f.size ? decoded[f.folder].subarray(f.offset, f.offset + f.size) : new Uint8Array(0);
+      if (f.crc != null && blob.length && F7.crc32(blob) !== f.crc) throw new Error('7z: CRC mismatch for ' + f.name);
+      const sub = await extractArchive(f.name, blob, depth + 1, onProgress);
+      for (const s of sub) { s.name = base + '/' + s.name; out.push(s); }
+    }
+    return out;
+  }
+
   async function extractArchive(name, data, depth, onProgress) {
     if (!onProgress) onProgress = () => {};
     if (depth > 0) onProgress('extracting ' + name + ' (level ' + depth + ')');
     const type = detectArchiveType(name);
     if (!type) return [{ name, data }];
-    const base = name.replace(/\.(tar\.gz|tgz|tar|gz|zip)$/i, '');
+    const base = name.replace(/\.(tar\.gz|tgz|tar|gz|zip|7z)$/i, '');
     if (type === 'gz') {
       onProgress('decompressing ' + name + '…');
       const inner = await gunzipData(data);
       const innerName = name.replace(/\.gz$/i, '');
       return extractArchive(innerName, inner, depth + 1, onProgress);
+    }
+    if (type === 'zip') {
+      onProgress('decompressing ' + name + '…');
+      return extractZip(data, depth, base, onProgress);
+    }
+    if (type === '7z') {
+      onProgress('decompressing ' + name + '…');
+      return extract7z(data, depth, base, name, onProgress);
     }
     if (type === 'tar') {
       const out = [];
@@ -176,6 +263,7 @@
     if (format === 'zip') return writeZipStored(entries);
     if (format === 'tar') return writeTar(entries);
     if (format === 'tar.gz') return gzipData(writeTar(entries));
+    if (format === '7z') return F7.write7zStored(entries);
     const total = entries.reduce((s, e) => s + e.data.length, 0);
     const concat = new Uint8Array(total);
     let pos = 0;
@@ -184,7 +272,7 @@
   }
 
   return {
-    detectArchiveType, gunzipData, gzipData,
+    detectArchiveType, gunzipData, gzipData, inflateRaw,
     parseTar, writeTar,
     writeZipStored, crc32,
     extractArchive, buildArchive,

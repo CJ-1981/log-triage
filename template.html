@@ -360,6 +360,13 @@ table.rules { min-width: 620px; }
             <button id="exp-bookmarks">bookmarks .json</button>
           </div>
           <p class="muted" id="exp-note"></p>
+          <h2>Archive export (original file structure)</h2>
+          <div class="rowline">
+            <label>format <select id="exp-archive-format"><option value="zip">.zip</option><option value="tar.gz">.tar.gz</option><option value="tar">.tar</option><option value="7z">.7z (stored)</option></select></label>
+            <button id="exp-archive">export archived files</button>
+            <span class="muted">groups the extract by source file and re-packs it — .7z export keeps the container structure without recompression</span>
+          </div>
+          <p class="muted" id="exp-archive-note"></p>
           <h2>Privacy</h2>
           <p class="muted">Exports are generated in your browser via Blob download. Nothing is uploaded — ever. External PII providers (Presidio/LLM) are <b>not</b> active in this build; the default engine is the local regex engine.</p>
         </div>
