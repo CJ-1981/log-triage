@@ -31,6 +31,15 @@ test('updateReadme rewrites the version marker', () => {
   assert.ok(updateReadme('no marker', '1.2.3') === 'no marker');
 });
 
+test('updateReadme rewrites the Current release line and tolerates absence', () => {
+  const md = 'Current release: v1.15.0\n<!-- version: 1.15.0 -->\n# Log Triage\n';
+  const out = updateReadme(md, '1.23.0');
+  assert.ok(out.includes('Current release: v1.23.0'), 'release line updated');
+  assert.ok(out.includes('<!-- version: 1.23.0 -->'), 'marker updated');
+  // a README without the line must pass through unchanged (no crash, no insert)
+  assert.strictEqual(updateReadme('no release line\n', '1.23.0'), 'no release line\n');
+});
+
 test('changelogEntry renders version, date and commit subjects', () => {
   const entry = changelogEntry('1.2.3', '2026-09-11', ['feat: a\n\nbody', 'fix: b']);
   assert.ok(entry.startsWith('## 1.2.3 (2026-09-11)'));

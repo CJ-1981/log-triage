@@ -47,7 +47,8 @@
       src = nextSrc;
       p = pos;
       hardEnd = end == null ? src.length : Math.min(end, src.length);
-      // one zero byte, then a 32-bit big-endian code
+      // one zero byte, then a 32-bit big-endian code — bounded by hardEnd too
+      if (p + 5 > hardEnd) throw new Error('lzma: unexpected end of stream');
       if (src[p] !== 0) throw new Error('lzma: corrupt stream (bad range coder init)');
       p++;
       code = 0;

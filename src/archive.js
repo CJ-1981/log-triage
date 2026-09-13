@@ -183,12 +183,11 @@
    * extraction caps nesting depth and cumulative output instead of allocating
    * whatever a header claims (decompression-bomb protection). */
   const MAX_DEPTH = 12;
-  const MAX_ENTRY_BYTES = 512 * 1024 * 1024;   // per extracted file
-  const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024; // per extractArchive call
+  const MAX_INPUT_BYTES = 2 * 1024 * 1024 * 1024;   // per top-level archive file
+  const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024; // cumulative per extractArchive call
   let extractedBudget = MAX_TOTAL_BYTES;
 
   function budgetTake(n) {
-    if (n > MAX_ENTRY_BYTES) throw new Error('archive entry too large (' + n + ' bytes claimed)');
     if (n > extractedBudget) throw new Error('archive expands beyond the ' + MAX_TOTAL_BYTES + ' byte safety cap');
     extractedBudget -= n;
   }
@@ -227,6 +226,9 @@
       const start = localOff + 30 + lnLen + leLen;
       if (start + compSize > data.length) throw new Error('zip: truncated entry ' + name);
       const raw = data.subarray(start, start + compSize);
+      // reserve the claimed output BEFORE inflating, so a tiny deflate stream
+      // claiming gigabytes is refused by the budget instead of OOM-ing first
+      budgetTake(uncompSize);
       let inner;
       if (method === 0) {
         inner = raw;
@@ -236,8 +238,9 @@
         throw new Error('zip: unsupported compression method ' + method);
       }
       if (inner.length !== uncompSize) throw new Error('zip: size mismatch for ' + name);
-      // flags bit 3 (streaming) defers CRC to a data descriptor we do not parse
-      if (!(flags & 8) && crc32(inner) !== crc) throw new Error('zip: CRC mismatch for ' + name);
+      // verify whenever the central directory carries a CRC (streaming writers
+      // with flags bit 3 may legally store 0 there)
+      if (crc !== 0 && crc32(inner) !== crc) throw new Error('zip: CRC mismatch for ' + name);
       const sub = await extractArchive(name, inner, depth + 1, onProgress);
       for (const s of sub) { s.name = base + '/' + s.name; out.push(s); }
     }
@@ -268,12 +271,17 @@
   async function extractArchive(name, data, depth, onProgress) {
     if (!onProgress) onProgress = () => {};
     depth = depth || 0; // guard against NaN depth arithmetic if omitted
-    if (depth === 0) extractedBudget = MAX_TOTAL_BYTES;
-    if (depth > MAX_DEPTH) throw new Error('archive nesting too deep (over ' + MAX_DEPTH + ' levels) at ' + name);
+    if (depth === 0) {
+      extractedBudget = MAX_TOTAL_BYTES;
+      // the file the user dropped: cap its size, but against the input limit —
+      // not the per-extraction budget (a large legit .gz must still open)
+      if (data.length > MAX_INPUT_BYTES) throw new Error('archive file too large (' + data.length + ' bytes)');
+    }
     budgetTake(data.length);
     if (depth > 0) onProgress('extracting ' + name + ' (level ' + depth + ')');
     const type = detectArchiveType(name);
-    if (!type) return [{ name, data }];
+    if (!type) return [{ name, data }]; // plain file: fine at any depth
+    if (depth > MAX_DEPTH) throw new Error('archive nesting too deep (over ' + MAX_DEPTH + ' levels) at ' + name);
     const base = name.replace(/\.(tar\.gz|tgz|tar|gz|zip|7z)$/i, '');
     if (type === 'gz') {
       onProgress('decompressing ' + name + '…');

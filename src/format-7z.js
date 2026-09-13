@@ -300,8 +300,10 @@
 
   function decodeFolderSync(data, folder) {
     if (folder.codec === 'deflate') throw new Error('7z: deflate coder needs async decode');
-    // decompression-bomb guard: never allocate what an implausible header claims
-    if (folder.outSize > 4096 * folder.packSize + 1048576) {
+    // decompression-bomb guard: refuse what an implausible header claims.
+    // The additive slack keeps ultra-homogeneous (highly compressible) real
+    // logs working; budgetTake in archive.js still caps every folder.
+    if (folder.outSize > 4096 * folder.packSize + 67108864) {
       throw new Error('7z: implausible compression ratio (' + folder.packSize + ' packed -> ' + folder.outSize + ' unpacked)');
     }
     let out;
