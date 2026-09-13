@@ -12,7 +12,7 @@ import { createReadStream } from 'node:fs';
 import { chromium } from 'playwright';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-let PORT = 0;
+let PORT = 8903;
 const STRESS_LOG = join(root, 'tests', 'tmp', 'stress.log');
 let server;
 let browser;
