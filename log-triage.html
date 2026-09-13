@@ -75,6 +75,12 @@ header h1 span { color: var(--accent); }
 .badge.err-b { color: var(--err); border-color: var(--err); }
 #dropzone { margin: 10px; border: 2px dashed var(--border); border-radius: 8px; padding: 14px 8px; text-align: center; color: var(--muted); font-size: 12.5px; }
 #dropzone.drag { border-color: var(--accent); color: var(--accent); }
+#archive-progress { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 100; }
+#archive-progress.visible { display: flex; }
+#archive-progress .box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px 30px; text-align: center; }
+#archive-progress .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin-bottom: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#archive-progress .msg { color: var(--fg); font-size: 13px; margin-top: 6px; }
 #side-actions { padding: 8px 10px; display: flex; gap: 6px; flex-wrap: wrap; border-top: 1px solid var(--border); }
 
 #content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -1678,6 +1684,199 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   return { THEMES, REQUIRED_VARS, DEFAULT_THEME, themeNames, themeCompletenessErrors, generateCss };
 }));
 
+/* Log Triage — archive.js: compressed archive support (FR-26).
+ * Detects, decompresses and re-creates .gz / .tar / .tar.gz / .tgz / .zip
+ * archives recursively so log files inside archives flow through the same
+ * pipeline as regular files. Browser-only for gzip (DecompressionStream). */
+(function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  function detectArchiveType(name) {
+    const n = String(name || '').toLowerCase();
+    if (n.endsWith('.tar.gz') || n.endsWith('.tgz')) return 'tar.gz';
+    if (n.endsWith('.tar')) return 'tar';
+    if (n.endsWith('.gz')) return 'gz';
+    if (n.endsWith('.zip')) return 'zip';
+    return null;
+  }
+
+  async function gunzipData(data) {
+    const ds = new DecompressionStream('gzip');
+    const stream = new Blob([data]).stream().pipeThrough(ds);
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  async function gzipData(data) {
+    const cs = new CompressionStream('gzip');
+    const stream = new Blob([data]).stream().pipeThrough(cs);
+    return new Uint8Array(await new Response(stream).arrayBuffer());
+  }
+
+  const CRC_TABLE = (() => {
+    const table = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) {
+      let c = i;
+      for (let j = 0; j < 8; j++) c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+      table[i] = c;
+    }
+    return table;
+  })();
+
+  function crc32(data) {
+    let crc = 0xffffffff;
+    for (let i = 0; i < data.length; i++) {
+      crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ data[i]) & 0xff];
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  }
+
+  function parseTar(data) {
+    const entries = [];
+    const dec = new TextDecoder();
+    let offset = 0;
+    while (offset + 512 <= data.length) {
+      const header = data.subarray(offset, offset + 512);
+      let allZero = true;
+      for (let i = 0; i < 512; i++) { if (header[i] !== 0) { allZero = false; break; } }
+      if (allZero) break;
+      let nameEnd = 0;
+      while (nameEnd < 100 && header[nameEnd] !== 0) nameEnd++;
+      const name = dec.decode(header.subarray(0, nameEnd));
+      const sizeStr = dec.decode(header.subarray(124, 136)).replace(/[\0\s]/g, '');
+      const size = parseInt(sizeStr, 8) || 0;
+      const type = header[156];
+      offset += 512;
+      if (type === 0 || type === 48) {
+        entries.push({ name, data: new Uint8Array(data.subarray(offset, offset + size)) });
+      }
+      offset += Math.ceil(size / 512) * 512;
+    }
+    return entries;
+  }
+
+  function writeTar(entries) {
+    const blocks = [];
+    for (const entry of entries) {
+      const header = new Uint8Array(512);
+      const nameBytes = new TextEncoder().encode(entry.name);
+      header.set(nameBytes.subarray(0, Math.min(100, nameBytes.length)), 0);
+      header.set(new TextEncoder().encode('0000644\0'), 100);
+      const sizeOct = entry.data.length.toString(8).padStart(11, '0') + '\0';
+      header.set(new TextEncoder().encode(sizeOct), 124);
+      header.set(new TextEncoder().encode('        '), 148);
+      header[156] = 48;
+      header.set(new TextEncoder().encode('ustar\0'), 257);
+      header.set(new TextEncoder().encode('00'), 263);
+      let sum = 0;
+      for (const b of header) sum += b;
+      const chk = sum.toString(8).padStart(6, '0') + '\0 ';
+      header.set(new TextEncoder().encode(chk), 148);
+      blocks.push(header);
+      blocks.push(entry.data);
+      const pad = (512 - (entry.data.length % 512)) % 512;
+      if (pad) blocks.push(new Uint8Array(pad));
+    }
+    blocks.push(new Uint8Array(1024));
+    const total = blocks.reduce((s, b) => s + b.length, 0);
+    const out = new Uint8Array(total);
+    let off = 0;
+    for (const b of blocks) { out.set(b, off); off += b.length; }
+    return out;
+  }
+
+  function writeZipStored(entries) {
+    const enc = new TextEncoder();
+    const chunks = [];
+    const central = [];
+    let offset = 0;
+    for (const entry of entries) {
+      const nameBytes = enc.encode(entry.name);
+      const data = entry.data;
+      const crc = crc32(data);
+      const lfh = new Uint8Array(30 + nameBytes.length);
+      const lv = new DataView(lfh.buffer);
+      lv.setUint32(0, 0x04034b50, true);
+      lv.setUint16(4, 20, true);
+      lv.setUint32(14, crc, true);
+      lv.setUint32(18, data.length, true);
+      lv.setUint32(22, data.length, true);
+      lv.setUint16(26, nameBytes.length, true);
+      lfh.set(nameBytes, 30);
+      chunks.push(lfh); chunks.push(data);
+      central.push({ nameBytes, crc, size: data.length, offset });
+      offset += 30 + nameBytes.length + data.length;
+    }
+    const cdStart = offset;
+    for (const c of central) {
+      const cd = new Uint8Array(46 + c.nameBytes.length);
+      const cv = new DataView(cd.buffer);
+      cv.setUint32(0, 0x02014b50, true);
+      cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+      cv.setUint16(28, c.nameBytes.length, true);
+      cv.setUint32(42, c.offset, true);
+      cd.set(c.nameBytes, 46);
+      chunks.push(cd);
+      offset += cd.length;
+    }
+    const eocd = new Uint8Array(22);
+    const ev = new DataView(eocd.buffer);
+    ev.setUint32(0, 0x06054b50, true);
+    ev.setUint16(8, central.length, true);
+    ev.setUint16(10, central.length, true);
+    ev.setUint32(12, offset - cdStart, true);
+    ev.setUint32(16, cdStart, true);
+    chunks.push(eocd);
+    const total = chunks.reduce((s, c) => s + c.length, 0);
+    const result = new Uint8Array(total);
+    let pos = 0;
+    for (const c of chunks) { result.set(c, pos); pos += c.length; }
+    return result;
+  }
+
+  async function extractArchive(name, data, depth, onProgress) {
+    if (!onProgress) onProgress = () => {};
+    if (depth > 0) onProgress('extracting ' + name + ' (level ' + depth + ')');
+    const type = detectArchiveType(name);
+    if (!type) return [{ name, data }];
+    const base = name.replace(/\.(tar\.gz|tgz|tar|gz|zip)$/i, '');
+    if (type === 'gz') {
+      onProgress('decompressing ' + name + '…');
+      const inner = await gunzipData(data);
+      const innerName = name.replace(/\.gz$/i, '');
+      return extractArchive(innerName, inner, depth + 1, onProgress);
+    }
+    if (type === 'tar') {
+      const out = [];
+      const entries = parseTar(data);
+      for (let i = 0; i < entries.length; i++) {
+        onProgress('extracting ' + entries[i].name + ' (' + (i + 1) + '/' + entries.length + ')');
+        const sub = await extractArchive(entries[i].name, entries[i].data, depth + 1, onProgress);
+        for (const s of sub) { s.name = base + '/' + s.name; out.push(s); }
+      }
+      return out;
+    }
+    return [{ name, data }];
+  }
+
+  async function buildArchive(entries, format) {
+    if (format === 'zip') return writeZipStored(entries);
+    if (format === 'tar') return writeTar(entries);
+    if (format === 'tar.gz') return gzipData(writeTar(entries));
+    const total = entries.reduce((s, e) => s + e.data.length, 0);
+    const concat = new Uint8Array(total);
+    let pos = 0;
+    for (const e of entries) { concat.set(e.data, pos); pos += e.data.length; }
+    return gzipData(concat);
+  }
+
+  return {
+    detectArchiveType, gunzipData, gzipData,
+    parseTar, writeTar,
+    writeZipStored, crc32,
+    extractArchive, buildArchive,
+  };
+}));
+
 /* Log Triage — app-filecache.js: IndexedDB cache of last loaded files.
  * Stores file contents so a session can be restored after reopening the app.
  * Entries without data render greyed out as "file not found". Browser-only
@@ -1950,6 +2149,25 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     saveState();
     let i = 0;
     for (const f of fileList) {
+      const arType = LT.detectArchiveType(f.name);
+      if (arType) {
+        // archive: decompress recursively, load inner files
+        const ap = $('archive-progress');
+        ap.classList.add('visible');
+        $('archive-progress-msg').textContent = 'extracting ' + f.name + '…';
+        try {
+          const buf = new Uint8Array(await f.arrayBuffer());
+          const innerEntries = await LT.extractArchive(f.name, buf, 0, (msg) => {
+            $('archive-progress-msg').textContent = msg;
+          });
+          ap.classList.remove('visible');
+          const innerFiles = innerEntries.map((e) => new File([e.data], e.name, { type: 'text/plain' }));
+          await loadFiles(innerFiles);
+        } catch (err) {
+          flash('archive extraction failed: ' + err.message);
+        }
+        continue;
+      }
       const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
       files.push(entry);
       renderFiles();
@@ -3032,6 +3250,8 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   function st() { return store.stats(); }
 
   function configPayload() {
+    const piiCopy = JSON.parse(JSON.stringify(state.pii || {}));
+    if (piiCopy.llm) delete piiCopy.llm.apiKey; // never export the API key
     return {
       app: 'log-triage',
       configVersion: 1,
@@ -3039,6 +3259,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       filters: { rules: state.rules, timeFrom: state.timeFrom, timeTo: state.timeTo },
       masks: { enabled: Object.assign({}, state.maskEnabled), custom: state.customMasks.map((c) => Object.assign({}, c)) },
       issueGroups: state.issueGroups,
+      pii: piiCopy,
     };
   }
 
@@ -3074,6 +3295,13 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     if (Array.isArray(cfg.issueGroups)) {
       state.issueGroups = cfg.issueGroups.map((g) => Object.assign({ kind: 'group', pattern: '', on: true }, g));
       applied.push('issue-scan rules');
+    }
+    if (cfg.pii && typeof cfg.pii === 'object') {
+      const pii = cfg.pii;
+      if (pii.active) { state.pii.active = pii.active; applied.push('pii provider'); }
+      if (pii.presidio) state.pii.presidio = pii.presidio;
+      if (pii.llm && pii.llm.url) { state.pii.llm = pii.llm; if (pii.llm.apiKey) state.pii.llm.apiKey = pii.llm.apiKey; }
+      if (pii.proxy) state.pii.proxy = pii.proxy;
     }
     saveState(); rebuildView();
     return applied;
@@ -4638,5 +4866,6 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
 /* Embedded demo log fixture (also used by tests/). */
 const LT_DEMO_LOG = "08-24 15:37:01.123  1234  5678 I ActivityManager: Start proc 1234:com.lotus.hmi/u0a12 for activity\n08-24 15:37:01.456  1234  5678 D HMI-CAN : VIN read: YV4AB9CD12EF34567 from ECU gateway\n08-24 15:37:01.789  2231  2245 I Netd    : client connected, uid=1027\n08-24 15:37:02.001  4310  4310 D WifiService: associated with AP ssid=AndroidShare_4821 bssid=aa:bb:cc:11:22:33\n08-24 15:37:02.240  4310  4355 I DhcpClient: lease 192.168.1.104/24 gw 192.168.1.1 dns 10.20.30.40\n08-24 15:37:02.512  4310  4355 W NetworkMonitor: validation failed for https://ota.lotus-tech.example, retry 3\n08-24 15:37:03.000  8891  8902 E Auth    : token refresh failed, credential rejected for driver.jung@lotus-tech.example\n08-24 15:37:03.220  8891  8902 E Auth    : subscriberId=410112233445566 not provisioned\n08-24 15:37:03.500  5152  5199 D GNSS    : position fix lat=48.858400 lon=2.294500 acc=3.2m sats=11\n08-24 15:37:03.700  5152  5199 D GNSS    : position fix lat=48.858412°N, 2.294511°E acc=2.9m sats=12\n08-24 15:37:04.000  1201  1201 I Zygote  : Forked child process 9876\n08-24 15:37:04.100  9876  9876 D BT      : bonded device CC:DD:EE:FF:00:11 type LE\n08-24 15:37:05.000  9877  9900 I Modem   : IMEI reported 350774129305118, card state READY\n08-24 15:37:06.000  1234  5700 W View    : requestLayout() improperly called\n08-24 15:37:07.000  1234  5700 E CR_OTA  : download stalled url=https://ota.example/pkg v2.41.3\n08-24 15:37:08.000  1234  5710 E AndroidRuntime: FATAL EXCEPTION: main\n08-24 15:37:08.000  1234  5710 E AndroidRuntime: Process: com.lotus.hmi, PID: 1234\n08-24 15:37:08.000  1234  5710 E AndroidRuntime: java.lang.NullPointerException: attempt to invoke virtual method on a null object reference\n08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at com.lotus.hmi.MainActivity.renderCluster(MainActivity.java:312)\n08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at com.lotus.hmi.ClusterView.onDraw(ClusterView.java:88)\n08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at android.view.View.draw(View.java:20340)\n08-24 15:37:08.100  1234  1234 I Process : Sending signal. PID: 1234 SIG: 9\n08-24 15:37:08.500  1000  1000 I ActivityManager: Process com.lotus.hmi has died\n08-24 15:37:09.000  1000  1000 W ActivityManager: Force stopping com.lotus.hmi appid=10112\n08-24 15:37:10.000  1000  1420 E am_proc_died: [0,10112,com.lotus.hmi]\n08-24 15:37:11.000  1000  1420 I ActivityManager: ANR in com.lotus.cluster (com.lotus.cluster/.ClusterService)\n08-24 15:37:11.100  1000  1420 E ActivityManager: Input dispatching timed out (Waiting to send key event because the focused window has not finished)\n08-24 15:37:12.000  2001  2100 D CarServ : vehicleId=YV4ZZZCD12EF34567 paired to phone +46 70 123 45 67\n08-24 15:37:12.300  2001  2100 D CarServ : finance contract DE89370400440532013000 validated\n08-24 15:37:12.600  2001  2100 W CarServ : card 4111 1111 1111 1111 declined by payment provider\n08-24 15:37:13.000  2001  2100 I CarServ : owner ssn 123-45-6789 verified against registry\n08-24 15:37:14.000  2001  2100 D Telematics: post to https://telematics.example/v2 retry left=2\n08-24 15:37:14.500  2001  2100 E Telematics: socket timeout after 30000ms host 203.0.113.77\n08-24 15:37:15.000  3333  3344 D SensorHub: calibration done, serial SN-A1B2C3D4E5F6 stored\n08-24 15:37:16.000  3333  3344 W SensorHub: watchdog, miss=1\n08-24 15:37:17.000  1234  5678 D HMI-CAN : heartbeat ecu=gateway alive seq=1201\n08-24 15:37:18.000  1234  5678 I HMI-CAN : heartbeat ecu=tcam alive seq=878\n08-24 15:37:19.000  1234  5678 W HMI-CAN : heartbeat ecu=tcam missed seq=879\n08-24 15:37:20.000  1234  5678 E HMI-CAN : heartbeat ecu=tcam lost, reconnecting\n08-24 15:37:21.000  4310  4355 I WifiService: CONNECTED bssid=aa:bb:cc:11:22:33 rssi=-52\n08-24 15:37:22.000  4310  4355 D IpManager: probing link, ipv6 fe80::7a8b:cafe:1234:5678%wlan0\n08-24 15:37:23.000  9999  9999 V RenderThread: 60fps jank=0.8ms\n08-24 15:37:24.000  9999  9999 D ClusterGL: frame 12345 drawn in 6.2ms\n08-24 15:37:25.000  1234  5678 I BootReceiver: boot completed at uptime 42s\n";
 </script>
+<div id="archive-progress"><div class="box"><div class="spinner"></div><div class="msg" id="archive-progress-msg">processing…</div></div></div>
 </body>
 </html>

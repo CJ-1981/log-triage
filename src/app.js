@@ -167,6 +167,25 @@
     saveState();
     let i = 0;
     for (const f of fileList) {
+      const arType = LT.detectArchiveType(f.name);
+      if (arType) {
+        // archive: decompress recursively, load inner files
+        const ap = $('archive-progress');
+        ap.classList.add('visible');
+        $('archive-progress-msg').textContent = 'extracting ' + f.name + '…';
+        try {
+          const buf = new Uint8Array(await f.arrayBuffer());
+          const innerEntries = await LT.extractArchive(f.name, buf, 0, (msg) => {
+            $('archive-progress-msg').textContent = msg;
+          });
+          ap.classList.remove('visible');
+          const innerFiles = innerEntries.map((e) => new File([e.data], e.name, { type: 'text/plain' }));
+          await loadFiles(innerFiles);
+        } catch (err) {
+          flash('archive extraction failed: ' + err.message);
+        }
+        continue;
+      }
       const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
       files.push(entry);
       renderFiles();
@@ -1249,6 +1268,8 @@
   function st() { return store.stats(); }
 
   function configPayload() {
+    const piiCopy = JSON.parse(JSON.stringify(state.pii || {}));
+    if (piiCopy.llm) delete piiCopy.llm.apiKey; // never export the API key
     return {
       app: 'log-triage',
       configVersion: 1,
@@ -1256,6 +1277,7 @@
       filters: { rules: state.rules, timeFrom: state.timeFrom, timeTo: state.timeTo },
       masks: { enabled: Object.assign({}, state.maskEnabled), custom: state.customMasks.map((c) => Object.assign({}, c)) },
       issueGroups: state.issueGroups,
+      pii: piiCopy,
     };
   }
 
@@ -1291,6 +1313,13 @@
     if (Array.isArray(cfg.issueGroups)) {
       state.issueGroups = cfg.issueGroups.map((g) => Object.assign({ kind: 'group', pattern: '', on: true }, g));
       applied.push('issue-scan rules');
+    }
+    if (cfg.pii && typeof cfg.pii === 'object') {
+      const pii = cfg.pii;
+      if (pii.active) { state.pii.active = pii.active; applied.push('pii provider'); }
+      if (pii.presidio) state.pii.presidio = pii.presidio;
+      if (pii.llm && pii.llm.url) { state.pii.llm = pii.llm; if (pii.llm.apiKey) state.pii.llm.apiKey = pii.llm.apiKey; }
+      if (pii.proxy) state.pii.proxy = pii.proxy;
     }
     saveState(); rebuildView();
     return applied;

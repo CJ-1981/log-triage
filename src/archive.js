@@ -147,20 +147,24 @@
     return result;
   }
 
-  async function extractArchive(name, data, depth) {
-    if (depth > 3) return [{ name, data }];
+  async function extractArchive(name, data, depth, onProgress) {
+    if (!onProgress) onProgress = () => {};
+    if (depth > 0) onProgress('extracting ' + name + ' (level ' + depth + ')');
     const type = detectArchiveType(name);
     if (!type) return [{ name, data }];
     const base = name.replace(/\.(tar\.gz|tgz|tar|gz|zip)$/i, '');
     if (type === 'gz') {
+      onProgress('decompressing ' + name + '…');
       const inner = await gunzipData(data);
       const innerName = name.replace(/\.gz$/i, '');
-      return extractArchive(innerName, inner, depth + 1);
+      return extractArchive(innerName, inner, depth + 1, onProgress);
     }
     if (type === 'tar') {
       const out = [];
-      for (const entry of parseTar(data)) {
-        const sub = await extractArchive(entry.name, entry.data, depth + 1);
+      const entries = parseTar(data);
+      for (let i = 0; i < entries.length; i++) {
+        onProgress('extracting ' + entries[i].name + ' (' + (i + 1) + '/' + entries.length + ')');
+        const sub = await extractArchive(entries[i].name, entries[i].data, depth + 1, onProgress);
         for (const s of sub) { s.name = base + '/' + s.name; out.push(s); }
       }
       return out;

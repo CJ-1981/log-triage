@@ -69,6 +69,12 @@ header h1 span { color: var(--accent); }
 .badge.err-b { color: var(--err); border-color: var(--err); }
 #dropzone { margin: 10px; border: 2px dashed var(--border); border-radius: 8px; padding: 14px 8px; text-align: center; color: var(--muted); font-size: 12.5px; }
 #dropzone.drag { border-color: var(--accent); color: var(--accent); }
+#archive-progress { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 100; }
+#archive-progress.visible { display: flex; }
+#archive-progress .box { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px 30px; text-align: center; }
+#archive-progress .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid var(--border); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; margin-bottom: 8px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+#archive-progress .msg { color: var(--fg); font-size: 13px; margin-top: 6px; }
 #side-actions { padding: 8px 10px; display: flex; gap: 6px; flex-wrap: wrap; border-top: 1px solid var(--border); }
 
 #content { flex: 1; display: flex; flex-direction: column; min-width: 0; }
@@ -438,5 +444,6 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
 /* Embedded demo log fixture (also used by tests/). */
 const LT_DEMO_LOG = /*__LT_DEMO__*/;
 </script>
+<div id="archive-progress"><div class="box"><div class="spinner"></div><div class="msg" id="archive-progress-msg">processing…</div></div></div>
 </body>
 </html>
