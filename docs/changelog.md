@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.28.1 (2026-09-14)
+- fix: customer-log investigation — robust file reading, search scope disclosure, kept-line cap
+
 ## 1.28.0 (2026-09-13)
 - feat: processing indicators for slow paths (analysis placeholder, deep-scan cancel, archive paint)
 - docs: describe Pages deployment in the release job (README, test-plan)
