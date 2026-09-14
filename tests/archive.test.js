@@ -340,6 +340,131 @@ test('extractArchive enforces the expansion budget', async () => {
   await assert.rejects(() => ar.extractArchive('bomb.7z', buf), /too large|safety cap/i);
 });
 
+test('boardBinToText extracts text lines from a binary board dump', async () => {
+  const ar2 = require('../src/archive.js');
+  const parts = [];
+  const push = (s) => parts.push(Buffer.from(s, 'latin1'));
+  push(Buffer.from([0, 0, 0, 1, 2, 3, 0, 255]));            // binary junk
+  push('09-11 22:14:01 I VHal: gear changed to P\n');
+  push(Buffer.from([255, 254, 0, 7]));                      // more junk
+  push('09-11 22:14:02 W PowerManager: suspend not allowed\n');
+  const bin = Buffer.concat(parts);
+  const out = await ar.boardBinToText(new Uint8Array(bin), 1024 * 1024, () => {});
+  const text = Buffer.from(out).toString('utf8');
+  assert.match(text, /gear changed to P/);
+  assert.match(text, /suspend not allowed/);
+  assert.ok(!text.includes('\u0000'), 'no NUL bytes in extracted text');
+});
+
+test('boardBinToText keeps the newest text within the cap', async () => {
+  const ar2 = require('../src/archive.js');
+  const parts = [];
+  parts.push(Buffer.from([0, 0, 0]));
+  parts.push(Buffer.from('EARLY old log line that must be dropped\n', 'latin1'));
+  parts.push(Buffer.from([9, 255, 3]));
+  parts.push(Buffer.from('NEWEST keep me log line\n', 'latin1'));
+  const bin = Buffer.concat(parts);
+  const out = await ar.boardBinToText(new Uint8Array(bin), 24, () => {}); // 24 bytes of text
+  const text = Buffer.from(out).toString('utf8');
+  assert.ok(text.includes('NEWEST keep me log line'), 'newest line kept: ' + JSON.stringify(text));
+  assert.ok(!text.includes('EARLY'), 'old line dropped: ' + JSON.stringify(text));
+});
+
+test('boardBinToText accepts ReadableStream and async-iterable sources', async () => {
+  const bin = Buffer.concat([
+    Buffer.from([0]),
+    Buffer.from('streamed text run one\n', 'latin1'),
+    Buffer.from([0]),
+    Buffer.from('streamed text run two\n', 'latin1'),
+  ]);
+  async function* gen() {
+    yield new Uint8Array(bin.subarray(0, 12));
+    yield new Uint8Array(bin.subarray(12));
+  }
+  const fromIter = Buffer.from(await ar.boardBinToText(gen(), 1024, () => {})).toString('utf8');
+  const stream = new ReadableStream({
+    start(ctrl) {
+      ctrl.enqueue(new Uint8Array(bin.subarray(0, 12)));
+      ctrl.enqueue(new Uint8Array(bin.subarray(12)));
+      ctrl.close();
+    },
+  });
+  const fromStream = Buffer.from(await ar.boardBinToText(stream, 1024, () => {})).toString('utf8');
+  assert.strictEqual(fromIter, fromStream);
+  assert.match(fromIter, /streamed text run one/);
+  assert.match(fromIter, /streamed text run two/);
+});
+
+test('boardBinToText trims mid-segment when a run straddles the cap', async () => {
+  // run1 = 'AAAAA' (5) + 35 C's spread over chunks; run2 = 35 B's; cap 43
+  const c35 = 'C'.repeat(35);
+  const b35 = 'B'.repeat(35);
+  async function* gen() {
+    yield new Uint8Array(Buffer.from([0]));
+    yield new Uint8Array(Buffer.from('AAAAA', 'latin1'));
+    yield new Uint8Array(Buffer.from(c35, 'latin1'));
+    yield new Uint8Array(Buffer.from([0]));
+    yield new Uint8Array(Buffer.from(b35, 'latin1'));
+  }
+  const out = await ar.boardBinToText(gen(), 43, () => {});
+  const text = Buffer.from(out).toString('utf8');
+  assert.strictEqual(out.length, 43, 'kept exactly the cap: ' + out.length);
+  assert.ok(text.endsWith(b35), 'newest run fully kept');
+  assert.ok(text.startsWith('CCCCCCCC'), 'older run trimmed mid-segment (oldest-first): ' + JSON.stringify(text.slice(0, 12)));
+  assert.ok(!text.includes('AAAAA'), 'oldest segment fully dropped');
+});
+
+test('extractArchive converts a directly dropped dumpstate_board.bin', async () => {
+  const bin = Buffer.concat([
+    Buffer.from([255, 0, 7]),
+    Buffer.from('dropped board: direct conversion works\n', 'latin1'),
+  ]);
+  const out = await ar.extractArchive('dumpstate_board.bin', new Uint8Array(bin));
+  assert.strictEqual(out.length, 1);
+  assert.strictEqual(out[0].name, 'dumpstate_board.bin.log');
+  assert.match(Buffer.from(out[0].data).toString('utf8'), /direct conversion works/);
+});
+
+test('extractArchive converts a giant dumpstate_board.bin entry into text', async () => {
+  const enc = new TextEncoder();
+  const nameB = enc.encode('dumpstate_board.bin');
+  const binParts = [];
+  binParts.push(Buffer.from([0, 0, 255]));
+  binParts.push(Buffer.from('board log: usageMode Gear isPark\n', 'latin1'));
+  binParts.push(Buffer.from([1, 2]));
+  binParts.push(Buffer.from('board log: suspend entry\n', 'latin1'));
+  const binData = Buffer.concat(binParts);
+  // craft zip with central-directory uncompSize claimed as 600 MB (giant)
+  const giant = 600 * 1024 * 1024;
+  const crc = ar.crc32(new Uint8Array(binData));
+  const parts = [];
+  const lfh = new Uint8Array(30 + nameB.length);
+  const lv = new DataView(lfh.buffer);
+  lv.setUint32(0, 0x04034b50, true); lv.setUint16(4, 20, true);
+  lv.setUint32(14, crc, true); lv.setUint32(18, binData.length, true); lv.setUint32(22, binData.length, true);
+  lv.setUint16(26, nameB.length, true);
+  lfh.set(nameB, 30);
+  parts.push(lfh, binData);
+  const cd = new Uint8Array(46 + nameB.length);
+  const cv = new DataView(cd.buffer);
+  cv.setUint32(0, 0x02014b50, true); cv.setUint16(4, 20, true); cv.setUint16(6, 20, true);
+  cv.setUint32(16, crc, true); cv.setUint32(20, binData.length, true); cv.setUint32(24, giant, true);
+  cv.setUint16(28, nameB.length, true); cv.setUint32(42, 0, true);
+  cd.set(nameB, 46);
+  const cdOff = lfh.length + binData.length;
+  parts.push(cd);
+  const eocd = new Uint8Array(22);
+  const ev = new DataView(eocd.buffer);
+  ev.setUint32(0, 0x06054b50, true); ev.setUint16(8, 1, true); ev.setUint16(10, 1, true);
+  ev.setUint32(12, cd.length, true); ev.setUint32(16, cdOff, true);
+  parts.push(eocd);
+  const zipBuf = Buffer.concat(parts);
+  const out = await ar.extractArchive('bugreport.zip', new Uint8Array(zipBuf));
+  assert.strictEqual(out.length, 1, 'one converted entry');
+  assert.match(out[0].name, /dumpstate_board\.bin\.log$/, 'converted entry name: ' + out[0].name);
+  assert.match(Buffer.from(out[0].data).toString('utf8'), /usageMode Gear isPark/, 'board log text present');
+});
+
 test('extractArchive rejects truncated tar entries', async () => {
   const tarBuf = ar.writeTar([{ name: 'a.log', data: new TextEncoder().encode('x'.repeat(1000)) }]);
   await assert.rejects(() => ar.extractArchive('cut.tar', tarBuf.subarray(0, 600)), /truncated entry/i);

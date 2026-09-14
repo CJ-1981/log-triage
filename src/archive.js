@@ -186,11 +186,126 @@
   const MAX_INPUT_BYTES = 2 * 1024 * 1024 * 1024;   // per top-level archive file
   const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024; // cumulative per extractArchive call
   const MAX_CHILD_BYTES = 512 * 1024 * 1024;   // per extracted child entry (zip/7z/tar)
+  const BOARD_TEXT_BYTES = 64 * 1024 * 1024;   // text kept from converted board dumps
+  const BOARD_BIN_RE = /(^|\/)dumpstate_board\.bin$/i; // Android bugreport board dump
   let extractedBudget = MAX_TOTAL_BYTES;
 
   function budgetTake(n) {
     if (n > extractedBudget) throw new Error('archive expands beyond the ' + MAX_TOTAL_BYTES + ' byte safety cap');
     extractedBudget -= n;
+  }
+
+  /* A Uint8Array as a pull ReadableStream (zero-copy subarray views). */
+  function u8Stream(u8, chunkSize) {
+    const size = chunkSize || 1024 * 1024;
+    let pos = 0;
+    return new ReadableStream({
+      pull(ctrl) {
+        if (pos >= u8.length) { ctrl.close(); return; }
+        ctrl.enqueue(u8.subarray(pos, Math.min(u8.length, pos + size)));
+        pos += size;
+      },
+    });
+  }
+
+  /* Incremental CRC-32 (pre-final-xor form: start from 0xffffffff, finish
+   * with (crc ^ 0xffffffff) >>> 0) so streamed data can be verified without
+   * holding it all in memory. */
+  function crc32Chunk(crc, u8) {
+    for (let i = 0; i < u8.length; i++) crc = (crc >>> 8) ^ CRC_TABLE[(crc ^ u8[i]) & 0xff];
+    return crc;
+  }
+
+  /* dumpstate_board.bin (Android bugreports) is a binary blob that embeds the
+   * board's text logs (kernel/logcat history, vendor logs) — 1.5 GB blobs are
+   * common, so `src` is consumed as a stream (Uint8Array, ReadableStream or
+   * iterable of chunks) and the inflated bytes are never materialized: text
+   * runs (>= 8 bytes, >= 80% printable) are tallied per byte and only the
+   * newest maxBytes of accepted run bytes is retained. onBytes, when given,
+   * sees every decoded chunk (used for on-the-fly CRC verification). */
+  async function boardBinToText(src, maxBytes, onProgress, onBytes) {
+    const isTextByte = (c) => c === 9 || c === 10 || c === 13 || (c >= 32 && c !== 127);
+    const msg = (m) => { if (onProgress) onProgress(m); };
+    // segment deques with head indices — Array.shift() is O(n), which across
+    // ~160k small decoder chunks on a 1.5 GB board dump would be quadratic
+    const kept = []; let keptHead = 0; let keptTotal = 0;
+    const cand = []; let candHead = 0; let candTotal = 0;
+    let runLen = 0, runGood = 0; // counters over the WHOLE current run
+    let scanBytes = 0;
+    let lastYield = Date.now();
+    let lastMsgMB = -1;
+
+    const endRun = () => {
+      if (runLen >= 8 && runGood / runLen >= 0.8) {
+        while (candHead < cand.length) kept.push(cand[candHead++]);
+        cand.length = 0; candHead = 0;
+        keptTotal += candTotal;
+        while (keptTotal > maxBytes) {
+          const excess = keptTotal - maxBytes;
+          const head = kept[keptHead];
+          if (excess >= head.length) { keptTotal -= head.length; keptHead++; }
+          else { kept[keptHead] = head.subarray(excess); keptTotal -= excess; }
+        }
+        if (keptHead > 8192 && keptHead * 2 > kept.length) { kept.splice(0, keptHead); keptHead = 0; }
+      } else {
+        cand.length = 0; candHead = 0;
+      }
+      candTotal = 0; runLen = 0; runGood = 0;
+    };
+
+    async function* chunks() {
+      if (src instanceof Uint8Array) { yield src; return; }
+      if (typeof src.getReader === 'function') {
+        const reader = src.getReader();
+        for (;;) {
+          const r = await reader.read();
+          if (r.done) return;
+          yield r.value;
+        }
+      }
+      yield* src;
+    }
+
+    for await (const chunk of chunks()) {
+      if (onBytes) onBytes(chunk);
+      scanBytes += chunk.length;
+      let i = 0;
+      while (i < chunk.length) {
+        if (!isTextByte(chunk[i])) { endRun(); i++; continue; }
+        let j = i, good = 0;
+        while (j < chunk.length) {
+          const c = chunk[j];
+          if (!isTextByte(c)) break;
+          if ((c >= 32 && c <= 126) || c === 9) good++;
+          j++;
+        }
+        const seg = chunk.subarray(i, j);
+        runLen += seg.length; runGood += good;
+        cand.push(seg); candTotal += seg.length;
+        while (candTotal > maxBytes) {
+          const excess = candTotal - maxBytes;
+          const head = cand[candHead];
+          if (excess >= head.length) { candTotal -= head.length; candHead++; }
+          else { cand[candHead] = head.subarray(excess); candTotal -= excess; }
+        }
+        if (candHead > 8192 && candHead * 2 > cand.length) { cand.splice(0, candHead); candHead = 0; }
+        i = j;
+      }
+      // decoder chunks are small (~10-64 KB) — yield to the event loop and
+      // repaint progress at most every ~32 ms, not once per chunk
+      const now = Date.now();
+      if (now - lastYield >= 32) {
+        lastYield = now;
+        const mb = Math.floor(scanBytes / 16777216);
+        if (mb !== lastMsgMB) { lastMsgMB = mb; msg('scanning binary board dump (' + (scanBytes / 1048576).toFixed(0) + ' MB)'); }
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+    }
+    endRun();
+    const out = new Uint8Array(keptTotal);
+    let o = 0;
+    for (let k = keptHead; k < kept.length; k++) { out.set(kept[k], o); o += kept[k].length; }
+    return out;
   }
 
   async function extractZip(data, depth, base, onProgress) {
@@ -223,8 +338,9 @@
       if (uncompSize === 0xffffffff || localOff === 0xffffffff) throw new Error('zip: zip64 entries are not supported');
       // giant entries (e.g. a 1.5 GB dumpstate_board.bin in Android bugreports)
       // are binary blobs useless for log triage and would blow the memory budget:
-      // skip them with an announced message instead of allocating
-      if (uncompSize > MAX_CHILD_BYTES) {
+      // skip them with an announced message instead of allocating — except the
+      // board dump, whose conversion output is capped (see below)
+      if (uncompSize > MAX_CHILD_BYTES && !BOARD_BIN_RE.test(name)) {
         onProgress('skipping ' + name + ' — entry too large (' + (uncompSize / 1048576).toFixed(0) + ' MB)');
         continue;
       }
@@ -233,10 +349,30 @@
       const leLen = dv.getUint16(localOff + 28, true);
       const start = localOff + 30 + lnLen + leLen;
       if (start + compSize > data.length) throw new Error('zip: truncated entry ' + name);
+      const isBoardBin = BOARD_BIN_RE.test(name);
       const raw = data.subarray(start, start + compSize);
       // reserve the claimed output BEFORE inflating, so a tiny deflate stream
-      // claiming gigabytes is refused by the budget instead of OOM-ing first
-      budgetTake(uncompSize);
+      // claiming gigabytes is refused by the budget instead of OOM-ing first —
+      // the board dump's claim is capped at the child cap (its CD may overclaim)
+      budgetTake(isBoardBin ? Math.min(uncompSize, MAX_CHILD_BYTES) : uncompSize);
+      // dumpstate_board.bin: a binary blob that embeds the board's text logs
+      // (real bugreports carry 1.5 GB blobs). Stream-decode it straight into
+      // the text-run scanner — the inflated blob is never materialized — and
+      // keep the newest capped text as a virtual .log. CRC is checked on the
+      // fly (streaming) instead of the size match, which an overclaiming CD
+      // would fail.
+      if (isBoardBin) {
+        if (method !== 0 && method !== 8) throw new Error('zip: unsupported compression method ' + method);
+        onProgress('converting ' + name + ' to text…');
+        let crcRun = 0xffffffff;
+        const stream = method === 0
+          ? u8Stream(raw)
+          : u8Stream(raw).pipeThrough(new DecompressionStream('deflate-raw'));
+        const text = await boardBinToText(stream, BOARD_TEXT_BYTES, onProgress, (chunk) => { crcRun = crc32Chunk(crcRun, chunk); });
+        if (crc !== 0 && (crcRun ^ 0xffffffff) >>> 0 !== crc) throw new Error('zip: CRC mismatch for ' + name);
+        out.push({ name: base + '/' + name + '.log', data: text });
+        continue;
+      }
       let inner;
       if (method === 0) {
         inner = raw;
@@ -295,7 +431,17 @@
     budgetTake(data.length);
     if (depth > 0) onProgress('extracting ' + name + ' (level ' + depth + ')');
     const type = detectArchiveType(name);
-    if (!type) return [{ name, data }]; // plain file: fine at any depth
+    if (!type) {
+      // a directly dropped board dump converts the same way as one inside a
+      // zip — its text content is what the user is after
+      if (BOARD_BIN_RE.test(name) && data.length) {
+        onProgress('converting ' + name + ' to text…');
+        const text = await boardBinToText(data, BOARD_TEXT_BYTES, onProgress);
+        budgetTake(text.length);
+        return [{ name: name + '.log', data: text }];
+      }
+      return [{ name, data }]; // plain file: fine at any depth
+    }
     if (depth > MAX_DEPTH) throw new Error('archive nesting too deep (over ' + MAX_DEPTH + ' levels) at ' + name);
     const base = name.replace(/\.(tar\.gz|tgz|tar|gz|zip|7z)$/i, '');
     if (type === 'gz') {
@@ -341,6 +487,7 @@
     detectArchiveType, gunzipData, gzipData, inflateRaw,
     parseTar, writeTar,
     writeZipStored, crc32,
+    boardBinToText,
     extractArchive, buildArchive,
   };
 }));
