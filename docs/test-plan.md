@@ -64,7 +64,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 
 - **Shared cases:** 131 shared logic cases plus a theme check pass in both runners — `node --test` and the browser `?selftest` page each report **132 passed / 0 failed** (the suite has grown with the feature gates: archives/7z, bookmark management, the expanded issue-scan catalog).
 - **Coverage gate:** green on all core `src/` modules (≥ 90% line / ≥ 85% branch enforced by `node tools/coverage-gate.mjs`); current new-module numbers: `lzma.js` 100%/93%, `format-7z.js` 100%/86%, `archive.js` 96%/89%, `bookmarks.js` 96%/87%.
-- **E2e:** Playwright suite **53/53 green** (45 app + 8 stress) locally (spec lists below).
+- **E2e:** Playwright suite **53/53 green + real-file validations** (45 app + 8 stress) locally (spec lists below).
 - **Error guard:** every e2e test ends with an `afterEach` assertion of zero uncaught page errors (`page.on(pageerror)` plus an in-page `window.__errs` tally) — the guard that would have caught the v1.1.x file-switch `ReferenceError` (see Retrospective R1).
 - **Performance / big file:** a 300 MB / 3,380,636-line synthetic log was fully streamed and counted in ~31 s in Chromium (~108 MB/s), with exact per-file counters, FIFO trim at the 100k kept-line cap, and zero page errors. Throughput in hidden/background tabs is lower because browsers throttle them; the app uses a `MessageChannel` yield (ADR-0006) to minimize this effect.
 
@@ -129,6 +129,7 @@ App suite (45 specs) — coverage includes:
 30. Processing indicators: the analysis tab paints an analyzing placeholder before its deferred heavy render (MutationObserver-verified); the deep-scan cancel control is present-but-hidden while idle; archive block progress yields so messages paint before synchronous LZMA decode.
 31. Ingest robustness: with `File.stream()` deliberately broken, a file still ingests fully over the FileReader fallback (44 demo lines, logcat badge); loading a >cap file trims to the kept-line cap and the search status discloses "kept lines only" with a Deep scan suggestion.
 32. Drag-and-drop of a file onto the dropzone ingests it exactly once (the drop handler stops propagation; the body-level drop handler is for drops elsewhere on the page).
+33. Real Android bugreport zip (local file, not in CI): 155 MB zip with 315 entries incl. a 1.5 GB dumpstate_board.bin — the giant binary entry is skipped with an announced progress message, ~314 text entries load recursively (301+ file items), and the bugreport text is searchable (verified locally against bugreport-gecko_gas zips; also validated in Node: 555,930-line 88 MB merged logcat batch ingests with exact counts).
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 

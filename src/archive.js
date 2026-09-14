@@ -185,6 +185,7 @@
   const MAX_DEPTH = 12;
   const MAX_INPUT_BYTES = 2 * 1024 * 1024 * 1024;   // per top-level archive file
   const MAX_TOTAL_BYTES = 2 * 1024 * 1024 * 1024; // cumulative per extractArchive call
+  const MAX_CHILD_BYTES = 512 * 1024 * 1024;   // per extracted child entry (zip/7z/tar)
   let extractedBudget = MAX_TOTAL_BYTES;
 
   function budgetTake(n) {
@@ -220,6 +221,13 @@
       if (name.endsWith('/')) continue; // directory entry
       if (flags & 1) throw new Error('zip: encrypted entries are not supported (' + name + ')');
       if (uncompSize === 0xffffffff || localOff === 0xffffffff) throw new Error('zip: zip64 entries are not supported');
+      // giant entries (e.g. a 1.5 GB dumpstate_board.bin in Android bugreports)
+      // are binary blobs useless for log triage and would blow the memory budget:
+      // skip them with an announced message instead of allocating
+      if (uncompSize > MAX_CHILD_BYTES) {
+        onProgress('skipping ' + name + ' — entry too large (' + (uncompSize / 1048576).toFixed(0) + ' MB)');
+        continue;
+      }
       if (localOff + 30 > data.length || dv.getUint32(localOff, true) !== 0x04034b50) throw new Error('zip: corrupt local header for ' + name);
       const lnLen = dv.getUint16(localOff + 26, true);
       const leLen = dv.getUint16(localOff + 28, true);
@@ -252,6 +260,11 @@
     const decoded = [];
     for (let i = 0; i < parsed.folders.length; i++) {
       onProgress('decompressing ' + name + ' (block ' + (i + 1) + '/' + parsed.folders.length + ')');
+      if (parsed.folders[i].outSize > MAX_CHILD_BYTES) {
+        // solid 7z folders bundle several files: a giant decoded folder cannot
+        // be skipped per-entry, so refuse it with a readable message
+        throw new Error('7z: decoded block too large (' + (parsed.folders[i].outSize / 1048576).toFixed(0) + ' MB) — re-pack smaller files without solid mode');
+      }
       budgetTake(parsed.folders[i].outSize); // claimed decoded size, before allocating it
       // let the progress message paint before the (synchronous) LZMA decode
       await new Promise((resolve) => setTimeout(resolve, 0));
