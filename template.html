@@ -479,6 +479,11 @@ table.rules { min-width: 620px; }
             <input type="file" id="config-file" accept=".json" class="hidden">
           </div>
           <p class="muted" id="config-status"></p>
+          <h2>Kept-line cap</h2>
+          <div class="rowline">
+            <label>lines kept in memory <input id="cfg-cap" type="text" value="100000" style="width:120px"></label>
+            <span class="muted">older lines beyond the cap are released to bound memory; applies from the next file load. Deep scan always covers whole files.</span>
+          </div>
           <h2>Current setup</h2>
           <div class="card-row" id="config-cards"></div>
         </div>
