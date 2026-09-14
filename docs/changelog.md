@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.30.0 (2026-09-14)
+- feat: skip giant binary entries in archives (real bugreport validation)
+
 ## 1.29.1 (2026-09-14)
 - fix: drag-and-drop created duplicate file entries
 - chore: rebuild bundle at v1.29.0 (freshness check)
