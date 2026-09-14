@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.29.1 (2026-09-14)
+- fix: drag-and-drop created duplicate file entries
+- chore: rebuild bundle at v1.29.0 (freshness check)
+
 ## 1.29.0 (2026-09-14)
 - fix: customer-log investigation — robust file reading, search scope disclosure, kept-line cap
 - chore(release): v1.28.0
