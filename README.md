@@ -59,7 +59,7 @@ The same viewer in the light **Paper** theme:
 - **Presets** — named filter/mask/search-flag sets persisted in localStorage with JSON import/export.
 - **File removal** — per-file ✕ buttons in the files panel drop a file's lines, counters, and level-chip contribution (clear-all uses the same path); removing a file also clears its bookmarks and purges its cache entry.
 - **File cache / session restore** — every successfully loaded file is cached in IndexedDB (`log-triage-cache`); reopening the app lists previous files — clicking a cached entry reloads it, while entries whose content is missing render greyed out with a "file not found" badge and a removable ✕.
-- **Config tab** — export/import the current filter rules, time range, PII mask setup, and issue-scan rules as one JSON file, with validation, per-section application, a status line, and current-setup cards.
+- **Config tab** — export/import the current filter rules, time range, PII mask setup, and issue-scan rules as one JSON file, with validation, per-section application, a status line, and current-setup cards. The tab also sets the **kept-line cap** (default 100,000; applies from the next file load) for very large logs — when lines were trimmed, instant search says "kept lines only" and points to Deep scan, which always covers whole files.
 - **Responsive mobile layout** — header wraps with horizontally scrollable tabs, the files panel becomes an overlay drawer on narrow screens, and the mask grid stacks to a single column.
 - **Debounced search and quick-filter inputs** — matching starts after typing pauses (search 250 ms, quick filter 200 ms).
 - **Navigation** — click a search result, sidebar bookmark, or issue-scan entry to jump to the line: the per-file selection auto-switches to the matched file and transient filters that would hide the target (quick search, level chips, time range, ★ only-bookmarks) are auto-cleared; lines beyond the kept-line cap open an explanatory drawer; a go-to-line box in the viewer toolbar takes a line number + Enter.
@@ -82,7 +82,7 @@ Requirements: Node.js 22.
 npm test          # Unit + bump suites (node:test)
 npm run test:gate # Unit tests + coverage gate (>=90% line / >=85% branch on core src modules)
 npm run build     # Build log-triage.html from src/
-npm run e2e       # Playwright end-to-end tests (50 specs: 42 app + 8 stress)
+npm run e2e       # Playwright end-to-end tests (52 specs: 44 app + 8 stress)
 npm run e2e:stress # Stress suite only (generated big fixture)
 npm run bump      # Semver bump from conventional commits (CI runs this automatically on main)
 ```

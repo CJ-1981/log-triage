@@ -485,6 +485,11 @@ table.rules { min-width: 620px; }
             <input type="file" id="config-file" accept=".json" class="hidden">
           </div>
           <p class="muted" id="config-status"></p>
+          <h2>Kept-line cap</h2>
+          <div class="rowline">
+            <label>lines kept in memory <input id="cfg-cap" type="text" value="100000" style="width:120px"></label>
+            <span class="muted">older lines beyond the cap are released to bound memory; applies from the next file load. Deep scan always covers whole files.</span>
+          </div>
           <h2>Current setup</h2>
           <div class="card-row" id="config-cards"></div>
         </div>
@@ -3242,6 +3247,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
     timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200, issueGroups: null,
+    cap: 100000,
     pii: {
       active: 'local',
       presidio: { url: 'http://127.0.0.1:3000', path: '/analyze', language: 'en', threshold: 0.5, entities: '', timeoutMs: 10000 },
@@ -3289,16 +3295,38 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   let ingestAbort = false;
 
   async function* chunkIter(file) {
-    if (file.stream) {
-      const reader = file.stream().getReader();
-      for (;;) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        yield value;
-      }
-      return;
-    }
+    // Prefer File.stream(); some Windows locations+names (e.g. Downloads
+    // folders with spaces/parens/@) either reject the first read with
+    // 'TypeError: network error' or falsely report an empty stream — in both
+    // cases fall back to the FileReader chunked path. A stream that ends
+    // mid-file after having delivered bytes throws a readable error.
     const FR = window.FileReader || self.FileReader;
+    let reader = null;
+    let broken = false;
+    let first = null;
+    try {
+      if (file.stream) reader = file.stream().getReader();
+      if (reader) {
+        first = await reader.read();
+        if (first.done && file.size > 0) broken = true; // lying empty stream
+      }
+    } catch (e) { broken = true; }
+    if (reader && !broken) {
+      if (!first.done) yield first.value;
+      let streamed = first.value ? first.value.length : 0;
+      for (;;) {
+        let r;
+        try { r = await reader.read(); }
+        catch (e) { throw new Error('the file could not be read completely — it may have changed on disk while being read'); }
+        if (r.done) {
+          if (streamed < file.size) throw new Error('the file read ended prematurely (' + streamed + ' of ' + file.size + ' bytes)');
+          return;
+        }
+        streamed += r.value.length;
+        yield r.value;
+      }
+    }
+    // FileReader fallback: reads the whole file from position 0
     for (let pos = 0; pos < file.size; pos += VALVE) {
       const slice = file.slice(pos, Math.min(file.size, pos + VALVE));
       yield await new Promise((res, rej) => {
@@ -3421,7 +3449,12 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
       files.push(entry);
       renderFiles();
-      await ingestFile(entry);
+      try {
+        await ingestFile(entry);
+      } catch (err) {
+        entry.status = 'error';
+        flash('could not read ' + f.name + ': ' + err.message);
+      }
       renderFiles();
       onKeptChanged();
       if (entry.status === 'done') await cacheLoadedFile(entry, f);
@@ -4002,7 +4035,10 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
 
   function renderSearchRows(res, mode, ms) {
     const out = $('search-results');
-    $('search-progress').textContent = res.total + ' match(es) over kept lines in ' + ms.toFixed(0) + ' ms';
+    const stNow = store.stats();
+    const notInMemory = stNow.totalLines - stNow.keptInMemory;
+    $('search-progress').textContent = res.total + ' match(es) over kept lines in ' + ms.toFixed(0) + ' ms' +
+      (notInMemory > 0 ? ' — kept lines only (' + notInMemory.toLocaleString() + ' earlier lines released): use Deep scan for full-file search' : '');
     const nameOf = (fileId) => fileDisplayName(fileId);
     if (mode === 'count') {
       out.innerHTML = Object.keys(res.byFile).map((f) => '<div class="sr-file">' + esc(nameOf(f)) + ': ' + res.byFile[f] + '</div>').join('') ||
@@ -4607,6 +4643,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       masks: { enabled: Object.assign({}, state.maskEnabled), custom: state.customMasks.map((c) => Object.assign({}, c)) },
       issueGroups: state.issueGroups,
       pii: piiCopy,
+      cap: state.cap || 100000,
     };
   }
 
@@ -4641,14 +4678,13 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     }
     if (Array.isArray(cfg.issueGroups)) {
       state.issueGroups = cfg.issueGroups.map((g) => Object.assign({ kind: 'group', pattern: '', on: true }, g));
+      renderAnalysis();
       applied.push('issue-scan rules');
     }
-    if (cfg.pii && typeof cfg.pii === 'object') {
-      const pii = cfg.pii;
-      if (pii.active) { state.pii.active = pii.active; applied.push('pii provider'); }
-      if (pii.presidio) state.pii.presidio = pii.presidio;
-      if (pii.llm && pii.llm.url) { state.pii.llm = pii.llm; if (pii.llm.apiKey) state.pii.llm.apiKey = pii.llm.apiKey; }
-      if (pii.proxy) state.pii.proxy = pii.proxy;
+    if (cfg.cap && Number(cfg.cap) >= 1000) {
+      state.cap = Number(cfg.cap);
+      store.cap = state.cap;
+      applied.push('kept-line cap');
     }
     saveState(); rebuildView();
     return applied;
@@ -4662,6 +4698,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       stat('Masks on', enabledMasks + '/' + LT.builtinRuleIds().length) +
       stat('Custom masks', state.customMasks.length) +
       stat('Issue rules on', enabledIssues + '/' + (state.issueGroups || []).length) +
+      stat('Kept-line cap', state.cap || 100000) +
       stat('Presets', Object.keys(state.presets).length);
   }
 
@@ -4886,6 +4923,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   /* ---------------- boot ---------------- */
   function boot() {
     loadState();
+    store.cap = state.cap || 100000;
     if (!Array.isArray(state.issueGroups)) {
       state.issueGroups = JSON.parse(JSON.stringify(LT.DEFAULT_ISSUE_GROUPS));
     } else {
@@ -5156,6 +5194,18 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       const f = e.target.files[0];
       if (f) importConfigFile(f);
       e.target.value = '';
+    };
+    // kept-line cap (Config tab): applies from the next file load
+    const capInput = $('cfg-cap');
+    capInput.value = state.cap || 100000;
+    capInput.onchange = () => {
+      const n = Math.max(1000, Number(capInput.value) || 100000);
+      capInput.value = n;
+      state.cap = n;
+      store.cap = n;
+      saveState();
+      renderConfigSummary();
+      flash('kept-line cap set to ' + n.toLocaleString() + ' — applies from the next file load');
     };
 
     $('btn-add-rule').onclick = () => { state.rules.push({ name: 'rule ' + (state.rules.length + 1), pattern: '', caseSensitive: false, action: 'include', enabled: true }); renderRules(); };

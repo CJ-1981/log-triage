@@ -1104,6 +1104,33 @@ test('issueGroups migration appends the suspend rule to older persisted sessions
   assert.strictEqual(rows.length, 14, 'legacy groups preserved alongside the new rules');
 });
 
+test('ingest falls back to FileReader when File.stream is broken', async () => {
+  await fresh();
+  // simulate the Chromium quirk seen with real Downloads paths: stream read throws
+  await page.evaluate(() => { File.prototype.stream = function () { throw new TypeError('network error'); }; });
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 15000 });
+  const fmt = await page.evaluate(() => (document.querySelector('.file-item .badge.fmt') || { textContent: '' }).textContent);
+  assert.strictEqual(fmt, 'logcat', 'full pipeline ran over the fallback path');
+});
+
+test('search status discloses kept-lines-only scope when lines were trimmed', async () => {
+  await fresh();
+  const big = join(os.tmpdir(), 'lt-scope-' + Date.now() + '.log');
+  const lines = [];
+  for (let i = 0; i < 120000; i++) lines.push('09-11 10:10:22.123  1234  5678 D Tag' + (i % 50) + ': fill line ' + i + ' payload');
+  fs.writeFileSync(big, lines.join('\n') + '\n');
+  await page.setInputFiles('#file-input', [big]);
+  await page.waitForFunction(() => Number(document.getElementById('st-total').textContent) >= 120000, null, { timeout: 60000 });
+  fs.rmSync(big, { force: true });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
+  await page.fill('#rg-pattern', 'fill line');
+  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 30000 });
+  const status = await page.evaluate(() => document.getElementById('search-progress').textContent);
+  assert.match(status, /kept lines only/, 'scope disclosed: ' + status);
+  assert.match(status, /Deep scan/, 'deep scan suggested: ' + status);
+});
+
 test('search tab rg options have explanatory tooltips', async () => {
   await fresh();
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
