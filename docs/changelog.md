@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.31.0 (2026-09-14)
+- feat: convert dumpstate_board.bin board dumps to searchable text
+
 ## 1.30.0 (2026-09-14)
 - feat: skip giant binary entries in archives (real bugreport validation)
 
