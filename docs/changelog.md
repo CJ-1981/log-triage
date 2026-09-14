@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.31.1 (2026-09-14)
+- fix: extract top-level .tar.gz/.tgz and gzip payloads misnamed .tar
+
 ## 1.31.0 (2026-09-14)
 - feat: convert dumpstate_board.bin board dumps to searchable text
 
