@@ -3241,10 +3241,10 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     }
     if (depth > MAX_DEPTH) throw new Error('archive nesting too deep (over ' + MAX_DEPTH + ' levels) at ' + name);
     const base = name.replace(/\.(tar\.gz|tgz|tar|gz|zip|7z)$/i, '');
-    if (type === 'gz') {
+    if (type === 'gz' || type === 'tar.gz') { // .tar.gz/.tgz gunzip to a .tar the tar branch handles
       onProgress('decompressing ' + name + '…');
       const inner = await gunzipData(data);
-      const innerName = name.replace(/\.gz$/i, '');
+      const innerName = type === 'tar.gz' ? name.replace(/(\.tar\.gz|\.tgz)$/i, '.tar') : name.replace(/\.gz$/i, '');
       return extractArchive(innerName, inner, depth + 1, onProgress);
     }
     if (type === 'zip') {
@@ -3256,6 +3256,12 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       return extract7z(data, depth, base, name, onProgress);
     }
     if (type === 'tar') {
+      // some devices ship gzip bytes under a .tar name (TCAM kmesglog_*.tar):
+      // sniff the gzip magic and decompress before the tar parse
+      if (data.length > 2 && data[0] === 0x1f && data[1] === 0x8b) {
+        onProgress('decompressing ' + name + '…');
+        data = await gunzipData(data);
+      }
       const out = [];
       const entries = parseTar(data);
       for (let i = 0; i < entries.length; i++) {
