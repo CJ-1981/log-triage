@@ -1885,7 +1885,14 @@
     const dz = $('dropzone');
     ;['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('drag'); }));
     ;['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('drag'); }));
-    dz.addEventListener('drop', (e) => { if (e.dataTransfer.files.length) loadFiles(Array.from(e.dataTransfer.files)); });
+    dz.addEventListener('drop', (e) => {
+      // stopPropagation: the body-level drop handler would otherwise load the
+      // same files a second time (the dropzone is inside the body)
+      e.stopPropagation();
+      e.preventDefault();
+      dz.classList.remove('drag');
+      if (e.dataTransfer.files.length) loadFiles(Array.from(e.dataTransfer.files));
+    });
     document.body.addEventListener('dragover', (e) => e.preventDefault());
     document.body.addEventListener('drop', (e) => {
       e.preventDefault();

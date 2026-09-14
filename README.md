@@ -82,7 +82,7 @@ Requirements: Node.js 22.
 npm test          # Unit + bump suites (node:test)
 npm run test:gate # Unit tests + coverage gate (>=90% line / >=85% branch on core src modules)
 npm run build     # Build log-triage.html from src/
-npm run e2e       # Playwright end-to-end tests (52 specs: 44 app + 8 stress)
+npm run e2e       # Playwright end-to-end tests (53 specs: 45 app + 8 stress)
 npm run e2e:stress # Stress suite only (generated big fixture)
 npm run bump      # Semver bump from conventional commits (CI runs this automatically on main)
 ```

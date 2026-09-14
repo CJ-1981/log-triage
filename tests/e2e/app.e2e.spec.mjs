@@ -1131,6 +1131,23 @@ test('search status discloses kept-lines-only scope when lines were trimmed', as
   assert.match(status, /Deep scan/, 'deep scan suggested: ' + status);
 });
 
+test('drag-and-drop loads the file exactly once', async () => {
+  await fresh();
+  await page.evaluate(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File(['dropped line 1\ndropped line 2\n'], 'dropped.log', { type: 'text/plain' }));
+    const ev = new DragEvent('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: dt });
+    document.getElementById('dropzone').dispatchEvent(ev);
+  });
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '2', null, { timeout: 8000 });
+  const files = await page.evaluate(() => ({
+    items: document.querySelectorAll('.file-item').length,
+    names: Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent),
+  }));
+  assert.strictEqual(files.items, 1, 'exactly one file entry, got: ' + files.names.join(', '));
+});
+
 test('search tab rg options have explanatory tooltips', async () => {
   await fresh();
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
