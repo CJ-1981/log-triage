@@ -27,18 +27,33 @@ const MODULE_ORDER = [
   'format-7z.js',
   'archive.js',
   'app-filecache.js',
+  'app-paging.js',
   'app.js',
+];
+
+/* Worker bundle: pure-logic modules the paging worker needs, inlined as a
+ * string into the single-file HTML (spawned from a Blob URL). Kept separate
+ * from MODULE_ORDER — the worker must run standalone, without UI glue. */
+const WORKER_ORDER = [
+  'util.js',
+  'detect.js',
+  'parser.js',
+  'filters.js',
+  'search.js',
+  'paged.js',
+  'app-paging-worker.js',
 ];
 
 const TOKENS = [
   '__LT_VERSION__',
   '/*__LT_CSS__*/',
   '/*__LT_MODULES__*/',
+  '/*__LT_WORKER__*/',
   '/*__LT_CASES__*/',
   '/*__LT_DEMO__*/',
 ];
 
-function buildHTML({ version, template, modules, cases, css, demoLog }) {
+function buildHTML({ version, template, modules, cases, css, demoLog, worker }) {
   for (const tok of TOKENS) {
     if (!template.includes(tok)) {
       throw new Error('template is missing token ' + tok);
@@ -50,6 +65,7 @@ function buildHTML({ version, template, modules, cases, css, demoLog }) {
     .replace(/__LT_VERSION__/g, () => String(version))
     .replace('/*__LT_CSS__*/', () => String(css || ''))
     .replace('/*__LT_MODULES__*/', () => modules.join('\n'))
+    .replace('/*__LT_WORKER__*/', () => JSON.stringify(worker || '').replace(/</g, '\\u003c'))
     .replace('/*__LT_CASES__*/', () => String(cases || ''))
     .replace('/*__LT_DEMO__*/', () => JSON.stringify(String(demoLog)));
 }
@@ -63,7 +79,9 @@ function main() {
   const cases = fs.readFileSync(path.join(root, 'tests', 'core-cases.js'), 'utf8');
   const modules = MODULE_ORDER.map((name) =>
     fs.readFileSync(path.join(root, 'src', name), 'utf8'));
-  const html = buildHTML({ version: pkg.version, template, modules, cases, css, demoLog });
+  const worker = WORKER_ORDER
+    .map((name) => fs.readFileSync(path.join(root, 'src', name), 'utf8')).join('\n');
+  const html = buildHTML({ version: pkg.version, template, modules, cases, css, demoLog, worker });
   const out = path.join(root, 'log-triage.html');
   fs.writeFileSync(out, html, 'utf8');
   console.log('built', out, (html.length / 1024).toFixed(1) + ' KB', 'v' + pkg.version);
@@ -71,4 +89,4 @@ function main() {
 
 if (require.main === module) main();
 
-module.exports = { buildHTML, MODULE_ORDER };
+module.exports = { buildHTML, MODULE_ORDER, WORKER_ORDER };

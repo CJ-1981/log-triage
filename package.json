@@ -5,7 +5,7 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "test": "node --test tests/core.test.js tests/scaffold.test.js tests/bump.test.js tests/archive.test.js tests/format-7z.test.js tests/pii-remote.test.js",
+    "test": "node --test tests/core.test.js tests/scaffold.test.js tests/bump.test.js tests/archive.test.js tests/format-7z.test.js tests/pii-remote.test.js tests/paged.test.js",
     "test:gate": "node tools/coverage-gate.mjs",
     "build": "node build.js",
     "e2e": "node --test tests/e2e/app.e2e.spec.mjs tests/e2e/stress.e2e.spec.mjs",

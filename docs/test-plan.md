@@ -127,20 +127,21 @@ App suite (45 specs) — coverage includes:
 28. Issue list tree + severity colors: findings group into collapsible per-kind details sorted crit / high / med / low (demo: crash first, auto-open; others collapsed), summary counts match leaves, and a leaf click still jumps to the line.
 29. Search-tab rg tooltips: every ripgrep option control (fixed-strings, whole-word, invert, case-sensitivity select, result-mode select, context-before/after, Deep scan) carries an explanatory hover tooltip; asserted by e2e so future controls cannot silently ship without one.
 30. Processing indicators: the analysis tab paints an analyzing placeholder before its deferred heavy render (MutationObserver-verified); the deep-scan cancel control is present-but-hidden while idle; archive block progress yields so messages paint before synchronous LZMA decode.
-31. Ingest robustness: with `File.stream()` deliberately broken, a file still ingests fully over the FileReader fallback (44 demo lines, logcat badge); loading a >cap file trims to the kept-line cap and the search status discloses "kept lines only" with a Deep scan suggestion.
+31. Ingest robustness: with `File.stream()` deliberately broken, a file still ingests fully over the FileReader fallback (44 demo lines, logcat badge); a 120k-line file loads with exact totals and instant search discloses its analysis-sample scope ("kept lines only") with a Deep scan suggestion that covers every line.
 32. Drag-and-drop of a file onto the dropzone ingests it exactly once (the drop handler stops propagation; the body-level drop handler is for drops elsewhere on the page).
 33. Real Android bugreport zip (local file, not in CI): 155 MB zip with 315 entries incl. a 1.5 GB dumpstate_board.bin — the board dump is stream-converted to a capped 64 MB `dumpstate_board.bin.log` text entry (newest text, CRC verified, no NUL bytes), ~314 text entries load recursively (301+ file items), and the bugreport text is searchable (verified locally against bugreport-gecko_gas zips; also validated in Node: 555,930-line 88 MB merged logcat batch ingests with exact counts; Node re-verification of the 1.6 GB board dump: 328 entries in ~35 s, ~900 MB peak RSS, 666k log lines extracted).
 34. Real TCAM log set (local folder, not in CI): 241 archives (`backup/*.tar.gz` × 172, `umdplog/kmesglog_*.tar` × 68 misnamed-gzip, plus 1) all extract in Node — 4,502 entries / 6.88 GB expanded text in ~26 s, zero failures; the kmesglog tars decompress via gzip-magic sniffing and yield kernel ring-buffer logs.
+35. Real 88 MB / 555,930-line logcat through the actual paging-worker code path (Node harness, `tests/tmp/large-file-check.cjs`): index in ~2.5 s with exact level counters; unfiltered view = all 555,930 lines (previously capped at ~100k); quick filter re-stream returns every match (236 for the reported SEAT_OCCU/Bluetooth pattern) in ~2 s; page fetch ~20 ms; go-to-line 450002 resolves to its view position in ~0.7 s.
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 
-1. Ingest timing (<60 s) with total-line count asserted against the fixture on disk.
-2. Real mouse-wheel scrolling of the virtualized viewer (bounded window, monotonic line numbers).
-3. Go-to-line inside the kept window (viewer scrolls, drawer shows the exact line).
-4. Go-to-line for a line released by the kept-line cap (clear explanatory status).
+1. Ingest timing (<60 s) with total-line count asserted against the fixture on disk; every indexed line is the view scope (no kept-window trim).
+2. Real mouse-wheel paging across the 500-row page edges (line numbers advance across page boundaries, bounded rendered window, error-free).
+3. Go-to-line late in the file (viewer loads the page, drawer shows the exact line).
+4. Go-to-line for a line the old kept cap used to release (line 150000 of ~338k) — the viewer loads its page and opens the drawer.
 5. Clicking an instant-search result jumps to the line (tab switch, selection, drawer).
-6. Uncapped deep scan covers every line on disk (`deep scan: N match(es) over M lines` with M = fixture lines) and finds matches the kept cap hides.
-7. Wrap toggle over the full kept set stays responsive; rapid chip toggling stays consistent and error-free.
+6. Uncapped deep scan covers every line on disk (`deep scan: N match(es) over M lines` with M = fixture lines).
+7. Wrap toggle over the full view stays responsive; rapid chip toggling stays consistent and error-free.
 
 ## Fixture inventory (`tests/fixtures/`)
 

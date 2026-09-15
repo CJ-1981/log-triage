@@ -136,6 +136,12 @@ header h1 span { color: var(--accent); }
 mark { background: var(--hl); color: var(--bg); border-radius: 2px; }
 #statusbar { display: flex; gap: 16px; padding: 4px 12px; font-size: 11.5px; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); flex-wrap: wrap; }
 #statusbar b { color: var(--fg); }
+#pager { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:5px 10px; border-top:1px solid var(--border); background:var(--surface); }
+#pager input { width:80px; }
+#viewer-busy { display:none; position:absolute; top:8px; right:12px; z-index:35; padding:8px 12px; background:var(--surface); border:1px solid var(--accent); border-radius:6px; }
+#viewer-busy.active { display:flex; align-items:center; gap:8px; }
+#viewer-busy.active::before { content:''; width:14px; height:14px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+.line-preview-note { color:var(--accent); }
 #drawer { display: none; position: absolute; right: 12px; bottom: 12px; width: 560px; max-width: 92%; max-height: 72%; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.35); font-family: var(--mono); font-size: 12px; z-index: 30; }
 #drawer.open { display: block; }
 #drawer h3 { font-size: 13px; margin-bottom: 8px; display:flex; justify-content: space-between; }
@@ -303,12 +309,18 @@ table.rules { min-width: 620px; }
         </div>
         <div id="viewer-wrap">
           <div id="viewer"><div id="vspacer"></div></div>
+          <div id="viewer-busy" role="status" aria-live="polite"><span id="viewer-busy-text"></span><button id="viewer-cancel">Cancel</button></div>
           <div id="drawer"></div>
+        </div>
+        <div id="pager" aria-label="Log pages">
+          <button id="page-first" title="First page">First</button><button id="page-prev" title="Previous page">Previous</button>
+          <label>Page <input id="page-number" type="text" inputmode="numeric" value="1" aria-label="Page number"></label><span id="page-count">of 1</span>
+          <button id="page-next" title="Next page">Next</button><button id="page-last" title="Last page">Last</button><span id="page-range"></span>
         </div>
         <div id="statusbar">
           <span>lines: <b id="st-total">0</b></span>
-          <span>kept: <b id="st-kept">0</b></span>
-          <span>shown: <b id="st-shown">0</b></span>
+          <span>indexed: <b id="st-kept">0</b></span>
+          <span>matching: <b id="st-shown">0</b></span>
           <span>selected: <b id="st-sel">0</b></span>
           <span>bookmarks: <b id="st-bm">0</b></span>
           <span id="st-trim" class="hidden"></span>
@@ -487,8 +499,8 @@ table.rules { min-width: 620px; }
           <p class="muted" id="config-status"></p>
           <h2>Kept-line cap</h2>
           <div class="rowline">
-            <label>lines kept in memory <input id="cfg-cap" type="text" value="100000" style="width:120px"></label>
-            <span class="muted">older lines beyond the cap are released to bound memory; applies from the next file load. Deep scan always covers whole files.</span>
+            <label>analysis sample lines per file <input id="cfg-cap" type="text" value="100000" style="width:120px"></label>
+            <span class="muted">Applies to analysis sampling on the next load. Viewing, filtering and paging cover every indexed line.</span>
           </div>
           <h2>Current setup</h2>
           <div class="card-row" id="config-cards"></div>
@@ -500,6 +512,7 @@ table.rules { min-width: 620px; }
 <script>
 window.__errs = [];
 window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' + c); };
+const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared by every module. */\r\n(function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {\r\n  'use strict';\r\n\r\n  function fnv1a32(str) {\r\n    let h = 0x811c9dc5;\r\n    for (let i = 0; i \u003c str.length; i++) {\r\n      h ^= str.charCodeAt(i);\r\n      h = (h + ((h \u003c\u003c 1) + (h \u003c\u003c 4) + (h \u003c\u003c 7) + (h \u003c\u003c 8) + (h \u003c\u003c 24))) >>> 0;\r\n    }\r\n    return ('00000000' + h.toString(16)).slice(-8);\r\n  }\r\n\r\n  function escapeHtml(s) {\r\n    return String(s)\r\n      .replace(/&/g, '&amp;')\r\n      .replace(/\u003c/g, '&lt;')\r\n      .replace(/>/g, '&gt;')\r\n      .replace(/\"/g, '&quot;')\r\n      .replace(/'/g, '&#39;');\r\n  }\r\n\r\n  function clamp(n, min, max) {\r\n    if (n \u003c min) return min;\r\n    if (n > max) return max;\r\n    return n;\r\n  }\r\n\r\n  function fmtBytes(n) {\r\n    if (n \u003c 1024) return n + ' B';\r\n    if (n \u003c 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';\r\n    if (n \u003c 1024 * 1024 * 1024) return (n / (1024 * 1024)).toFixed(1) + ' MB';\r\n    return (n / (1024 * 1024 * 1024)).toFixed(2) + ' GB';\r\n  }\r\n\r\n  function pad2(n) { return ('0' + n).slice(-2); }\r\n\r\n  function timestampedName(now, base, ext) {\r\n    const d = now instanceof Date ? now : new Date();\r\n    const t = d.getFullYear() + '-' + pad2(d.getMonth() + 1) + '-' + pad2(d.getDate()) +\r\n      '_' + pad2(d.getHours()) + pad2(d.getMinutes()) + pad2(d.getSeconds());\r\n    return t + '_' + base + '.' + ext;\r\n  }\r\n\r\n  return { fnv1a32, escapeHtml, clamp, fmtBytes, pad2, timestampedName };\r\n}));\r\n\n/* Log Triage — detect.js: per-file log format auto-detection.\r\n * Scoring approach: ratio of sample lines matching each format's line shape;\r\n * highest ratio wins, ties broken by specificity order. Below 0.5 => plain. */\r\n(function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {\r\n  'use strict';\r\n\r\n  const RE_LOGCAT = /^(\\d{2}-\\d{2})\\s+(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+(\\d+)\\s+(\\d+)\\s+([VDIWEF])\\s+(.+?):\\s(.*)$/;\r\n  const RE_SYSLOG = /^(?:\u003c\\d{1,3}>)?\\s*[A-Za-z]{3}\\s+\\d{1,2}\\s+([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)\\s+\\S+\\s+\\S+/;\r\n  const RE_CLF = /^\\S+\\s+\\S+\\s+\\S+\\s+\\[[0-9]{1,2}\\/[A-Za-z]{3}\\/\\d{4}:([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)\\s+[+-]\\d{4}\\]\\s+\"/;\r\n  const RE_ISO = /\\b(\\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])[T ]([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)(?:\\.(\\d{1,3}))?/i;\r\n  const RE_MMDD = /\\b(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])\\s+([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)(?:\\.(\\d{1,3}))?\\b/;\r\n\r\n  const FORMATS = [\r\n    ['logcat', RE_LOGCAT],\r\n    ['syslog', RE_SYSLOG],\r\n    ['clf', RE_CLF],\r\n    ['iso8601', RE_ISO],\r\n    ['mmdd', RE_MMDD],\r\n  ];\r\n\r\n  /** detectFormat(lines[]) -> { format, confidence, hits: {fmt: n}, samples: n } */\r\n  function detectFormat(lines) {\r\n    const samples = [];\r\n    for (let i = 0; i \u003c lines.length && samples.length \u003c 1000; i++) {\r\n      const l = lines[i];\r\n      if (l && l.trim()) samples.push(l);\r\n    }\r\n    if (!samples.length) return { format: 'plain', confidence: 0, hits: {}, samples: 0 };\r\n\r\n    const hits = {};\r\n    for (const [fmt, re] of FORMATS) {\r\n      let n = 0;\r\n      for (const l of samples) if (re.test(l)) n++;\r\n      hits[fmt] = n;\r\n    }\r\n    let best = 'plain';\r\n    let bestRatio = 0;\r\n    for (const [fmt] of FORMATS) {\r\n      const ratio = hits[fmt] / samples.length;\r\n      if (ratio > bestRatio) { bestRatio = ratio; best = fmt; }\r\n    }\r\n    const format = bestRatio >= 0.5 ? best : 'plain';\r\n    return { format, confidence: bestRatio, hits, samples: samples.length };\r\n  }\r\n\r\n  return { detectFormat, RE_LOGCAT, RE_ISO, RE_MMDD };\r\n}));\r\n\n/* Log Triage — parser.js: per-line parsing into normalized records.\r\n * Timestamp model is year-less and UTC-naive: 'MM-DD HH:MM:SS.mmm'\r\n * (lexicographic order == chronological order). Detection order matches the\r\n * android-log-analysis skill: ISO -> syslog -> CLF -> bare MM-DD. */\r\n(function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {\r\n  'use strict';\r\n\r\n  const MONTHS = {\r\n    jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',\r\n    jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',\r\n  };\r\n\r\n  const RE_ISO = /\\b(\\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])[T ]([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)(?:\\.(\\d{1,3}))?/i;\r\n  const RE_SYSLOG_TS = /\\b([A-Za-z]{3})\\s+(0?[1-9]|[12]\\d|3[01])\\s+([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)(?:\\.(\\d{1,3}))?\\b/;\r\n  const RE_CLF_TS = /\\[(0?[1-9]|[12]\\d|3[01])\\/([A-Za-z]{3})\\/\\d{4}:([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)/;\r\n  const RE_MMDD = /\\b(0[1-9]|1[0-2])-(0[1-9]|[12]\\d|3[01])\\s+([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)(?:\\.(\\d{1,3}))?\\b/;\r\n  const RE_LOGCAT = /^(\\d{2}-\\d{2})\\s+(\\d{2}:\\d{2}:\\d{2}\\.\\d{3})\\s+(\\d+)\\s+(\\d+)\\s+([VDIWEF])\\s+(.+?):\\s(.*)$/;\r\n  const RE_SYSLOG_LINE = /^(?:\u003c(\\d{1,3})>)?\\s*([A-Za-z]{3})\\s+(\\d{1,2})\\s+([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)\\s+(\\S+)\\s+([^:\\s\\[]+)(?:\\[(\\d+)\\])?:?\\s?(.*)$/;\r\n  const RE_CLF_LINE = /^\\S+\\s+\\S+\\s+\\S+\\s+\\[(0?[1-9]|[12]\\d|3[01])\\/([A-Za-z]{3})\\/\\d{4}:([01]\\d|2[0-3]):([0-5]\\d):([0-5]\\d)\\s+[+-]\\d{4}\\]\\s+\"(\\S+)\\s+(\\S+)(?:\\s+([^\"]*))?\"\\s+(\\d{3})\\s+(\\S+)/;\r\n\r\n  // RFC3164 severity (PRI % 8) -> logcat-style ladder\r\n  const SEVERITY_LADDER = ['F', 'E', 'E', 'E', 'W', 'I', 'I', 'D'];\r\n\r\n  const LEVEL_TOKENS = /\\b(FATAL|CRITICAL|ERROR|ERR|WARNING|WARN|INFO|INFORMATION|DEBUG|TRACE)\\b/i;\r\n  const LEVEL_MAP = {\r\n    fatal: 'F', critical: 'F', error: 'E', err: 'E',\r\n    warning: 'W', warn: 'W', info: 'I', information: 'I',\r\n    debug: 'D', trace: 'V',\r\n  };\r\n\r\n  function padMs(ms) { return ((ms || '0') + '000').slice(0, 3); }\r\n\r\n  function p2(n) { return ('0' + n).slice(-2); }\r\n\r\n  /** First successful normalization to 'MM-DD HH:MM:SS.mmm', else null. */\r\n  function detectTs(line) {\r\n    let m = RE_ISO.exec(line);\r\n    if (m) return m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] + ':' + m[6] + '.' + padMs(m[7]);\r\n    m = RE_SYSLOG_TS.exec(line);\r\n    if (m) {\r\n      const mon = MONTHS[m[1].toLowerCase()];\r\n      if (mon) return mon + '-' + p2(m[2]) + ' ' + p2(m[3]) + ':' + m[4] + ':' + m[5] + '.' + padMs(m[6]);\r\n    }\r\n    m = RE_CLF_TS.exec(line);\r\n    if (m) {\r\n      const mon = MONTHS[m[2].toLowerCase()];\r\n      if (mon) return mon + '-' + p2(m[1]) + ' ' + p2(m[3]) + ':' + m[4] + ':' + m[5] + '.000';\r\n    }\r\n    m = RE_MMDD.exec(line);\r\n    if (m) return m[1] + '-' + m[2] + ' ' + m[3] + ':' + m[4] + ':' + m[5] + '.' + padMs(m[6]);\r\n    return null;\r\n  }\r\n\r\n  /** Case-insensitive severity token scan ('ERRORCODE' does not match). */\r\n  function levelFromTokens(text) {\r\n    const m = LEVEL_TOKENS.exec(text);\r\n    return m ? LEVEL_MAP[m[1].toLowerCase()] : null;\r\n  }\r\n\r\n  function record(ts, level, tag, pid, msg, tid) {\r\n    return { ts: ts || null, level: level || null, tag: tag || null, pid: pid || null, tid: tid || null, msg: msg };\r\n  }\r\n\r\n  function parseLogcat(line) {\r\n    const m = RE_LOGCAT.exec(line);\r\n    if (m) return record(m[1] + ' ' + m[2], m[5], m[6], m[3], m[7], m[4]);\r\n    return record(null, null, null, null, line); // continuation line: bypasses level filters\r\n  }\r\n\r\n  function parseSyslog(line) {\r\n    const m = RE_SYSLOG_LINE.exec(line);\r\n    if (!m) return parseFallback(line);\r\n    const mon = MONTHS[m[2].toLowerCase()];\r\n    if (!mon) return parseFallback(line);\r\n    const ts = mon + '-' + p2(m[3]) + ' ' + p2(m[4]) + ':' + m[5] + ':' + m[6] + '.000';\r\n    const sev = m[1] != null ? SEVERITY_LADDER[parseInt(m[1], 10) % 8] : 'I';\r\n    return record(ts, sev, m[8], m[9] || null, m[10]);\r\n  }\r\n\r\n  function parseClf(line) {\r\n    const m = RE_CLF_LINE.exec(line);\r\n    if (!m) return parseFallback(line);\r\n    const mon = MONTHS[m[2].toLowerCase()];\r\n    if (!mon) return parseFallback(line);\r\n    const ts = mon + '-' + p2(m[1]) + ' ' + p2(m[3]) + ':' + m[4] + ':' + m[5] + '.000';\r\n    const status = parseInt(m[9], 10);\r\n    const level = status >= 500 ? 'E' : status >= 400 ? 'W' : 'I';\r\n    const msg = line.slice(line.indexOf('\"'));\r\n    return record(ts, level, m[6], null, msg);\r\n  }\r\n\r\n  function parseWithTs(line) {\r\n    const m = RE_ISO.exec(line) || RE_MMDD.exec(line);\r\n    if (!m) return parseFallback(line);\r\n    const ts = detectTs(line);\r\n    const msg = line.slice(m.index + m[0].length)\r\n      .replace(/^[ \\t]*(?:Z|[+-]\\d{2}:?\\d{2})?[ \\t]*/, '') || line;\r\n    return record(ts, levelFromTokens(msg), null, null, msg);\r\n  }\r\n\r\n  function parseFallback(line) {\r\n    return record(null, levelFromTokens(line), null, null, line);\r\n  }\r\n\r\n  /** parseLine(line, format) -> { ts, level, tag, pid, tid, msg } (tid only for logcat threadtime) */\r\n  function parseLine(line, format) {\r\n    switch (format) {\r\n      case 'logcat': return parseLogcat(line);\r\n      case 'syslog': return parseSyslog(line);\r\n      case 'clf': return parseClf(line);\r\n      case 'iso8601': return parseWithTs(line);\r\n      case 'mmdd': return parseWithTs(line);\r\n      default: return parseFallback(line);\r\n    }\r\n  }\r\n\r\n  return {\r\n    MONTHS, detectTs, levelFromTokens, parseLine,\r\n    RE_LOGCAT, RE_ISO, RE_SYSLOG_TS, RE_CLF_TS, RE_MMDD,\r\n  };\r\n}));\r\n\n/* Log Triage — filters.js: global filter engine.\r\n * Semantics (evaluated in order):\r\n *   1. time range  — inclusive prefix compare; null-ts lines bypass\r\n *   2. level chips — OR of selected levels; null-level lines bypass\r\n *   3. includes    — enabled include rules (+ quick search) OR together;\r\n *                    if any valid include exists, line must match one\r\n *   4. excludes    — any match drops the line\r\n *   5. highlights  — additive only, never affects kept\r\n * Invalid regexes surface in errors() and act as absent rules. */\r\n(function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {\r\n  'use strict';\r\n\r\n  function escapeRegExp(s) {\r\n    return s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\r\n  }\r\n\r\n  function compile(pattern, caseSensitive) {\r\n    try {\r\n      return { ok: true, re: new RegExp(pattern, caseSensitive ? '' : 'i') };\r\n    } catch (e) {\r\n      return { ok: false, error: e.message };\r\n    }\r\n  }\r\n\r\n  /** Inclusive prefix compare: '15:37' matches 15:37:00.000, '19:22' matches 19:22:59.999. */\r\n  function tsInRange(ts, from, to) {\r\n    if (!ts) return true;\r\n    if (from) {\r\n      if (!(ts.startsWith(from) || ts > from)) return false;\r\n    }\r\n    if (to) {\r\n      if (!(ts.startsWith(to) || ts \u003c to)) return false;\r\n    }\r\n    return true;\r\n  }\r\n\r\n  class FilterEngine {\r\n    constructor() {\r\n      this.rules = [];\r\n      this.quick = null;        // { pattern, fixed, caseSensitive } | null\r\n      this.timeFrom = '';\r\n      this.timeTo = '';\r\n      this._levels = new Set(); // empty = all pass\r\n      this._compiled = [];\r\n      this._quickRe = null;\r\n      this._hits = {};\r\n    }\r\n\r\n    setRules(rules) {\r\n      this.rules = rules.slice();\r\n      this._compiled = this.rules.map((r) => {\r\n        const c = compile(r.pattern, !!r.caseSensitive);\r\n        return { def: r, ok: c.ok, re: c.re, error: c.error || null };\r\n      });\r\n    }\r\n\r\n    errors() {\r\n      const errs = this._compiled.filter((c) => !c.ok).map((c) => ({ id: c.def.id, error: c.error }));\r\n      if (this._quickCache && !this._quickCache.ok && this.quick && this.quick.pattern) {\r\n        errs.push({ id: '__quick', error: this._quickCache.error });\r\n      }\r\n      return errs;\r\n    }\r\n\r\n    setLevels(levels) {\r\n      this._levels = new Set(levels || []);\r\n    }\r\n\r\n    get levels() { return Array.from(this._levels); }\r\n\r\n    /** Compile the quick pattern eagerly. Paged rendering matches in the\r\n     * worker, but the main thread still needs _quickRe for \u003cmark> spans —\r\n     * and clearing quick must reset it or stale highlights stay visible. */\r\n    compileQuick() { this._compileQuick(); }\r\n\r\n    _compileQuick() {\r\n      if (this._quickCache && this._quickCache.ref === this.quick) return; // cached\r\n      if (!this.quick || !this.quick.pattern) {\r\n        this._quickRe = null;\r\n        this._quickCache = { ref: this.quick, ok: true, error: null };\r\n        return;\r\n      }\r\n      const p = this.quick.fixed\r\n        ? escapeRegExp(this.quick.pattern)\r\n        : this.quick.pattern;\r\n      const c = compile(p, !!this.quick.caseSensitive);\r\n      this._quickRe = c.ok ? c.re : null;\r\n      this._quickCache = { ref: this.quick, ok: c.ok, error: c.error || null };\r\n    }\r\n\r\n    _bump(id) { this._hits[id] = (this._hits[id] || 0) + 1; }\r\n\r\n    _match(re, raw) {\r\n      return re ? re.test(raw) : false;\r\n    }\r\n\r\n    evaluate(rec) {\r\n      const raw = rec.raw != null ? rec.raw : rec.msg || '';\r\n\r\n      if (!tsInRange(rec.ts, this.timeFrom, this.timeTo)) return { kept: false, highlights: [] };\r\n\r\n      if (this._levels.size > 0 && rec.level != null) {\r\n        if (!this._levels.has(rec.level)) return { kept: false, highlights: [] };\r\n      }\r\n\r\n      this._compileQuick();\r\n      const highlights = [];\r\n      let hasInclude = false;\r\n      let includeMatched = false;\r\n\r\n      if (this._quickRe) {\r\n        hasInclude = true;\r\n        if (this._match(this._quickRe, raw)) { includeMatched = true; this._bump('__quick'); }\r\n      }\r\n      for (const c of this._compiled) {\r\n        if (!c.def.enabled || !c.ok) continue;\r\n        if (c.def.action === 'include') {\r\n          hasInclude = true;\r\n          if (this._match(c.re, raw)) { includeMatched = true; this._bump(c.def.id); }\r\n        }\r\n      }\r\n      if (hasInclude && !includeMatched) return { kept: false, highlights: [] };\r\n\r\n      for (const c of this._compiled) {\r\n        if (!c.def.enabled || !c.ok) continue;\r\n        if (c.def.action === 'exclude' && this._match(c.re, raw)) {\r\n          this._bump(c.def.id);\r\n          return { kept: false, highlights: [] };\r\n        }\r\n      }\r\n      for (const c of this._compiled) {\r\n        if (!c.def.enabled || !c.ok) continue;\r\n        if (c.def.action === 'highlight' && this._match(c.re, raw)) {\r\n          this._bump(c.def.id);\r\n          highlights.push(c.def.id);\r\n        }\r\n      }\r\n      return { kept: true, highlights };\r\n    }\r\n\r\n    get hits() { return Object.assign({}, this._hits); }\r\n  }\r\n\r\n  return { FilterEngine, compile, escapeRegExp, tsInRange };\r\n}));\r\n\n/* Log Triage — search.js: ripgrep-style search core (pure logic).\r\n * The streaming deep-scan driver lives in the UI layer; everything testable\r\n * about matching semantics lives here. */\r\n(function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {\r\n  'use strict';\r\n\r\n  function escapeRegExp(s) {\r\n    return s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');\r\n  }\r\n\r\n  function hasUppercase(s) { return /[A-Z]/.test(s); }\r\n\r\n  /**\r\n   * buildSearcher(pattern, opts) -> searcher\r\n   * opts: { fixed, caseMode: 'smart'|'insensitive'|'sensitive', word, invert }\r\n   * Empty pattern yields ok searcher with re=null (matchLine always false).\r\n   */\r\n  function buildSearcher(pattern, opts) {\r\n    const o = opts || {};\r\n    pattern = String(pattern == null ? '' : pattern);\r\n    let src = pattern;\r\n    if (o.fixed) src = escapeRegExp(src);\r\n    if (o.word) src = '\\\\b(?:' + src + ')\\\\b';\r\n\r\n    let flags = 'g';\r\n    const mode = o.caseMode || 'smart';\r\n    if (mode === 'insensitive' || (mode === 'smart' && !hasUppercase(pattern))) flags += 'i';\r\n\r\n    if (!pattern) return { ok: true, pattern, re: null, opts: o };\r\n\r\n    try {\r\n      return { ok: true, pattern, re: new RegExp(src, flags), opts: o };\r\n    } catch (e) {\r\n      return { ok: false, pattern, error: e.message, opts: o };\r\n    }\r\n  }\r\n\r\n  function matchLine(searcher, line) {\r\n    if (!searcher.ok || !searcher.re) return false;\r\n    const hit = searcher.re.test(line);\r\n    searcher.re.lastIndex = 0; // keep stateless for .test with /g\r\n    return searcher.opts && searcher.opts.invert ? !hit : hit;\r\n  }\r\n\r\n  /** [[start, end], ...] — empty when inverted or no regex. */\r\n  function matchSpans(searcher, line) {\r\n    if (!searcher.ok || !searcher.re || (searcher.opts && searcher.opts.invert)) return [];\r\n    const spans = [];\r\n    let m;\r\n    const re = searcher.re;\r\n    while ((m = re.exec(line)) !== null) {\r\n      if (m[0].length === 0) { re.lastIndex++; continue; }\r\n      spans.push([m.index, m.index + m[0].length]);\r\n      if (spans.length >= 100) break; // sanity cap per line\r\n    }\r\n    re.lastIndex = 0;\r\n    return spans;\r\n  }\r\n\r\n  /** Instant search over kept records: per-file counts + row indices. */\r\n  function searchRecords(records, searcher) {\r\n    const byFile = {};\r\n    const rows = [];\r\n    if (searcher.ok && searcher.re) {\r\n      records.forEach((rec, idx) => {\r\n        if (matchLine(searcher, rec.raw)) {\r\n          const f = rec.file != null ? rec.file : '?';\r\n          byFile[f] = (byFile[f] || 0) + 1;\r\n          rows.push({ idx, file: f, spans: matchSpans(searcher, rec.raw) });\r\n        }\r\n      });\r\n    }\r\n    return { total: rows.length, byFile, rows };\r\n  }\r\n\r\n  /**\r\n   * searchWithContext(lines, searcher, before, after) -> rows\r\n   * rows: [{ idx, text, isMatch }] covering every match line plus context,\r\n   * with overlapping/adjacent ranges merged, ascending order.\r\n   */\r\n  function searchWithContext(lines, searcher, before, after) {\r\n    const rows = [];\r\n    if (!searcher.ok || !searcher.re) return rows;\r\n    let start = -1; // current open range start\r\n    const pushRange = (from, to) => {\r\n      for (let i = from; i \u003c= to; i++) {\r\n        rows.push({ idx: i, text: lines[i], isMatch: matchLine(searcher, lines[i]) });\r\n      }\r\n    };\r\n    let lastEmitted = -1;\r\n    for (let i = 0; i \u003c lines.length; i++) {\r\n      if (!matchLine(searcher, lines[i])) continue;\r\n      const from = Math.max(0, i - (before || 0));\r\n      const to = Math.min(lines.length - 1, i + (after || 0));\r\n      if (from \u003c= lastEmitted) {\r\n        // extend the previously emitted range without touching emitted rows\r\n        for (let j = lastEmitted + 1; j \u003c= to; j++) {\r\n          rows.push({ idx: j, text: lines[j], isMatch: matchLine(searcher, lines[j]) });\r\n        }\r\n      } else {\r\n        pushRange(from, to);\r\n      }\r\n      lastEmitted = Math.max(lastEmitted, to);\r\n    }\r\n    return rows;\r\n  }\r\n\r\n  return { buildSearcher, matchLine, matchSpans, searchRecords, searchWithContext, escapeRegExp };\r\n}));\r\n\n/* File-backed log index. Offsets are Float64, not 32-bit byte positions. */\n(function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(require('./parser.js'), require('./detect.js')); else Object.assign(root.LT || (root.LT = {}), factory(root.LT, root.LT)); }(typeof self !== 'undefined' ? self : this, function (parser, detector) {\n  'use strict';\n  const BLOCK = 65536;\n  const pause = () => new Promise((resolve) => setTimeout(resolve, 0));\n  class Column {\n    constructor(Type) { this.Type = Type; this.blocks = []; this.length = 0; }\n    push(value) { const i = this.length++; const b = Math.floor(i / BLOCK); if (!this.blocks[b]) this.blocks[b] = new this.Type(BLOCK); this.blocks[b][i % BLOCK] = value; }\n    get(i) { return this.blocks[Math.floor(i / BLOCK)][i % BLOCK]; }\n  }\n  function timeKey(ts) { return ts ? Number(ts.replace(/[- :.]/g, '')) : 0; }\n  function timeText(key) { const s = String(key).padStart(13, '0'); return s.slice(0, 2) + '-' + s.slice(2, 4) + ' ' + s.slice(4, 6) + ':' + s.slice(6, 8) + ':' + s.slice(8, 10) + '.' + s.slice(10); }\n\n  // Split on UTF-8 LF bytes; never split a logical line at a chunk boundary.\n  async function* byteLines(file, onProgress, cancelled) {\n    const decoder = new TextDecoder();\n    let parts = [], length = 0, start = 0, deadline = performance.now() + 8;\n    for (let pos = 0; pos \u003c file.size; pos += 1024 * 1024) {\n      if (cancelled && cancelled()) return;\n      const chunk = new Uint8Array(await file.slice(pos, pos + 1024 * 1024).arrayBuffer());\n      let from = 0;\n      for (let i = 0; i \u003c chunk.length; i++) {\n        if (chunk[i] !== 10) continue;\n        const tail = chunk.subarray(from, i);\n        let bytes = tail;\n        if (length) { bytes = new Uint8Array(length + tail.length); let p = 0; for (const part of parts) { bytes.set(part, p); p += part.length; } bytes.set(tail, p); }\n        yield { raw: decoder.decode(bytes).replace(/\\r$/, ''), offset: start };\n        parts = []; length = 0; from = i + 1; start = pos + from;\n        if (performance.now() > deadline) { if (onProgress) onProgress(pos + from); await pause(); if (cancelled && cancelled()) return; deadline = performance.now() + 8; }\n      }\n      if (from \u003c chunk.length) { const part = chunk.slice(from); parts.push(part); length += part.length; }\n      if (onProgress) onProgress(Math.min(file.size, pos + chunk.length));\n    }\n    if (length) { const bytes = new Uint8Array(length); let p = 0; for (const part of parts) { bytes.set(part, p); p += part.length; } yield { raw: decoder.decode(bytes).replace(/\\r$/, ''), offset: start }; }\n  }\n\n  class PagedLog {\n    constructor(file, id, base) {\n      this.file = file; this.id = id; this.base = base || 0; this.count = 0;\n      this.offsets = new Column(Float64Array); this.times = new Column(Float64Array); this.levels = new Column(Uint8Array);\n      this.format = 'plain'; this.counts = {}; this.firstLine = ''; this.maxLength = 0;\n      this.cache = new Map(); this.cacheBytes = 0;\n    }\n    async index(onProgress, cancelled, sampleLimit = 2000) {\n      const pending = []; let detected = false, lastTime = 0;\n      // analysis sample = first half of the budget (file head: format intro,\n      // boot lines) + a ring of the newest rest (crashes usually land late).\n      // A first-N-only sample would miss end-of-file issues on big logs.\n      const headCap = Math.ceil(sampleLimit / 2), tailCap = sampleLimit - headCap;\n      const sample = [], tail = new Array(tailCap);\n      let tailPos = 0, tailFilled = 0;\n      const add = ({ raw, offset }) => {\n        const rec = parser.parseLine(raw, this.format);\n        if (!this.count) this.firstLine = raw.slice(0, 200);\n        this.offsets.push(offset);\n        if (rec.ts) lastTime = timeKey(rec.ts);\n        this.times.push(lastTime);\n        this.levels.push((rec.level ? rec.level.charCodeAt(0) : 0) | (rec.ts ? 0 : 128));\n        const key = rec.level || 'null'; this.counts[key] = (this.counts[key] || 0) + 1;\n        this.count++; this.maxLength = Math.max(this.maxLength, raw.length);\n        if (sample.length \u003c headCap) sample.push(this.record(this.count - 1, raw, rec));\n        else { tail[tailPos] = this.record(this.count - 1, raw, rec); tailPos = (tailPos + 1) % tailCap; if (tailFilled \u003c tailCap) tailFilled++; }\n      };\n      for await (const line of byteLines(this.file, onProgress, cancelled)) {\n        if (!detected) { pending.push(line); if (pending.length \u003c 1000) continue; this.format = detector.detectFormat(pending.map((r) => r.raw)).format; pending.forEach(add); pending.length = 0; detected = true; }\n        else add(line);\n      }\n      if (cancelled && cancelled()) throw new Error('Cancelled');\n      if (!detected) { this.format = detector.detectFormat(pending.map((r) => r.raw)).format; pending.forEach(add); }\n      return sample.concat(tail.slice(tailPos), tail.slice(0, tailPos)).filter(Boolean);\n    }\n    metadata(i) {\n      const code = this.levels.get(i);\n      return { ts: code & 128 ? null : timeText(this.times.get(i)), level: code & 127 ? String.fromCharCode(code & 127) : null };\n    }\n    record(i, raw, parsed) { return Object.assign({ fileId: this.id, file: this.id, lineNo: i + 1, seq: this.base + i + 1, raw }, parsed || parser.parseLine(raw, this.format)); }\n    async page(block) {\n      if (this.cache.has(block)) { const value = this.cache.get(block); this.cache.delete(block); this.cache.set(block, value); return value.rows; }\n      const first = block * 256, end = Math.min(this.count, first + 256);\n      if (first >= end) return [];\n      const a = this.offsets.get(first), b = end === this.count ? this.file.size : this.offsets.get(end);\n      const bytes = new Uint8Array(await this.file.slice(a, b).arrayBuffer());\n      if (bytes.length !== b - a) throw new Error('Source file changed or could not be read. Reload the file.');\n      const decoder = new TextDecoder(), rows = [];\n      for (let i = first; i \u003c end; i++) {\n        const from = this.offsets.get(i) - a;\n        let to = (i + 1 === this.count ? this.file.size : this.offsets.get(i + 1)) - a;\n        if (bytes[to - 1] === 10) to--;\n        if (bytes[to - 1] === 13) to--;\n        rows.push(this.record(i, decoder.decode(bytes.subarray(from, to))));\n      }\n      // Bound raw page caching by bytes as well as record count.\n      while (this.cache.size && (this.cache.size >= 16 || this.cacheBytes + bytes.length > 8 * 1024 * 1024)) { const key = this.cache.keys().next().value; this.cacheBytes -= this.cache.get(key).bytes; this.cache.delete(key); }\n      if (bytes.length \u003c= 8 * 1024 * 1024) { this.cache.set(block, { rows, bytes: bytes.length }); this.cacheBytes += bytes.length; }\n      return rows;\n    }\n    async get(i) { if (i \u003c 0 || i >= this.count) return null; return (await this.page(Math.floor(i / 256)))[i % 256]; }\n  }\n\n  // Sort small runs, then merge with yields so new queries/cancellation can run.\n  async function sortIds(ids, compare, cancelled, progress) {\n    const RUN = 8192;\n    for (let i = 0; i \u003c ids.length; i += RUN) { ids.subarray(i, i + RUN).sort(compare); if (cancelled()) return null; if (i % (RUN * 8) === 0) { if (progress) progress(); await pause(); } }\n    let src = ids, dst = new Float64Array(ids.length);\n    for (let width = RUN; width \u003c ids.length; width *= 2) {\n      let deadline = performance.now() + 8;\n      for (let from = 0; from \u003c ids.length; from += width * 2) {\n        let a = from, b = Math.min(from + width, ids.length); const ae = b, be = Math.min(from + width * 2, ids.length);\n        for (let p = from; p \u003c be; p++) {\n          dst[p] = a \u003c ae && (b >= be || compare(src[a], src[b]) \u003c= 0) ? src[a++] : src[b++];\n          if ((p & 4095) === 0 && performance.now() > deadline) { if (progress) progress(); await pause(); if (cancelled()) return null; deadline = performance.now() + 8; }\n        }\n      }\n      [src, dst] = [dst, src];\n    }\n    return src;\n  }\n  return { PagedLog, Column, byteLines, sortIds, timeKey, timeText };\n}));\n\n/* Runs inside the dedicated paging worker; never on the UI thread. */\n'use strict';\nconst sources = [];\nlet nextBase = 0, queryToken = 0, searchToken = 0, indexToken = 0;\nlet order = new Float64Array(), searchOrder = new Float64Array();\nlet allOrder = null, version = 0;\nconst emit = (id, value) => self.postMessage(Object.assign({ id }, value));\nconst sourceOf = (id) => {\n  let lo = 0, hi = sources.length;\n  while (lo \u003c hi) { const mid = (lo + hi) >>> 1; if (sources[mid].base \u003c= id) lo = mid + 1; else hi = mid; }\n  return sources[lo - 1];\n};\nasync function records(ids, start, size) {\n  const rows = [];\n  for (let i = start; i \u003c Math.min(ids.length, start + size); i++) { const s = sourceOf(ids[i]); if (s && !s.removed) rows.push(await s.get(ids[i] - s.base)); }\n  return rows;\n}\nasync function buildOrder(id, token) {\n  if (allOrder) return allOrder;\n  const currentVersion = version;\n  const count = sources.reduce((n, s) => n + (s.removed ? 0 : s.count), 0);\n  let ids = new Float64Array(count), p = 0;\n  for (const s of sources) if (!s.removed) for (let i = 0; i \u003c s.count; i++) { ids[p++] = s.base + i; if ((p & 65535) === 0) { await new Promise((r) => setTimeout(r, 0)); if (token !== queryToken) return null; } }\n  const compare = (a, b) => { const sa = sourceOf(a), sb = sourceOf(b); return sa.times.get(a - sa.base) - sb.times.get(b - sb.base) || a - b; };\n  ids = await LT.sortIds(ids, compare, () => token !== queryToken, () => emit(id, { progress: 'Ordering timeline…' }));\n  if (currentVersion === version && token === queryToken) allOrder = ids;\n  return ids;\n}\nasync function query(id, spec, search) {\n  const token = search ? ++searchToken : ++queryToken;\n  const cancelled = () => token !== (search ? searchToken : queryToken);\n  const filter = new LT.FilterEngine();\n  filter.setRules(spec.rules || []); filter.setLevels(spec.levels || []); filter.quick = spec.quick || null;\n  filter.timeFrom = spec.timeFrom || ''; filter.timeTo = spec.timeTo || '';\n  const searcher = search ? LT.buildSearcher(spec.pattern, spec.options) : null;\n  const rawNeeded = search || !!filter.quick || filter.rules.some((r) => r.enabled);\n  const chosen = sources.filter((s) => !s.removed && (!spec.fileId || spec.fileId === s.id));\n  const matches = new LT.Column(Float64Array);\n  const bookmarkSets = new Map((spec.bookmarks || []).map(([fileId, lines]) => [fileId, new Set(lines)]));\n  let lastProgress = 0;\n  for (const s of chosen) {\n    let i = 0;\n    const progress = (bytes) => { if (performance.now() - lastProgress > 60) { emit(id, { progress: (search ? 'Searching' : 'Filtering') + '… ' + Math.floor(bytes / Math.max(1, s.file.size) * 100) + '%' }); lastProgress = performance.now(); } };\n    const accepts = (rec, index) => (!spec.bookmarkOnly || (bookmarkSets.get(s.id) || new Set()).has(index + 1)) && (search ? LT.matchLine(searcher, rec.raw) : filter.evaluate(rec).kept);\n    if (rawNeeded) {\n      for await (const line of LT.byteLines(s.file, progress, cancelled)) { const rec = Object.assign({ raw: line.raw }, s.metadata(i)); if (accepts(rec, i)) matches.push(s.base + i); i++; }\n    } else {\n      for (; i \u003c s.count; i++) { if (accepts(s.metadata(i), i)) matches.push(s.base + i); if ((i & 16383) === 0) { progress(i / Math.max(1, s.count) * s.file.size); await new Promise((r) => setTimeout(r, 0)); if (cancelled()) break; } }\n    }\n    if (cancelled()) { emit(id, { cancelled: true }); return; }\n  }\n  let result;\n  if (!search && !spec.fileId) {\n    const sorted = await buildOrder(id, token);\n    if (!sorted || cancelled()) { emit(id, { cancelled: true }); return; }\n    const flags = new Map(chosen.map((s) => [s.id, new Uint8Array(s.count)]));\n    for (let i = 0; i \u003c matches.length; i++) { const value = matches.get(i), s = sourceOf(value); flags.get(s.id)[value - s.base] = 1; }\n    result = new Float64Array(matches.length); let p = 0;\n    for (let i = 0; i \u003c sorted.length; i++) { const value = sorted[i], s = sourceOf(value); if (flags.get(s.id)?.[value - s.base]) result[p++] = value; if ((i & 65535) === 0) { await new Promise((r) => setTimeout(r, 0)); if (cancelled()) { emit(id, { cancelled: true }); return; } } }\n  } else { result = new Float64Array(matches.length); for (let i = 0; i \u003c matches.length; i++) result[i] = matches.get(i); }\n  if (cancelled()) { emit(id, { cancelled: true }); return; }\n  if (search) searchOrder = result; else order = result;\n  emit(id, { total: result.length, errors: searcher && !searcher.ok ? [{ error: searcher.error }] : filter.errors() });\n}\nself.onmessage = async ({ data: m }) => {\n  const { id, type } = m;\n  try {\n    if (type === 'index') {\n      const token = ++indexToken;\n      const s = new LT.PagedLog(m.file, m.fileId, nextBase);\n      let last = 0;\n      const sample = await s.index((bytes) => { if (performance.now() - last > 60) { emit(id, { progress: 'Indexing… ' + Math.floor(bytes / Math.max(1, m.file.size) * 100) + '%', bytes }); last = performance.now(); } }, () => token !== indexToken, m.sampleLimit);\n      nextBase += s.count; sources.push(s); allOrder = null; version++;\n      emit(id, { count: s.count, counts: s.counts, format: s.format, firstLine: s.firstLine, maxLength: s.maxLength, sample });\n    } else if (type === 'query' || type === 'search') await query(id, m.spec, type === 'search');\n    else if (type === 'page') { const ids = m.search ? searchOrder : order; const start = Math.max(0, Math.min(m.start, Math.max(0, Math.floor((ids.length - 1) / m.size) * m.size))); const rows = await records(ids, start, m.size); emit(id, { rows, start, total: ids.length }); }\n    else if (type === 'record') { const s = sources.find((s) => s.id === m.fileId && !s.removed); emit(id, { record: s ? await s.get(m.lineNo - 1) : null }); }\n    else if (type === 'locate') { let at = -1; const s = sources.find((s) => s.id === m.fileId && !s.removed); if (s) { const value = s.base + m.lineNo - 1; for (let i = 0; i \u003c order.length; i++) { if (order[i] === value) { at = i; break; } if ((i & 65535) === 0) await new Promise((r) => setTimeout(r, 0)); } } emit(id, { at }); }\n    else if (type === 'remove') { queryToken++; searchToken++; indexToken++; const s = sources.find((s) => s.id === m.fileId); if (s) { s.removed = true; s.cache.clear(); s.offsets = s.times = s.levels = null; } allOrder = null; version++; emit(id, {}); }\n    else if (type === 'cancel') { queryToken++; searchToken++; indexToken++; emit(id, {}); }\n  } catch (error) { emit(id, { error: error.message }); }\n};\n";
 /* Log Triage — util.js: small pure helpers shared by every module. */
 (function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
@@ -1214,6 +1227,11 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
 
     get levels() { return Array.from(this._levels); }
 
+    /** Compile the quick pattern eagerly. Paged rendering matches in the
+     * worker, but the main thread still needs _quickRe for <mark> spans —
+     * and clearing quick must reset it or stale highlights stay visible. */
+    compileQuick() { this._compileQuick(); }
+
     _compileQuick() {
       if (this._quickCache && this._quickCache.ref === this.quick) return; // cached
       if (!this.quick || !this.quick.pattern) {
@@ -1471,8 +1489,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       const f = this._files[fileId];
       if (!f) return t;
       for (const key of Object.keys(f.levelCounts || {})) {
-        const lvl = key === 'null' ? null : key;
-        for (let i = 0; i < f.levelCounts[key]; i++) t.add(lvl);
+        t._counts[key === 'null' ? '__' : key] = f.levelCounts[key];
       }
       return t;
     }
@@ -3398,6 +3415,23 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   return { cachePut, cachePutMeta, cacheGetAll, cacheDelete, cacheClear };
 }));
 
+/* Browser RPC wrapper. A separate worker owns indexes, matching and raw page caches. */
+(function () {
+  'use strict';
+  if (typeof window === 'undefined') return;
+  class PagingClient {
+    constructor() {
+      const url = URL.createObjectURL(new Blob([LT_PAGING_WORKER], { type: 'text/javascript' }));
+      this.worker = new Worker(url); URL.revokeObjectURL(url);
+      this.next = 0; this.pending = new Map();
+      this.worker.onmessage = ({ data }) => { const p = this.pending.get(data.id); if (!p) return; if (data.progress != null) { if (p.progress) p.progress(data); return; } this.pending.delete(data.id); if (data.error) p.reject(new Error(data.error)); else p.resolve(data); };
+      this.worker.onerror = (e) => { for (const p of this.pending.values()) p.reject(new Error(e.message || 'Paging worker failed')); this.pending.clear(); };
+    }
+    request(type, payload = {}, progress) { return new Promise((resolve, reject) => { const id = ++this.next; this.pending.set(id, { resolve, reject, progress }); this.worker.postMessage(Object.assign({ id, type }, payload)); }); }
+  }
+  window.LT.PagingClient = PagingClient;
+}());
+
 /* Log Triage — app.js: browser UI glue (virtualized viewer, streaming
  * ingestion, deep scan, panels). Pure logic lives in the other src modules;
  * this file is UI wiring and is exempt from the coverage gate. */
@@ -3459,6 +3493,57 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   /* ---------------- ingestion ---------------- */
   const VALVE = 8 * 1024 * 1024;
   let ingestAbort = false;
+  const paging = new LT.PagingClient();
+  const PAGE_SIZE = 500;
+  let pageStart = 0, viewToken = 0, pageToken = 0, busyToken = 0, loadSerial = Promise.resolve();
+  function busy(message) { const token = ++busyToken; $('viewer-busy').classList.add('active'); $('viewer-busy-text').textContent = message; $('st-progress').textContent = message; $('viewer').setAttribute('aria-busy', 'true'); return token; }
+  function busyMessage(token, message) { if (token === busyToken) { $('viewer-busy-text').textContent = message; $('st-progress').textContent = message; } }
+  function doneBusy(token) { if (token === busyToken) { $('viewer-busy').classList.remove('active'); $('st-progress').textContent = ''; $('viewer').setAttribute('aria-busy', 'false'); } }
+  function pagingError(error) { flash(error.message || String(error)); }
+  function updatePager() {
+    const pages = Math.max(1, Math.ceil(filteredCount / PAGE_SIZE));
+    $('page-number').value = Math.floor(pageStart / PAGE_SIZE) + 1;
+    $('page-count').textContent = 'of ' + pages.toLocaleString();
+    $('page-range').textContent = filteredCount ? (pageStart + 1).toLocaleString() + '–' + Math.min(filteredCount, pageStart + PAGE_SIZE).toLocaleString() + ' of ' + filteredCount.toLocaleString() + ' matching lines' : 'No matching lines';
+    $('page-first').disabled = $('page-prev').disabled = pageStart === 0;
+    $('page-next').disabled = $('page-last').disabled = pageStart + PAGE_SIZE >= filteredCount;
+  }
+  async function loadPage(start, bottom = false, owner) {
+    const token = ++pageToken, query = viewToken, bt = owner || busy('Loading page…');
+    try {
+      const result = await paging.request('page', { start: Math.max(0, start), size: PAGE_SIZE });
+      if (token !== pageToken || query !== viewToken) return false;
+      view = result.rows; pageStart = result.start; filteredCount = result.total;
+      seqToIdx = new Map(view.map((r, i) => [r.seq, i]));
+      viewMaxLen = Math.min(2000, Math.max(0, ...view.map((r) => r.raw.length)));
+      displayCache.clear(); selection.clear(); invalidateHeights();
+      viewer().scrollTop = 0; renderRows();
+      if (bottom) { viewer().scrollTop = viewer().scrollHeight; renderRows(); }
+      updateStatus(); updatePager(); return true;
+    } catch (error) { if (token === pageToken) pagingError(error); return false; }
+    finally { doneBusy(bt); }
+  }
+
+  const EXPORT_BATCH = 2000;
+  /** Every matching line in current view order: selection rows when
+   * selection-only export is on, else the worker's full filtered order walked
+   * page by page. The in-memory analysis sample is NOT the export scope —
+   * exports cover the whole (multi-GB) filtered view like Deep scan does. */
+  async function exportRows(selectionOnly) {
+    if (selectionOnly && selection.count) return selection.indices().map((i) => view[i]);
+    const bt = busy('Preparing export…');
+    const recs = [];
+    try {
+      for (let start = 0; ; start += EXPORT_BATCH) {
+        const part = await paging.request('page', { start, size: EXPORT_BATCH });
+        if (!part.rows.length) break;
+        recs.push(...part.rows);
+        busyMessage(bt, 'Preparing export… ' + Math.min(100, Math.round(recs.length / Math.max(1, part.total) * 100)) + '%');
+        if (recs.length >= part.total) break;
+      }
+    } finally { doneBusy(bt); }
+    return recs;
+  }
 
   async function* chunkIter(file) {
     // Prefer File.stream(); some Windows locations+names (e.g. Downloads
@@ -3522,55 +3607,20 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   }
 
   async function ingestFile(entry) {
-    const DETECT_AFTER = 1000;
-    let sample = [];
-    let format = 'plain';
-    let detected = false;
-    let lineNo = 0;
-    const progress = (msg) => { $('st-progress').textContent = msg; };
-    const onBytes = (n) => {
-      entry.read += n;
-      store.addBytes(entry.id, n);
-      progress(entry.name + ': ' + LT.fmtBytes(entry.read) + ' / ' + LT.fmtBytes(entry.size));
-    };
-    const parseAndAdd = (line, no, fastPath) => {
-      const rec = LT.parseLine(line, format);
-      const kept = fastPath ? true : filter.evaluate({ raw: line, ts: rec.ts, level: rec.level }).kept;
-      store.add(entry.id, no, line, rec, kept);
-    };
-    entry.read = 0;
+    const bt = busy('Indexing ' + entry.name + '…');
     store.setFileInfo(entry.id, entry.name, entry.size);
-    const fastPath = !filter.rules.some((r) => r.enabled) && !filter.quick &&
-      !state.levels.length && !filter.timeFrom && !filter.timeTo;
-    for await (const line of streamLines(entry.file, onBytes)) {
-      if (ingestAbort) { entry.status = 'cancelled'; return; }
-      lineNo++;
-      if (!detected) {
-        sample.push(line);
-        if (sample.length >= DETECT_AFTER) {
-          format = LT.detectFormat(sample).format;
-          entry.format = format;
-          detected = true;
-          const base = lineNo - sample.length;
-          sample.forEach((l, j) => parseAndAdd(l, base + j + 1, fastPath));
-          sample = null;
-          renderFiles();
-        }
-        continue;
-      }
-      parseAndAdd(line, lineNo, fastPath);
-      if ((lineNo & 0x3fff) === 0) await tick(); // yield to UI periodically
-    }
-    if (!detected && sample) {
-      // small file: detection happens at end of stream, then buffered lines parse
-      format = LT.detectFormat(sample).format;
-      entry.format = format;
-      const base = lineNo - sample.length;
-      sample.forEach((l, j) => parseAndAdd(l, base + j + 1, fastPath));
-    }
-    entry.status = 'done';
-    entry.lines = lineNo;
-    progress('');
+    try {
+      const result = await paging.request('index', { fileId: entry.id, file: entry.file, sampleLimit: Math.min(100000, state.cap || 100000) }, (p) => { entry.read = p.bytes || entry.read; busyMessage(bt, p.progress); });
+      if (ingestAbort || !files.includes(entry)) return;
+      entry.format = result.format; entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
+      const f = store._files[entry.id];
+      Object.assign(f, { total: result.count, kept: result.count, dropped: 0, bytes: entry.size, levelCounts: result.counts });
+      store._keptTotal += result.count;
+      for (const [level, count] of Object.entries(result.counts)) { const key = level === 'null' ? '__' : level; tally._counts[key] = (tally._counts[key] || 0) + count; }
+      // Analysis uses a labeled bounded sample; the viewer uses the full index.
+      store.kept.push(...result.sample.slice(0, 2000));
+      for (let i = 2000; i < result.sample.length; i += 2000) store.kept.push(...result.sample.slice(i, i + 2000));
+    } finally { doneBusy(bt); }
   }
 
   function tick() {
@@ -3583,7 +3633,8 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     });
   }
 
-  async function loadFiles(fileList) {
+  function loadFiles(fileList) { const pending = loadSerial.then(() => ingestFiles(fileList)); loadSerial = pending.catch(pagingError); return pending; }
+  async function ingestFiles(fileList) {
     ingestAbort = false;
     // a fresh load shows everything: drop any stale per-file selection
     state.activeFile = null;
@@ -3609,7 +3660,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
           // never leave the full-screen progress overlay up after a failure
           ap.classList.remove('visible');
         }
-        if (innerFiles) await loadFiles(innerFiles);
+        if (innerFiles) await ingestFiles(innerFiles);
         continue;
       }
       const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
@@ -3716,6 +3767,8 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     const f = files[idx];
     const keyPrefix = f.name + '|' + f.size + '|';
     files.splice(idx, 1);
+    paging.request('remove', { fileId: id }).catch(pagingError);
+    store._keptTotal -= Math.max(0, (store._files[id]?.total || 0) - store.kept.filter((r) => r.fileId === id).length);
     store.removeFile(id);
     bookmarksStore.removeByKeyPrefix(keyPrefix); // removed file: drop its bookmarks too
     if (state.activeFile === id) { state.activeFile = null; state.viewMode = 'merged'; }
@@ -3729,57 +3782,41 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   /* ---------------- view model ---------------- */
   let view = [];            // current visible records
   let seqToIdx = new Map();
-  let keptLineMap = new Map(); // "displayName:lineNo" -> record (for jumps)
   let filteredCount = 0;
   let viewMaxLen = 0;       // longest raw line length in the view (chars)
   let charW = 0;            // measured monospace character width (px)
 
-  function onKeptChanged() {
-    bmKeyCache.clear(); // kept rows (and thus file identity lines) changed
-    filterQuickInit();
-    rebuildView();
-    renderChips();
-    updateStatus();
+  async function onKeptChanged() {
+    bmKeyCache.clear(); filterQuickInit();
+    await rebuildView(); renderChips(); updateStatus();
   }
 
-  function rebuildView() {
-    // stale per-file selection (file removed / new load): fall back to merged
-    if (state.activeFile && !files.some((f) => f.id === state.activeFile)) {
-      state.activeFile = null;
-      state.viewMode = 'merged';
-      const sel = $('view-mode');
-      if (sel) sel.value = 'merged';
-    }
-    let arr = store.kept.filter((r) => filter.evaluate(r).kept);
-    if (state.viewMode === 'file' && state.activeFile) {
-      arr = arr.filter((r) => r.fileId === state.activeFile);
-    }
-    if (state.showOnlyBookmarked) {
-      arr = arr.filter((r) => bookmarksStore.has(bookmarkKeyFor(r.fileId), r.lineNo));
-    }
-    if (state.viewMode === 'merged') {
-      arr = LT.mergeTimeline(arr);
-    }
-    view = arr;
-    seqToIdx = new Map(view.map((r, i) => [r.seq, i]));
-    keptLineMap = new Map();
-    for (const r of store.kept) keptLineMap.set(fileDisplayName(r.fileId) + ':' + r.lineNo, r);
-    // widest line in the view drives the nowrap-mode horizontal scroll range
-    viewMaxLen = 0;
-    for (const r of arr) { if (r.raw.length > viewMaxLen) viewMaxLen = r.raw.length; }
-    filteredCount = view.length;
-    displayCache = new Map();
-    selection.clear();
-    invalidateHeights();
-    renderFiles(); // refresh active-file highlight (cheap: few items)
-    renderChips(); // chips follow the current scope (merged = all files, per-file = active file)
-    renderRows();
-    updateStatus();
+  async function rebuildView() {
+    const token = ++viewToken; ++pageToken;
+    const bt = busy('Filtering all indexed lines…');
+    if (state.activeFile && !files.some((f) => f.id === state.activeFile)) { state.activeFile = null; state.viewMode = 'merged'; $('view-mode').value = 'merged'; }
+    const spec = {
+      fileId: state.viewMode === 'file' ? state.activeFile : null,
+      rules: filter.rules, quick: filter.quick, levels: filter.levels,
+      timeFrom: filter.timeFrom, timeTo: filter.timeTo,
+      bookmarkOnly: state.showOnlyBookmarked,
+      bookmarks: files.map((f) => [f.id, bookmarksStore.list(bookmarkKeyFor(f.id)).map((b) => b.lineNo)]),
+    };
+    try {
+      const result = await paging.request('query', { spec }, (p) => busyMessage(bt, p.progress));
+      if (token !== viewToken || result.cancelled) return;
+      filteredCount = result.total;
+      await loadPage(state.follow ? Math.max(0, Math.floor((filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE) : 0, state.follow, bt);
+      if (result.errors?.length) flash(result.errors.map((e) => e.error).join('; '));
+      renderFiles(); renderChips(); updateStatus();
+    } catch (error) { if (token === viewToken) pagingError(error); }
+    finally { doneBusy(bt); }
   }
 
   function displayText(rec) {
     if (displayCache.has(rec.seq)) return displayCache.get(rec.seq);
-    const t = state.maskOn ? engine.maskLine(rec.raw) : rec.raw;
+    const preview = rec.raw.slice(0, 2000);
+    const t = (state.maskOn ? engine.maskLine(preview) : preview) + (rec.raw.length > 2000 ? ' … [long line: click to open full text]' : '');
     displayCache.set(rec.seq, t);
     return t;
   }
@@ -3797,10 +3834,9 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       return;
     }
     // bookmark scope: lines bookmarked within the currently shown file(s)
-    const scope = (state.viewMode === 'file' && state.activeFile)
-      ? store.kept.filter((r) => r.fileId === state.activeFile)
-      : store.kept;
-    const bmInView = scope.reduce((n, r) => n + (bookmarksStore.has(bookmarkKeyFor(r.fileId), r.lineNo) ? 1 : 0), 0);
+    const bmInView = files.filter((f) => state.viewMode !== 'file' || !state.activeFile || state.activeFile === f.id)
+      .reduce((n, f) => n + bookmarksStore.list(bookmarkKeyFor(f.id)).length, 0);
+
     if (bmInView > 0 || state.showOnlyBookmarked) {
       const b = document.createElement('button');
       b.className = 'chip' + (state.showOnlyBookmarked ? ' sel' : '');
@@ -3846,33 +3882,13 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     return heights[i] || ROW_H;
   }
 
-  let measureEl = null;
   function measureWrap() {
     if (heights) return;
-    const n = view.length;
-    heights = new Array(n);
-    const v = viewer();
-    if (!measureEl) {
-      // a real .vrow.wrap clone so measured heights match rendered rows exactly
-      measureEl = document.createElement('div');
-      measureEl.className = 'vrow wrap';
-      measureEl.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;font-family:var(--mono);font-size:12.5px;';
-      measureEl.innerHTML = '<div class="vcell bm">☆</div><div class="vcell ln">00000000</div>' +
-        '<div class="vcell fl">00000000</div><div class="vcell lv">W</div>' +
-        '<div class="vcell txt" style="white-space:inherit"></div>';
-      document.body.appendChild(measureEl);
-    }
-    measureEl.style.display = 'flex';
-    measureEl.style.width = v.clientWidth + 'px';
-    measureEl.querySelector('.fl').style.display = state.viewMode === 'merged' ? '' : 'none';
-    const txtCell = measureEl.querySelector('.txt');
-    for (let i = 0; i < n; i++) {
-      txtCell.textContent = displayText(view[i]);
-      heights[i] = Math.max(ROW_H, measureEl.offsetHeight);
-    }
-    heightSum = new Array(n + 1); heightSum[0] = 0;
-    for (let i = 0; i < n; i++) heightSum[i + 1] = heightSum[i] + heights[i];
+    const chars = Math.max(8, Math.floor((viewer().clientWidth - (state.viewMode === 'merged' ? 300 : 150)) / monoCharWidth()));
+    heights = view.map((r) => Math.max(ROW_H, Math.ceil(displayText(r).length / chars) * ROW_H));
+    sumHeights();
   }
+  function sumHeights() { heightSum = [0]; for (let i = 0; i < heights.length; i++) heightSum.push(heightSum[i] + heights[i]); }
 
   function totalHeight() {
     if (!state.wrapOn) return view.length * ROW_H;
@@ -3954,6 +3970,11 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     }
     spacer.innerHTML = '';
     spacer.appendChild(inner);
+    if (state.wrapOn) {
+      let changed = false;
+      for (const row of inner.children) { const idx = Number(row.dataset.idx); if (!Number.isInteger(idx) || !view[idx]) continue; const height = Math.max(ROW_H, row.offsetHeight); if (heights[idx] !== height) { heights[idx] = height; changed = true; } }
+      if (changed) { sumHeights(); spacer.style.height = totalHeight() + 'px'; requestAnimationFrame(renderRows); }
+    }
   }
 
   function fileDisplayName(fileId) {
@@ -3999,12 +4020,10 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     $('st-bm').textContent = bookmarksStore.all().length;
     const bmCount = $('bm-count');
     if (bmCount) bmCount.textContent = bookmarksStore.all().length;
-    const trim = $('st-trim');
-    if (st.trimmed > 0) {
-      trim.classList.remove('hidden');
-      trim.textContent = 'cap reached — ' + st.trimmed + ' oldest kept lines released from memory (counters remain exact; use Deep scan for full search)';
-    } else trim.classList.add('hidden');
+    $('st-trim').classList.add('hidden');
+    updatePager();
   }
+
 
   /* ---------------- viewer events ---------------- */
   function bindViewer() {
@@ -4344,7 +4363,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
 
   function applyFilters() {
     filter.setRules(state.rules.map((r, i) => Object.assign({ id: 'r' + i }, r)));
-    filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null;
+    filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null; filter.compileQuick();
     filter.setLevels(state.levels);
     filter.timeFrom = $('time-from').value.trim();
     filter.timeTo = $('time-to').value.trim();
@@ -4744,16 +4763,15 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   function exportRecords(kind) {
     const prefix = $('exp-prefix').value;
     const selectionOnly = $('exp-selection').checked;
-    let recs = selectionOnly && selection.count ? selection.indices().map((i) => view[i]) : store.kept;
-    if (state.viewMode === 'file' && state.activeFile) recs = recs.filter((r) => r.fileId === state.activeFile);
+    const recs = exportRows(selectionOnly);
+    return recs.then((rows) => {
     const eng = new LT.MaskEngine();
     for (const id of LT.builtinRuleIds()) eng.setEnabled(id, state.maskEnabled[id] !== false);
     eng.custom = [];
     for (const c of state.customMasks) eng.addCustom(c);
-    const masked = recs.map((r) => Object.assign({}, r, { raw: state.maskOn ? eng.maskLine(r.raw) : r.raw }));
+    const masked = rows.map((r) => Object.assign({}, r, { raw: state.maskOn ? eng.maskLine(r.raw) : r.raw }));
     const note = $('exp-note');
-    if (state.maskOn && st().trimmed > 0) note.textContent = 'note: export covers kept lines in memory (' + masked.length + ') — trimmed lines are not included.';
-    else note.textContent = masked.length + ' line(s) will be exported' + (selectionOnly ? ' (selection only)' : '') + '.';
+    note.textContent = masked.length + ' line(s) exported' + (selectionOnly ? ' (selection only)' : '') + '.';
     const name = (base, ext) => LT.timestampedName(new Date(), base, ext);
     let blob, fname;
     if (kind === 'txt') { blob = new Blob([LT.toText(masked, { prefix })], { type: 'text/plain' }); fname = name('log-triage-extract', 'log'); }
@@ -4761,6 +4779,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     else if (kind === 'json') { blob = new Blob([LT.toJson(masked)], { type: 'application/json' }); fname = name('log-triage-extract', 'json'); }
     else if (kind === 'bookmarks') { blob = new Blob([LT.bookmarksToJson(bookmarksStore)], { type: 'application/json' }); fname = name('log-triage-bookmarks', 'json'); }
     if (blob) download(blob, fname);
+    });
   }
 
   /* Archive export: group the masked kept lines by source file and re-pack
@@ -4769,8 +4788,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     const format = $('exp-archive-format').value;
     const note = $('exp-archive-note');
     const selectionOnly = $('exp-selection').checked;
-    let recs = selectionOnly && selection.count ? selection.indices().map((i) => view[i]) : store.kept;
-    if (state.viewMode === 'file' && state.activeFile) recs = recs.filter((r) => r.fileId === state.activeFile);
+    const recs = await exportRows(selectionOnly);
     if (!recs.length) { note.textContent = 'nothing to export.'; return; }
     const eng = new LT.MaskEngine();
     for (const id of LT.builtinRuleIds()) eng.setEnabled(id, state.maskEnabled[id] !== false);
@@ -4864,7 +4882,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       stat('Masks on', enabledMasks + '/' + LT.builtinRuleIds().length) +
       stat('Custom masks', state.customMasks.length) +
       stat('Issue rules on', enabledIssues + '/' + (state.issueGroups || []).length) +
-      stat('Kept-line cap', state.cap || 100000) +
+      stat('Analysis sample limit', state.cap || 100000) +
       stat('Presets', Object.keys(state.presets).length);
   }
 
@@ -4922,56 +4940,35 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
 
   /** Jump from a search-result row to the line in the viewer. */
   /** bring a record into the viewer: switch file/filters if needed, then jump */
-  function jumpToRecord(rec) {
-    if (!seqToIdx.has(rec.seq)) {
-      let changed = false;
-      if (state.viewMode === 'file' && state.activeFile !== rec.fileId) {
-        state.activeFile = rec.fileId; // switch to the file the match belongs to
-        changed = true;
-      }
-      if (state.showOnlyBookmarked && !bookmarksStore.has(bookmarkKeyFor(rec.fileId), rec.lineNo)) {
-        state.showOnlyBookmarked = false;
-        changed = true;
-      }
-      if (state.quick) { state.quick = ''; $('quick').value = ''; filter.quick = null; changed = true; }
-      if (state.levels.length) { state.levels = []; filter.setLevels([]); renderChips(); changed = true; }
-      if (state.timeFrom || state.timeTo) {
-        state.timeFrom = ''; state.timeTo = '';
-        filter.timeFrom = ''; filter.timeTo = '';
-        $('time-from').value = ''; $('time-to').value = '';
-        changed = true;
-      }
-      if (changed) { saveState(); rebuildView(); }
+  async function jumpToRecord(rec) {
+    if (!rec) return false;
+    let located = await paging.request('locate', { fileId: rec.fileId, lineNo: rec.lineNo });
+    if (located.at < 0) {
+      state.activeFile = rec.fileId; state.viewMode = 'file'; $('view-mode').value = 'file';
+      state.showOnlyBookmarked = false; state.quick = ''; $('quick').value = ''; filter.quick = null; filter.compileQuick();
+      state.levels = []; filter.setLevels([]); state.timeFrom = state.timeTo = filter.timeFrom = filter.timeTo = ''; $('time-from').value = $('time-to').value = '';
+      state.rules = state.rules.map((r) => Object.assign({}, r, { enabled: false })); filter.setRules(state.rules); saveState();
+      await rebuildView();
+      located = await paging.request('locate', { fileId: rec.fileId, lineNo: rec.lineNo });
     }
-    if (seqToIdx.has(rec.seq)) { jumpTo(seqToIdx.get(rec.seq)); return true; }
-    flash('that line is outside the kept-line cap — use Deep scan to find it');
-    return false;
-  }
-
-  function jumpFromSearch(row) {
-    const file = row.dataset.file;
-    const lineNo = Number(row.dataset.ln);
-    const rec = keptLineMap.get(file + ':' + lineNo);
-    if (rec) { jumpToRecord(rec); return; }
-    // line beyond the kept cap: show what we have from the search itself
+    if (located.at < 0) { flash('Line could not be found. Reload the source file.'); return false; }
     switchTab('viewer');
-    const d = $('drawer');
-    d.className = 'open';
-    d.innerHTML = '<h3>' + esc(file) + ':' + esc(lineNo) +
-      ' <small class="muted">(beyond kept-line cap)</small><button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
-      '<dl><div><dt>text</dt><dd>' + esc(row.querySelector('.srx').textContent) + '</dd></div></dl>' +
-      '<p class="muted">This line was released from memory (kept-line cap). Deep scan re-read the file from disk to find it.</p>';
+    const start = Math.floor(located.at / PAGE_SIZE) * PAGE_SIZE;
+    if (start !== pageStart) await loadPage(start);
+    jumpTo(located.at - pageStart); return true;
   }
 
-  /** Go-to-line: scroll the viewer to a specific line number. */
-  function goToLine() {
-    const target = parseInt($('goto-ln').value, 10);
-    if (!target || target < 1) return;
-    for (let i = 0; i < view.length; i++) {
-      if (view[i].lineNo === target) { jumpTo(i); return; }
-    }
-    $('st-progress').textContent = 'line ' + target + ' is not in the current view (filtered out or beyond the kept-line cap)';
-    setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
+  async function jumpFromSearch(row) {
+    const f = files.find((f) => f.name === row.dataset.file || f.id === row.dataset.file);
+    if (!f) return;
+    await jumpToRecord({ fileId: f.id, lineNo: Number(row.dataset.ln) });
+  }
+
+  async function goToLine() {
+    const target = Number($('goto-ln').value);
+    const f = files.find((f) => f.id === state.activeFile) || files[0];
+    if (!f || !Number.isInteger(target) || target < 1 || target > f.lines) { flash('Enter a line between 1 and ' + (f?.lines || 0)); return; }
+    await jumpToRecord({ fileId: f.id, lineNo: target });
   }
 
   function switchTab(name) {
@@ -5002,7 +4999,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
     state.follow = on;
     $('btn-follow').textContent = 'Follow: ' + (on ? 'ON' : 'OFF');
     $('btn-follow').classList.toggle('on', on);
-    if (on) viewer().scrollTop = viewer().scrollHeight;
+    if (on) loadPage(Math.max(0, Math.floor((filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE), true);
     saveState();
   }
 
@@ -5021,7 +5018,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
   }
 
   function filterQuickInit() {
-    filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null;
+    filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null; filter.compileQuick();
     filter.setLevels(state.levels);
   }
 
@@ -5262,6 +5259,24 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
 
     document.querySelectorAll('#tabs button').forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
 
+    $('page-first').onclick = () => loadPage(0);
+    $('page-prev').onclick = () => loadPage(pageStart - PAGE_SIZE);
+    $('page-next').onclick = () => loadPage(pageStart + PAGE_SIZE);
+    $('page-last').onclick = () => loadPage(Math.floor(Math.max(0, filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE, true);
+    $('page-number').onkeydown = (e) => { if (e.key === 'Enter') loadPage(Math.min(Math.max(0, Math.ceil(filteredCount / PAGE_SIZE) - 1), Math.max(0, (Number(e.target.value) || 1) - 1)) * PAGE_SIZE); };
+    $('viewer-cancel').onclick = () => { ingestAbort = true; ++viewToken; ++pageToken; paging.request('cancel').catch(pagingError); doneBusy(busyToken); flash('Cancelled'); };
+    let wheelPaging = false;
+    viewer().addEventListener('wheel', async (e) => {
+      if (wheelPaging || $('viewer-busy').classList.contains('active')) return;
+      const v = viewer();
+      if (e.deltaY > 0 && v.scrollTop + v.clientHeight >= v.scrollHeight - 2 && pageStart + PAGE_SIZE < filteredCount) { wheelPaging = true; await loadPage(pageStart + PAGE_SIZE); setTimeout(() => { wheelPaging = false; }, 150); }
+      else if (e.deltaY < 0 && v.scrollTop <= 0 && pageStart > 0) { wheelPaging = true; await loadPage(pageStart - PAGE_SIZE, true); setTimeout(() => { wheelPaging = false; }, 150); }
+    }, { passive: true });
+    viewer().tabIndex = 0;
+    viewer().addEventListener('keydown', (e) => {
+      if ((e.ctrlKey && e.key === 'Home') || (e.key === 'PageUp' && viewer().scrollTop <= 0)) { e.preventDefault(); loadPage(e.ctrlKey ? 0 : pageStart - PAGE_SIZE, !e.ctrlKey); }
+      if ((e.ctrlKey && e.key === 'End') || (e.key === 'PageDown' && viewer().scrollTop + viewer().clientHeight >= viewer().scrollHeight - 2)) { e.preventDefault(); loadPage(e.ctrlKey ? Math.floor(Math.max(0, filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE : pageStart + PAGE_SIZE, e.ctrlKey); }
+    });
     $('btn-pick').onclick = () => $('file-input').click();
     $('file-input').onchange = (e) => { loadFiles(Array.from(e.target.files)); e.target.value = ''; };
     $('btn-demo').onclick = () => {
@@ -5274,7 +5289,11 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       loadFiles([new File([t], 'pasted.log', { type: 'text/plain' })]);
     };
     $('clear-files').onclick = async () => {
+      ++viewToken; ++pageToken; ingestAbort = true;
+      await paging.request('cancel');
+      for (const f of files) await paging.request('remove', { fileId: f.id });
       files.slice().forEach((f) => store.removeFile(f.id));
+      store._keptTotal = 0;
       files.length = 0;
       cacheEntries = [];
       await LT.cacheClear();
@@ -5305,7 +5324,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       state.quick = $('quick').value;
       if (quickTimer) clearTimeout(quickTimer);
       quickTimer = setTimeout(() => {
-        filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null;
+        filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null; filter.compileQuick();
         saveState(); rebuildView();
       }, 200);
     };
@@ -5324,8 +5343,10 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
         flash('bookmark removed (line ' + row.lineNo + ')');
         return;
       }
-      const rec = keptLineMap.get(row.key.split('|')[0] + ':' + row.lineNo);
-      if (rec) { jumpToRecord(rec); return; }
+      // resolve the bookmark's file identity (name|size|first-line) to the
+      // current runtime file — after a reload fileIds are new, the key is not
+      const target = files.find((f) => bookmarkKeyFor(f.id) === row.key);
+      if (target) { jumpToRecord({ fileId: target.id, lineNo: row.lineNo }); return; }
       flash('that file is not loaded right now — bookmark kept for later');
       setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
     });
@@ -5378,7 +5399,7 @@ window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' 
       store.cap = n;
       saveState();
       renderConfigSummary();
-      flash('kept-line cap set to ' + n.toLocaleString() + ' — applies from the next file load');
+      flash('Analysis sample limit set to ' + n.toLocaleString() + '; paging always covers the full file');
     };
 
     $('btn-add-rule').onclick = () => { state.rules.push({ name: 'rule ' + (state.rules.length + 1), pattern: '', caseSensitive: false, action: 'include', enabled: true }); renderRules(); };

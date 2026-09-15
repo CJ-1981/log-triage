@@ -32,8 +32,7 @@
       const f = this._files[fileId];
       if (!f) return t;
       for (const key of Object.keys(f.levelCounts || {})) {
-        const lvl = key === 'null' ? null : key;
-        for (let i = 0; i < f.levelCounts[key]; i++) t.add(lvl);
+        t._counts[key === 'null' ? '__' : key] = f.levelCounts[key];
       }
       return t;
     }

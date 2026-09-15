@@ -59,6 +59,57 @@
   /* ---------------- ingestion ---------------- */
   const VALVE = 8 * 1024 * 1024;
   let ingestAbort = false;
+  const paging = new LT.PagingClient();
+  const PAGE_SIZE = 500;
+  let pageStart = 0, viewToken = 0, pageToken = 0, busyToken = 0, loadSerial = Promise.resolve();
+  function busy(message) { const token = ++busyToken; $('viewer-busy').classList.add('active'); $('viewer-busy-text').textContent = message; $('st-progress').textContent = message; $('viewer').setAttribute('aria-busy', 'true'); return token; }
+  function busyMessage(token, message) { if (token === busyToken) { $('viewer-busy-text').textContent = message; $('st-progress').textContent = message; } }
+  function doneBusy(token) { if (token === busyToken) { $('viewer-busy').classList.remove('active'); $('st-progress').textContent = ''; $('viewer').setAttribute('aria-busy', 'false'); } }
+  function pagingError(error) { flash(error.message || String(error)); }
+  function updatePager() {
+    const pages = Math.max(1, Math.ceil(filteredCount / PAGE_SIZE));
+    $('page-number').value = Math.floor(pageStart / PAGE_SIZE) + 1;
+    $('page-count').textContent = 'of ' + pages.toLocaleString();
+    $('page-range').textContent = filteredCount ? (pageStart + 1).toLocaleString() + '–' + Math.min(filteredCount, pageStart + PAGE_SIZE).toLocaleString() + ' of ' + filteredCount.toLocaleString() + ' matching lines' : 'No matching lines';
+    $('page-first').disabled = $('page-prev').disabled = pageStart === 0;
+    $('page-next').disabled = $('page-last').disabled = pageStart + PAGE_SIZE >= filteredCount;
+  }
+  async function loadPage(start, bottom = false, owner) {
+    const token = ++pageToken, query = viewToken, bt = owner || busy('Loading page…');
+    try {
+      const result = await paging.request('page', { start: Math.max(0, start), size: PAGE_SIZE });
+      if (token !== pageToken || query !== viewToken) return false;
+      view = result.rows; pageStart = result.start; filteredCount = result.total;
+      seqToIdx = new Map(view.map((r, i) => [r.seq, i]));
+      viewMaxLen = Math.min(2000, Math.max(0, ...view.map((r) => r.raw.length)));
+      displayCache.clear(); selection.clear(); invalidateHeights();
+      viewer().scrollTop = 0; renderRows();
+      if (bottom) { viewer().scrollTop = viewer().scrollHeight; renderRows(); }
+      updateStatus(); updatePager(); return true;
+    } catch (error) { if (token === pageToken) pagingError(error); return false; }
+    finally { doneBusy(bt); }
+  }
+
+  const EXPORT_BATCH = 2000;
+  /** Every matching line in current view order: selection rows when
+   * selection-only export is on, else the worker's full filtered order walked
+   * page by page. The in-memory analysis sample is NOT the export scope —
+   * exports cover the whole (multi-GB) filtered view like Deep scan does. */
+  async function exportRows(selectionOnly) {
+    if (selectionOnly && selection.count) return selection.indices().map((i) => view[i]);
+    const bt = busy('Preparing export…');
+    const recs = [];
+    try {
+      for (let start = 0; ; start += EXPORT_BATCH) {
+        const part = await paging.request('page', { start, size: EXPORT_BATCH });
+        if (!part.rows.length) break;
+        recs.push(...part.rows);
+        busyMessage(bt, 'Preparing export… ' + Math.min(100, Math.round(recs.length / Math.max(1, part.total) * 100)) + '%');
+        if (recs.length >= part.total) break;
+      }
+    } finally { doneBusy(bt); }
+    return recs;
+  }
 
   async function* chunkIter(file) {
     // Prefer File.stream(); some Windows locations+names (e.g. Downloads
@@ -122,55 +173,20 @@
   }
 
   async function ingestFile(entry) {
-    const DETECT_AFTER = 1000;
-    let sample = [];
-    let format = 'plain';
-    let detected = false;
-    let lineNo = 0;
-    const progress = (msg) => { $('st-progress').textContent = msg; };
-    const onBytes = (n) => {
-      entry.read += n;
-      store.addBytes(entry.id, n);
-      progress(entry.name + ': ' + LT.fmtBytes(entry.read) + ' / ' + LT.fmtBytes(entry.size));
-    };
-    const parseAndAdd = (line, no, fastPath) => {
-      const rec = LT.parseLine(line, format);
-      const kept = fastPath ? true : filter.evaluate({ raw: line, ts: rec.ts, level: rec.level }).kept;
-      store.add(entry.id, no, line, rec, kept);
-    };
-    entry.read = 0;
+    const bt = busy('Indexing ' + entry.name + '…');
     store.setFileInfo(entry.id, entry.name, entry.size);
-    const fastPath = !filter.rules.some((r) => r.enabled) && !filter.quick &&
-      !state.levels.length && !filter.timeFrom && !filter.timeTo;
-    for await (const line of streamLines(entry.file, onBytes)) {
-      if (ingestAbort) { entry.status = 'cancelled'; return; }
-      lineNo++;
-      if (!detected) {
-        sample.push(line);
-        if (sample.length >= DETECT_AFTER) {
-          format = LT.detectFormat(sample).format;
-          entry.format = format;
-          detected = true;
-          const base = lineNo - sample.length;
-          sample.forEach((l, j) => parseAndAdd(l, base + j + 1, fastPath));
-          sample = null;
-          renderFiles();
-        }
-        continue;
-      }
-      parseAndAdd(line, lineNo, fastPath);
-      if ((lineNo & 0x3fff) === 0) await tick(); // yield to UI periodically
-    }
-    if (!detected && sample) {
-      // small file: detection happens at end of stream, then buffered lines parse
-      format = LT.detectFormat(sample).format;
-      entry.format = format;
-      const base = lineNo - sample.length;
-      sample.forEach((l, j) => parseAndAdd(l, base + j + 1, fastPath));
-    }
-    entry.status = 'done';
-    entry.lines = lineNo;
-    progress('');
+    try {
+      const result = await paging.request('index', { fileId: entry.id, file: entry.file, sampleLimit: Math.min(100000, state.cap || 100000) }, (p) => { entry.read = p.bytes || entry.read; busyMessage(bt, p.progress); });
+      if (ingestAbort || !files.includes(entry)) return;
+      entry.format = result.format; entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
+      const f = store._files[entry.id];
+      Object.assign(f, { total: result.count, kept: result.count, dropped: 0, bytes: entry.size, levelCounts: result.counts });
+      store._keptTotal += result.count;
+      for (const [level, count] of Object.entries(result.counts)) { const key = level === 'null' ? '__' : level; tally._counts[key] = (tally._counts[key] || 0) + count; }
+      // Analysis uses a labeled bounded sample; the viewer uses the full index.
+      store.kept.push(...result.sample.slice(0, 2000));
+      for (let i = 2000; i < result.sample.length; i += 2000) store.kept.push(...result.sample.slice(i, i + 2000));
+    } finally { doneBusy(bt); }
   }
 
   function tick() {
@@ -183,7 +199,8 @@
     });
   }
 
-  async function loadFiles(fileList) {
+  function loadFiles(fileList) { const pending = loadSerial.then(() => ingestFiles(fileList)); loadSerial = pending.catch(pagingError); return pending; }
+  async function ingestFiles(fileList) {
     ingestAbort = false;
     // a fresh load shows everything: drop any stale per-file selection
     state.activeFile = null;
@@ -209,7 +226,7 @@
           // never leave the full-screen progress overlay up after a failure
           ap.classList.remove('visible');
         }
-        if (innerFiles) await loadFiles(innerFiles);
+        if (innerFiles) await ingestFiles(innerFiles);
         continue;
       }
       const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
@@ -316,6 +333,8 @@
     const f = files[idx];
     const keyPrefix = f.name + '|' + f.size + '|';
     files.splice(idx, 1);
+    paging.request('remove', { fileId: id }).catch(pagingError);
+    store._keptTotal -= Math.max(0, (store._files[id]?.total || 0) - store.kept.filter((r) => r.fileId === id).length);
     store.removeFile(id);
     bookmarksStore.removeByKeyPrefix(keyPrefix); // removed file: drop its bookmarks too
     if (state.activeFile === id) { state.activeFile = null; state.viewMode = 'merged'; }
@@ -329,57 +348,41 @@
   /* ---------------- view model ---------------- */
   let view = [];            // current visible records
   let seqToIdx = new Map();
-  let keptLineMap = new Map(); // "displayName:lineNo" -> record (for jumps)
   let filteredCount = 0;
   let viewMaxLen = 0;       // longest raw line length in the view (chars)
   let charW = 0;            // measured monospace character width (px)
 
-  function onKeptChanged() {
-    bmKeyCache.clear(); // kept rows (and thus file identity lines) changed
-    filterQuickInit();
-    rebuildView();
-    renderChips();
-    updateStatus();
+  async function onKeptChanged() {
+    bmKeyCache.clear(); filterQuickInit();
+    await rebuildView(); renderChips(); updateStatus();
   }
 
-  function rebuildView() {
-    // stale per-file selection (file removed / new load): fall back to merged
-    if (state.activeFile && !files.some((f) => f.id === state.activeFile)) {
-      state.activeFile = null;
-      state.viewMode = 'merged';
-      const sel = $('view-mode');
-      if (sel) sel.value = 'merged';
-    }
-    let arr = store.kept.filter((r) => filter.evaluate(r).kept);
-    if (state.viewMode === 'file' && state.activeFile) {
-      arr = arr.filter((r) => r.fileId === state.activeFile);
-    }
-    if (state.showOnlyBookmarked) {
-      arr = arr.filter((r) => bookmarksStore.has(bookmarkKeyFor(r.fileId), r.lineNo));
-    }
-    if (state.viewMode === 'merged') {
-      arr = LT.mergeTimeline(arr);
-    }
-    view = arr;
-    seqToIdx = new Map(view.map((r, i) => [r.seq, i]));
-    keptLineMap = new Map();
-    for (const r of store.kept) keptLineMap.set(fileDisplayName(r.fileId) + ':' + r.lineNo, r);
-    // widest line in the view drives the nowrap-mode horizontal scroll range
-    viewMaxLen = 0;
-    for (const r of arr) { if (r.raw.length > viewMaxLen) viewMaxLen = r.raw.length; }
-    filteredCount = view.length;
-    displayCache = new Map();
-    selection.clear();
-    invalidateHeights();
-    renderFiles(); // refresh active-file highlight (cheap: few items)
-    renderChips(); // chips follow the current scope (merged = all files, per-file = active file)
-    renderRows();
-    updateStatus();
+  async function rebuildView() {
+    const token = ++viewToken; ++pageToken;
+    const bt = busy('Filtering all indexed lines…');
+    if (state.activeFile && !files.some((f) => f.id === state.activeFile)) { state.activeFile = null; state.viewMode = 'merged'; $('view-mode').value = 'merged'; }
+    const spec = {
+      fileId: state.viewMode === 'file' ? state.activeFile : null,
+      rules: filter.rules, quick: filter.quick, levels: filter.levels,
+      timeFrom: filter.timeFrom, timeTo: filter.timeTo,
+      bookmarkOnly: state.showOnlyBookmarked,
+      bookmarks: files.map((f) => [f.id, bookmarksStore.list(bookmarkKeyFor(f.id)).map((b) => b.lineNo)]),
+    };
+    try {
+      const result = await paging.request('query', { spec }, (p) => busyMessage(bt, p.progress));
+      if (token !== viewToken || result.cancelled) return;
+      filteredCount = result.total;
+      await loadPage(state.follow ? Math.max(0, Math.floor((filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE) : 0, state.follow, bt);
+      if (result.errors?.length) flash(result.errors.map((e) => e.error).join('; '));
+      renderFiles(); renderChips(); updateStatus();
+    } catch (error) { if (token === viewToken) pagingError(error); }
+    finally { doneBusy(bt); }
   }
 
   function displayText(rec) {
     if (displayCache.has(rec.seq)) return displayCache.get(rec.seq);
-    const t = state.maskOn ? engine.maskLine(rec.raw) : rec.raw;
+    const preview = rec.raw.slice(0, 2000);
+    const t = (state.maskOn ? engine.maskLine(preview) : preview) + (rec.raw.length > 2000 ? ' … [long line: click to open full text]' : '');
     displayCache.set(rec.seq, t);
     return t;
   }
@@ -397,10 +400,9 @@
       return;
     }
     // bookmark scope: lines bookmarked within the currently shown file(s)
-    const scope = (state.viewMode === 'file' && state.activeFile)
-      ? store.kept.filter((r) => r.fileId === state.activeFile)
-      : store.kept;
-    const bmInView = scope.reduce((n, r) => n + (bookmarksStore.has(bookmarkKeyFor(r.fileId), r.lineNo) ? 1 : 0), 0);
+    const bmInView = files.filter((f) => state.viewMode !== 'file' || !state.activeFile || state.activeFile === f.id)
+      .reduce((n, f) => n + bookmarksStore.list(bookmarkKeyFor(f.id)).length, 0);
+
     if (bmInView > 0 || state.showOnlyBookmarked) {
       const b = document.createElement('button');
       b.className = 'chip' + (state.showOnlyBookmarked ? ' sel' : '');
@@ -446,33 +448,13 @@
     return heights[i] || ROW_H;
   }
 
-  let measureEl = null;
   function measureWrap() {
     if (heights) return;
-    const n = view.length;
-    heights = new Array(n);
-    const v = viewer();
-    if (!measureEl) {
-      // a real .vrow.wrap clone so measured heights match rendered rows exactly
-      measureEl = document.createElement('div');
-      measureEl.className = 'vrow wrap';
-      measureEl.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;font-family:var(--mono);font-size:12.5px;';
-      measureEl.innerHTML = '<div class="vcell bm">☆</div><div class="vcell ln">00000000</div>' +
-        '<div class="vcell fl">00000000</div><div class="vcell lv">W</div>' +
-        '<div class="vcell txt" style="white-space:inherit"></div>';
-      document.body.appendChild(measureEl);
-    }
-    measureEl.style.display = 'flex';
-    measureEl.style.width = v.clientWidth + 'px';
-    measureEl.querySelector('.fl').style.display = state.viewMode === 'merged' ? '' : 'none';
-    const txtCell = measureEl.querySelector('.txt');
-    for (let i = 0; i < n; i++) {
-      txtCell.textContent = displayText(view[i]);
-      heights[i] = Math.max(ROW_H, measureEl.offsetHeight);
-    }
-    heightSum = new Array(n + 1); heightSum[0] = 0;
-    for (let i = 0; i < n; i++) heightSum[i + 1] = heightSum[i] + heights[i];
+    const chars = Math.max(8, Math.floor((viewer().clientWidth - (state.viewMode === 'merged' ? 300 : 150)) / monoCharWidth()));
+    heights = view.map((r) => Math.max(ROW_H, Math.ceil(displayText(r).length / chars) * ROW_H));
+    sumHeights();
   }
+  function sumHeights() { heightSum = [0]; for (let i = 0; i < heights.length; i++) heightSum.push(heightSum[i] + heights[i]); }
 
   function totalHeight() {
     if (!state.wrapOn) return view.length * ROW_H;
@@ -554,6 +536,11 @@
     }
     spacer.innerHTML = '';
     spacer.appendChild(inner);
+    if (state.wrapOn) {
+      let changed = false;
+      for (const row of inner.children) { const idx = Number(row.dataset.idx); if (!Number.isInteger(idx) || !view[idx]) continue; const height = Math.max(ROW_H, row.offsetHeight); if (heights[idx] !== height) { heights[idx] = height; changed = true; } }
+      if (changed) { sumHeights(); spacer.style.height = totalHeight() + 'px'; requestAnimationFrame(renderRows); }
+    }
   }
 
   function fileDisplayName(fileId) {
@@ -599,12 +586,10 @@
     $('st-bm').textContent = bookmarksStore.all().length;
     const bmCount = $('bm-count');
     if (bmCount) bmCount.textContent = bookmarksStore.all().length;
-    const trim = $('st-trim');
-    if (st.trimmed > 0) {
-      trim.classList.remove('hidden');
-      trim.textContent = 'cap reached — ' + st.trimmed + ' oldest kept lines released from memory (counters remain exact; use Deep scan for full search)';
-    } else trim.classList.add('hidden');
+    $('st-trim').classList.add('hidden');
+    updatePager();
   }
+
 
   /* ---------------- viewer events ---------------- */
   function bindViewer() {
@@ -944,7 +929,7 @@
 
   function applyFilters() {
     filter.setRules(state.rules.map((r, i) => Object.assign({ id: 'r' + i }, r)));
-    filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null;
+    filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null; filter.compileQuick();
     filter.setLevels(state.levels);
     filter.timeFrom = $('time-from').value.trim();
     filter.timeTo = $('time-to').value.trim();
@@ -1344,16 +1329,15 @@
   function exportRecords(kind) {
     const prefix = $('exp-prefix').value;
     const selectionOnly = $('exp-selection').checked;
-    let recs = selectionOnly && selection.count ? selection.indices().map((i) => view[i]) : store.kept;
-    if (state.viewMode === 'file' && state.activeFile) recs = recs.filter((r) => r.fileId === state.activeFile);
+    const recs = exportRows(selectionOnly);
+    return recs.then((rows) => {
     const eng = new LT.MaskEngine();
     for (const id of LT.builtinRuleIds()) eng.setEnabled(id, state.maskEnabled[id] !== false);
     eng.custom = [];
     for (const c of state.customMasks) eng.addCustom(c);
-    const masked = recs.map((r) => Object.assign({}, r, { raw: state.maskOn ? eng.maskLine(r.raw) : r.raw }));
+    const masked = rows.map((r) => Object.assign({}, r, { raw: state.maskOn ? eng.maskLine(r.raw) : r.raw }));
     const note = $('exp-note');
-    if (state.maskOn && st().trimmed > 0) note.textContent = 'note: export covers kept lines in memory (' + masked.length + ') — trimmed lines are not included.';
-    else note.textContent = masked.length + ' line(s) will be exported' + (selectionOnly ? ' (selection only)' : '') + '.';
+    note.textContent = masked.length + ' line(s) exported' + (selectionOnly ? ' (selection only)' : '') + '.';
     const name = (base, ext) => LT.timestampedName(new Date(), base, ext);
     let blob, fname;
     if (kind === 'txt') { blob = new Blob([LT.toText(masked, { prefix })], { type: 'text/plain' }); fname = name('log-triage-extract', 'log'); }
@@ -1361,6 +1345,7 @@
     else if (kind === 'json') { blob = new Blob([LT.toJson(masked)], { type: 'application/json' }); fname = name('log-triage-extract', 'json'); }
     else if (kind === 'bookmarks') { blob = new Blob([LT.bookmarksToJson(bookmarksStore)], { type: 'application/json' }); fname = name('log-triage-bookmarks', 'json'); }
     if (blob) download(blob, fname);
+    });
   }
 
   /* Archive export: group the masked kept lines by source file and re-pack
@@ -1369,8 +1354,7 @@
     const format = $('exp-archive-format').value;
     const note = $('exp-archive-note');
     const selectionOnly = $('exp-selection').checked;
-    let recs = selectionOnly && selection.count ? selection.indices().map((i) => view[i]) : store.kept;
-    if (state.viewMode === 'file' && state.activeFile) recs = recs.filter((r) => r.fileId === state.activeFile);
+    const recs = await exportRows(selectionOnly);
     if (!recs.length) { note.textContent = 'nothing to export.'; return; }
     const eng = new LT.MaskEngine();
     for (const id of LT.builtinRuleIds()) eng.setEnabled(id, state.maskEnabled[id] !== false);
@@ -1464,7 +1448,7 @@
       stat('Masks on', enabledMasks + '/' + LT.builtinRuleIds().length) +
       stat('Custom masks', state.customMasks.length) +
       stat('Issue rules on', enabledIssues + '/' + (state.issueGroups || []).length) +
-      stat('Kept-line cap', state.cap || 100000) +
+      stat('Analysis sample limit', state.cap || 100000) +
       stat('Presets', Object.keys(state.presets).length);
   }
 
@@ -1522,56 +1506,35 @@
 
   /** Jump from a search-result row to the line in the viewer. */
   /** bring a record into the viewer: switch file/filters if needed, then jump */
-  function jumpToRecord(rec) {
-    if (!seqToIdx.has(rec.seq)) {
-      let changed = false;
-      if (state.viewMode === 'file' && state.activeFile !== rec.fileId) {
-        state.activeFile = rec.fileId; // switch to the file the match belongs to
-        changed = true;
-      }
-      if (state.showOnlyBookmarked && !bookmarksStore.has(bookmarkKeyFor(rec.fileId), rec.lineNo)) {
-        state.showOnlyBookmarked = false;
-        changed = true;
-      }
-      if (state.quick) { state.quick = ''; $('quick').value = ''; filter.quick = null; changed = true; }
-      if (state.levels.length) { state.levels = []; filter.setLevels([]); renderChips(); changed = true; }
-      if (state.timeFrom || state.timeTo) {
-        state.timeFrom = ''; state.timeTo = '';
-        filter.timeFrom = ''; filter.timeTo = '';
-        $('time-from').value = ''; $('time-to').value = '';
-        changed = true;
-      }
-      if (changed) { saveState(); rebuildView(); }
+  async function jumpToRecord(rec) {
+    if (!rec) return false;
+    let located = await paging.request('locate', { fileId: rec.fileId, lineNo: rec.lineNo });
+    if (located.at < 0) {
+      state.activeFile = rec.fileId; state.viewMode = 'file'; $('view-mode').value = 'file';
+      state.showOnlyBookmarked = false; state.quick = ''; $('quick').value = ''; filter.quick = null; filter.compileQuick();
+      state.levels = []; filter.setLevels([]); state.timeFrom = state.timeTo = filter.timeFrom = filter.timeTo = ''; $('time-from').value = $('time-to').value = '';
+      state.rules = state.rules.map((r) => Object.assign({}, r, { enabled: false })); filter.setRules(state.rules); saveState();
+      await rebuildView();
+      located = await paging.request('locate', { fileId: rec.fileId, lineNo: rec.lineNo });
     }
-    if (seqToIdx.has(rec.seq)) { jumpTo(seqToIdx.get(rec.seq)); return true; }
-    flash('that line is outside the kept-line cap — use Deep scan to find it');
-    return false;
-  }
-
-  function jumpFromSearch(row) {
-    const file = row.dataset.file;
-    const lineNo = Number(row.dataset.ln);
-    const rec = keptLineMap.get(file + ':' + lineNo);
-    if (rec) { jumpToRecord(rec); return; }
-    // line beyond the kept cap: show what we have from the search itself
+    if (located.at < 0) { flash('Line could not be found. Reload the source file.'); return false; }
     switchTab('viewer');
-    const d = $('drawer');
-    d.className = 'open';
-    d.innerHTML = '<h3>' + esc(file) + ':' + esc(lineNo) +
-      ' <small class="muted">(beyond kept-line cap)</small><button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
-      '<dl><div><dt>text</dt><dd>' + esc(row.querySelector('.srx').textContent) + '</dd></div></dl>' +
-      '<p class="muted">This line was released from memory (kept-line cap). Deep scan re-read the file from disk to find it.</p>';
+    const start = Math.floor(located.at / PAGE_SIZE) * PAGE_SIZE;
+    if (start !== pageStart) await loadPage(start);
+    jumpTo(located.at - pageStart); return true;
   }
 
-  /** Go-to-line: scroll the viewer to a specific line number. */
-  function goToLine() {
-    const target = parseInt($('goto-ln').value, 10);
-    if (!target || target < 1) return;
-    for (let i = 0; i < view.length; i++) {
-      if (view[i].lineNo === target) { jumpTo(i); return; }
-    }
-    $('st-progress').textContent = 'line ' + target + ' is not in the current view (filtered out or beyond the kept-line cap)';
-    setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
+  async function jumpFromSearch(row) {
+    const f = files.find((f) => f.name === row.dataset.file || f.id === row.dataset.file);
+    if (!f) return;
+    await jumpToRecord({ fileId: f.id, lineNo: Number(row.dataset.ln) });
+  }
+
+  async function goToLine() {
+    const target = Number($('goto-ln').value);
+    const f = files.find((f) => f.id === state.activeFile) || files[0];
+    if (!f || !Number.isInteger(target) || target < 1 || target > f.lines) { flash('Enter a line between 1 and ' + (f?.lines || 0)); return; }
+    await jumpToRecord({ fileId: f.id, lineNo: target });
   }
 
   function switchTab(name) {
@@ -1602,7 +1565,7 @@
     state.follow = on;
     $('btn-follow').textContent = 'Follow: ' + (on ? 'ON' : 'OFF');
     $('btn-follow').classList.toggle('on', on);
-    if (on) viewer().scrollTop = viewer().scrollHeight;
+    if (on) loadPage(Math.max(0, Math.floor((filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE), true);
     saveState();
   }
 
@@ -1621,7 +1584,7 @@
   }
 
   function filterQuickInit() {
-    filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null;
+    filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null; filter.compileQuick();
     filter.setLevels(state.levels);
   }
 
@@ -1862,6 +1825,24 @@
 
     document.querySelectorAll('#tabs button').forEach((b) => { b.onclick = () => switchTab(b.dataset.tab); });
 
+    $('page-first').onclick = () => loadPage(0);
+    $('page-prev').onclick = () => loadPage(pageStart - PAGE_SIZE);
+    $('page-next').onclick = () => loadPage(pageStart + PAGE_SIZE);
+    $('page-last').onclick = () => loadPage(Math.floor(Math.max(0, filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE, true);
+    $('page-number').onkeydown = (e) => { if (e.key === 'Enter') loadPage(Math.min(Math.max(0, Math.ceil(filteredCount / PAGE_SIZE) - 1), Math.max(0, (Number(e.target.value) || 1) - 1)) * PAGE_SIZE); };
+    $('viewer-cancel').onclick = () => { ingestAbort = true; ++viewToken; ++pageToken; paging.request('cancel').catch(pagingError); doneBusy(busyToken); flash('Cancelled'); };
+    let wheelPaging = false;
+    viewer().addEventListener('wheel', async (e) => {
+      if (wheelPaging || $('viewer-busy').classList.contains('active')) return;
+      const v = viewer();
+      if (e.deltaY > 0 && v.scrollTop + v.clientHeight >= v.scrollHeight - 2 && pageStart + PAGE_SIZE < filteredCount) { wheelPaging = true; await loadPage(pageStart + PAGE_SIZE); setTimeout(() => { wheelPaging = false; }, 150); }
+      else if (e.deltaY < 0 && v.scrollTop <= 0 && pageStart > 0) { wheelPaging = true; await loadPage(pageStart - PAGE_SIZE, true); setTimeout(() => { wheelPaging = false; }, 150); }
+    }, { passive: true });
+    viewer().tabIndex = 0;
+    viewer().addEventListener('keydown', (e) => {
+      if ((e.ctrlKey && e.key === 'Home') || (e.key === 'PageUp' && viewer().scrollTop <= 0)) { e.preventDefault(); loadPage(e.ctrlKey ? 0 : pageStart - PAGE_SIZE, !e.ctrlKey); }
+      if ((e.ctrlKey && e.key === 'End') || (e.key === 'PageDown' && viewer().scrollTop + viewer().clientHeight >= viewer().scrollHeight - 2)) { e.preventDefault(); loadPage(e.ctrlKey ? Math.floor(Math.max(0, filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE : pageStart + PAGE_SIZE, e.ctrlKey); }
+    });
     $('btn-pick').onclick = () => $('file-input').click();
     $('file-input').onchange = (e) => { loadFiles(Array.from(e.target.files)); e.target.value = ''; };
     $('btn-demo').onclick = () => {
@@ -1874,7 +1855,11 @@
       loadFiles([new File([t], 'pasted.log', { type: 'text/plain' })]);
     };
     $('clear-files').onclick = async () => {
+      ++viewToken; ++pageToken; ingestAbort = true;
+      await paging.request('cancel');
+      for (const f of files) await paging.request('remove', { fileId: f.id });
       files.slice().forEach((f) => store.removeFile(f.id));
+      store._keptTotal = 0;
       files.length = 0;
       cacheEntries = [];
       await LT.cacheClear();
@@ -1905,7 +1890,7 @@
       state.quick = $('quick').value;
       if (quickTimer) clearTimeout(quickTimer);
       quickTimer = setTimeout(() => {
-        filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null;
+        filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null; filter.compileQuick();
         saveState(); rebuildView();
       }, 200);
     };
@@ -1924,8 +1909,10 @@
         flash('bookmark removed (line ' + row.lineNo + ')');
         return;
       }
-      const rec = keptLineMap.get(row.key.split('|')[0] + ':' + row.lineNo);
-      if (rec) { jumpToRecord(rec); return; }
+      // resolve the bookmark's file identity (name|size|first-line) to the
+      // current runtime file — after a reload fileIds are new, the key is not
+      const target = files.find((f) => bookmarkKeyFor(f.id) === row.key);
+      if (target) { jumpToRecord({ fileId: target.id, lineNo: row.lineNo }); return; }
       flash('that file is not loaded right now — bookmark kept for later');
       setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
     });
@@ -1978,7 +1965,7 @@
       store.cap = n;
       saveState();
       renderConfigSummary();
-      flash('kept-line cap set to ' + n.toLocaleString() + ' — applies from the next file load');
+      flash('Analysis sample limit set to ' + n.toLocaleString() + '; paging always covers the full file');
     };
 
     $('btn-add-rule').onclick = () => { state.rules.push({ name: 'rule ' + (state.rules.length + 1), pattern: '', caseSensitive: false, action: 'include', enabled: true }); renderRules(); };

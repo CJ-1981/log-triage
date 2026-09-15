@@ -68,6 +68,11 @@
 
     get levels() { return Array.from(this._levels); }
 
+    /** Compile the quick pattern eagerly. Paged rendering matches in the
+     * worker, but the main thread still needs _quickRe for <mark> spans —
+     * and clearing quick must reset it or stale highlights stay visible. */
+    compileQuick() { this._compileQuick(); }
+
     _compileQuick() {
       if (this._quickCache && this._quickCache.ref === this.quick) return; // cached
       if (!this.quick || !this.quick.pattern) {

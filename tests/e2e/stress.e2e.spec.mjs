@@ -99,29 +99,30 @@ test('stress: ingest ~30 MB within 60s with exact counters', async () => {
   const st = await loadStress();
   assert.ok(st.ms < 60000, 'ingest took ' + st.ms + 'ms');
   assert.strictEqual(st.total, fixtureLines, 'total lines must match the fixture on disk');
-  assert.ok(st.shown > 90000 && st.shown <= 110000, 'kept window holds ~cap lines, got ' + st.shown);
+  assert.strictEqual(st.shown, fixtureLines, 'the whole indexed file is the view scope (no kept-window trim)');
 });
 
-test('stress: mouse wheel scrolls the virtualized viewer', async () => {
+test('stress: mouse wheel pages across page boundaries in the virtualized viewer', async () => {
   const box = await page.evaluate(() => {
     const r = document.getElementById('viewer-wrap').getBoundingClientRect();
     return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
   });
   await page.mouse.move(box.x, box.y);
   const before = await state();
-  for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, 4000); await page.waitForTimeout(120); }
+  // several big wheels cross the 500-row page edge; the app then loads the
+  // next page and the rendered line numbers advance past the old page
+  for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, 4000); await page.waitForTimeout(150); }
   const afterDown = await state();
-  assert.ok(afterDown.scrollTop > before.scrollTop + 10000, 'wheel scrolls down: ' + before.scrollTop + ' -> ' + afterDown.scrollTop);
+  assert.ok(Number(afterDown.firstLn) > Number(before.firstLn), 'rendered lines advanced: ' + before.firstLn + ' -> ' + afterDown.firstLn);
   assert.ok(afterDown.rows > 0 && afterDown.rows < 300, 'windowed rendering keeps row count bounded');
-  assert.ok(Number(afterDown.firstLn) > 1, 'rendered lines advanced to ' + afterDown.firstLn);
-  for (let i = 0; i < 8; i++) { await page.mouse.wheel(0, -4000); await page.waitForTimeout(120); }
+  for (let i = 0; i < 8; i++) { await page.mouse.wheel(0, -4000); await page.waitForTimeout(150); }
   const afterUp = await state();
-  assert.ok(afterUp.scrollTop < afterDown.scrollTop, 'wheel scrolls back up');
+  assert.ok(Number(afterUp.firstLn) <= Number(afterDown.firstLn), 'wheeling back returns toward earlier lines');
   assert.strictEqual(afterUp.errs, 0);
 });
 
-test('stress: go-to-line jumps to an exact line inside the kept window', async () => {
-  // kept window = last ~100k lines of the fixture; pick a line guaranteed present
+test('stress: go-to-line jumps to an exact line late in the file', async () => {
+  // every indexed line is reachable now; pick one well past the old cap
   const target = fixtureLines - 50000;
   await page.evaluate((t) => {
     const g = document.getElementById('goto-ln');
@@ -137,15 +138,22 @@ test('stress: go-to-line jumps to an exact line inside the kept window', async (
   assert.match(drawer, new RegExp('Line ' + target));
 });
 
-test('stress: go-to-line reports lines released from memory', async () => {
-  await page.evaluate(() => {
+test('stress: go-to-line reaches early lines that the old cap used to release', async () => {
+  // line 150000 used to be outside the 100k kept window; with full-file
+  // paging it must load its page and open the detail drawer
+  const target = 150000;
+  await page.evaluate((t) => {
     const g = document.getElementById('goto-ln');
-    g.value = '150000'; // inside the first 100k lines -> trimmed from memory
+    g.value = String(t);
     g.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  });
-  await page.waitForTimeout(200);
-  const msg = await page.evaluate(() => document.getElementById('st-progress').textContent);
-  assert.match(msg, /not in the current view/);
+  }, target);
+  await page.waitForFunction((t) => {
+    const lns = Array.from(document.querySelectorAll('.vrow .ln')).map((x) => Number(x.textContent));
+    return lns.includes(t);
+  }, target, { timeout: 15000 });
+  const drawer = await page.evaluate(() => document.getElementById('drawer').textContent);
+  assert.match(drawer, new RegExp('Line ' + target));
+  assert.strictEqual(await page.evaluate(() => (window.__errs || []).length), 0);
 });
 
 test('stress: clicking an instant search result jumps to the line', async () => {

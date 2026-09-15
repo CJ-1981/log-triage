@@ -130,6 +130,12 @@ header h1 span { color: var(--accent); }
 mark { background: var(--hl); color: var(--bg); border-radius: 2px; }
 #statusbar { display: flex; gap: 16px; padding: 4px 12px; font-size: 11.5px; color: var(--muted); background: var(--surface); border-top: 1px solid var(--border); flex-wrap: wrap; }
 #statusbar b { color: var(--fg); }
+#pager { display:flex; align-items:center; flex-wrap:wrap; gap:6px; padding:5px 10px; border-top:1px solid var(--border); background:var(--surface); }
+#pager input { width:80px; }
+#viewer-busy { display:none; position:absolute; top:8px; right:12px; z-index:35; padding:8px 12px; background:var(--surface); border:1px solid var(--accent); border-radius:6px; }
+#viewer-busy.active { display:flex; align-items:center; gap:8px; }
+#viewer-busy.active::before { content:''; width:14px; height:14px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
+.line-preview-note { color:var(--accent); }
 #drawer { display: none; position: absolute; right: 12px; bottom: 12px; width: 560px; max-width: 92%; max-height: 72%; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.35); font-family: var(--mono); font-size: 12px; z-index: 30; }
 #drawer.open { display: block; }
 #drawer h3 { font-size: 13px; margin-bottom: 8px; display:flex; justify-content: space-between; }
@@ -297,12 +303,18 @@ table.rules { min-width: 620px; }
         </div>
         <div id="viewer-wrap">
           <div id="viewer"><div id="vspacer"></div></div>
+          <div id="viewer-busy" role="status" aria-live="polite"><span id="viewer-busy-text"></span><button id="viewer-cancel">Cancel</button></div>
           <div id="drawer"></div>
+        </div>
+        <div id="pager" aria-label="Log pages">
+          <button id="page-first" title="First page">First</button><button id="page-prev" title="Previous page">Previous</button>
+          <label>Page <input id="page-number" type="text" inputmode="numeric" value="1" aria-label="Page number"></label><span id="page-count">of 1</span>
+          <button id="page-next" title="Next page">Next</button><button id="page-last" title="Last page">Last</button><span id="page-range"></span>
         </div>
         <div id="statusbar">
           <span>lines: <b id="st-total">0</b></span>
-          <span>kept: <b id="st-kept">0</b></span>
-          <span>shown: <b id="st-shown">0</b></span>
+          <span>indexed: <b id="st-kept">0</b></span>
+          <span>matching: <b id="st-shown">0</b></span>
           <span>selected: <b id="st-sel">0</b></span>
           <span>bookmarks: <b id="st-bm">0</b></span>
           <span id="st-trim" class="hidden"></span>
@@ -481,8 +493,8 @@ table.rules { min-width: 620px; }
           <p class="muted" id="config-status"></p>
           <h2>Kept-line cap</h2>
           <div class="rowline">
-            <label>lines kept in memory <input id="cfg-cap" type="text" value="100000" style="width:120px"></label>
-            <span class="muted">older lines beyond the cap are released to bound memory; applies from the next file load. Deep scan always covers whole files.</span>
+            <label>analysis sample lines per file <input id="cfg-cap" type="text" value="100000" style="width:120px"></label>
+            <span class="muted">Applies to analysis sampling on the next load. Viewing, filtering and paging cover every indexed line.</span>
           </div>
           <h2>Current setup</h2>
           <div class="card-row" id="config-cards"></div>
@@ -494,6 +506,7 @@ table.rules { min-width: 620px; }
 <script>
 window.__errs = [];
 window.onerror = function (m, s, l, c) { window.__errs.push(m + ' @ ' + l + ':' + c); };
+const LT_PAGING_WORKER = /*__LT_WORKER__*/;
 /*__LT_MODULES__*/
 </script>
 <script>

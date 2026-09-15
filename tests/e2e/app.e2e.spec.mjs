@@ -1010,9 +1010,11 @@ test('★ filter releases when bookmarks are cleared so logs show again', async 
   const starSel = await page.evaluate(() =>
     Array.from(document.querySelectorAll('.chip')).some((c) => c.textContent.includes('\u2605') && c.classList.contains('sel')));
   assert.ok(!starSel, '★ chip not left in selected state');
-  // loading the same file again keeps the viewer fully usable
+  // loading the same file again keeps the viewer fully usable (the file list
+  // renders at ingest start; wait for the worker index + query to commit)
   await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
   await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 2, null, { timeout: 8000 });
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '88', null, { timeout: 8000 });
   assert.strictEqual(await page.evaluate(() => document.getElementById('st-shown').textContent), '88', 'both copies fully visible after re-load');
 });
 
