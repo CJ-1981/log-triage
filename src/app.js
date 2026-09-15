@@ -64,7 +64,7 @@
   let pageStart = 0, viewToken = 0, pageToken = 0, busyToken = 0, loadSerial = Promise.resolve();
   function busy(message) { const token = ++busyToken; $('viewer-busy').classList.add('active'); $('viewer-busy-text').textContent = message; $('st-progress').textContent = message; $('viewer').setAttribute('aria-busy', 'true'); return token; }
   function busyMessage(token, message) { if (token === busyToken) { $('viewer-busy-text').textContent = message; $('st-progress').textContent = message; } }
-  function doneBusy(token) { if (token === busyToken) { $('viewer-busy').classList.remove('active'); $('st-progress').textContent = ''; $('viewer').setAttribute('aria-busy', 'false'); } }
+  function doneBusy(token) { if (token === busyToken) { $('viewer-busy').classList.remove('active'); $('viewer-busy-text').textContent = ''; $('st-progress').textContent = ''; $('viewer').setAttribute('aria-busy', 'false'); } }
   function pagingError(error) { flash(error.message || String(error)); }
   function updatePager() {
     const pages = Math.max(1, Math.ceil(filteredCount / PAGE_SIZE));
