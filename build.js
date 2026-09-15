@@ -28,6 +28,7 @@ const MODULE_ORDER = [
   'archive.js',
   'app-filecache.js',
   'app-paging.js',
+  'droptree.js',
   'app.js',
 ];
 

@@ -1150,6 +1150,41 @@ test('drag-and-drop loads the file exactly once', async () => {
   assert.strictEqual(files.items, 1, 'exactly one file entry, got: ' + files.names.join(', '));
 });
 
+test('folder drop ingests the contained files recursively', async () => {
+  await fresh();
+  await page.evaluate(() => {
+    // mock the FileSystemEntry tree Explorer exposes for a dropped folder
+    const fileEntry = (name, content) => ({
+      isFile: true, isDirectory: false,
+      file: (res) => res(new File([content], name, { type: 'text/plain' })),
+    });
+    const dirEntry = (name, children) => {
+      // readEntries returns <=100 per call and must be drained until empty
+      const batches = [children.slice(0, 2), children.slice(2), []];
+      return {
+        isFile: false, isDirectory: true, name,
+        createReader: () => ({ readEntries: (res) => res(batches.shift() || []) }),
+      };
+    };
+    const folder = dirEntry('logs', [
+      fileEntry('a.log', 'alpha 1\nalpha 2\n'),
+      fileEntry('b.log', 'beta 1\n'),
+      dirEntry('sub', [fileEntry('c.log', 'gamma 1\ngamma 2\ngamma 3\n')]),
+    ]);
+    const dt = { items: [{ kind: 'file', webkitGetAsEntry: () => folder }], files: [] };
+    const ev = new DragEvent('drop', { bubbles: true, cancelable: true });
+    Object.defineProperty(ev, 'dataTransfer', { value: dt });
+    document.getElementById('dropzone').dispatchEvent(ev);
+  });
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '6', null, { timeout: 8000 });
+  const files = await page.evaluate(() => ({
+    items: document.querySelectorAll('.file-item').length,
+    names: Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent),
+  }));
+  assert.deepStrictEqual(files.names.sort(), ['logs/a.log', 'logs/b.log', 'logs/sub/c.log'], 'folder-relative names kept');
+  assert.strictEqual(files.items, 3, 'three files, not the folder pseudo-entry');
+});
+
 test('search tab rg options have explanatory tooltips', async () => {
   await fresh();
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());

@@ -200,6 +200,19 @@
   }
 
   function loadFiles(fileList) { const pending = loadSerial.then(() => ingestFiles(fileList)); loadSerial = pending.catch(pagingError); return pending; }
+  async function handleDrop(dt) {
+    // dropped folders are walked recursively (src/droptree.js); the contained
+    // files keep their folder-relative path in the file list
+    if (!dt) return;
+    try {
+      const { files, skipped } = await LT.collectFromDataTransfer(dt, { maxFiles: 2000 });
+      if (skipped) flash(skipped + ' dropped item(s) skipped (file limit)');
+      if (files.length) loadFiles(files);
+      else if (!skipped) flash('nothing loadable in the drop');
+    } catch (err) {
+      flash('drop failed: ' + err.message);
+    }
+  }
   async function ingestFiles(fileList) {
     ingestAbort = false;
     // a fresh load shows everything: drop any stale per-file selection
@@ -1871,17 +1884,15 @@
     ;['dragover', 'dragenter'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.add('drag'); }));
     ;['dragleave', 'drop'].forEach((ev) => dz.addEventListener(ev, (e) => { e.preventDefault(); dz.classList.remove('drag'); }));
     dz.addEventListener('drop', (e) => {
-      // stopPropagation: the body-level drop handler would otherwise load the
-      // same files a second time (the dropzone is inside the body)
       e.stopPropagation();
       e.preventDefault();
       dz.classList.remove('drag');
-      if (e.dataTransfer.files.length) loadFiles(Array.from(e.dataTransfer.files));
+      handleDrop(e.dataTransfer);
     });
     document.body.addEventListener('dragover', (e) => e.preventDefault());
     document.body.addEventListener('drop', (e) => {
       e.preventDefault();
-      if (e.dataTransfer && e.dataTransfer.files.length) loadFiles(Array.from(e.dataTransfer.files));
+      handleDrop(e.dataTransfer);
     });
 
     // debounced: start matching only after typing pauses

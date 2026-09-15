@@ -10,7 +10,7 @@ Status: implemented (v1.0.0).
 
 Multiple log files are ingested sequentially by streaming, with progress, cancellation, and bounded memory.
 
-- AC-1: Files can be loaded via multi-file drag & drop and the file picker; pasted text is accepted as an in-memory file.
+- AC-1: Files can be loaded via multi-file drag & drop and the file picker; pasted text is accepted as an in-memory file. Dropped folders are traversed recursively (`webkitGetAsEntry`, readEntries drained until empty, depth-capped at 12 and file-capped at 2000): contained files are ingested under their folder-relative names, so identically named logs from different folders stay distinct in the file list, bookmarks and exports; plain file drops keep the direct path.
 - AC-2: Ingestion processes files sequentially with visible per-file and overall progress (worker indexing reports live "Indexing… N%"), and can be cancelled at any time.
 - AC-3: Every file is fully indexed by the paging worker into columnar typed arrays — Float64 line start offsets (exact past the 2 GB point), packed timestamp keys and level codes — so filtering and paging cover every line of multi-GB files without holding raw text in memory; pages of 500 records are materialized on demand from `File.slice` with a byte-bounded LRU cache, and a source that shrinks behind its index surfaces a readable "changed" error instead of garbage.
 - AC-4: The analysis tab works on a bounded per-file sample (configurable "analysis sample limit", default 100,000 lines) taken as the file head plus a ring of the newest lines, so issue scans on big files see both boot-time and end-of-file behavior; exact per-file line/level counters cover the whole file regardless of the sample, and `File` handles are retained for later deep scans.
