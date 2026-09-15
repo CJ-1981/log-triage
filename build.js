@@ -54,19 +54,30 @@ const TOKENS = [
   '/*__LT_DEMO__*/',
 ];
 
+const LF = (s) => String(s).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
 function buildHTML({ version, template, modules, cases, css, demoLog, worker }) {
   for (const tok of TOKENS) {
     if (!template.includes(tok)) {
       throw new Error('template is missing token ' + tok);
     }
   }
+  // LF-normalize every input first: a Windows checkout carries CRLF sources,
+  // and the worker JSON would otherwise embed \r escapes that a CI build (LF
+  // checkout) never produces — breaking the committed-bundle freshness check.
+  template = LF(template);
+  modules = modules.map(LF);
+  cases = LF(cases);
+  css = LF(css);
+  demoLog = LF(demoLog);
+  worker = LF(worker || '');
   // Function replacers are mandatory: string replacements would expand
   // $&, $`, $' sequences inside injected module sources.
   return template
     .replace(/__LT_VERSION__/g, () => String(version))
     .replace('/*__LT_CSS__*/', () => String(css || ''))
     .replace('/*__LT_MODULES__*/', () => modules.join('\n'))
-    .replace('/*__LT_WORKER__*/', () => JSON.stringify(worker || '').replace(/</g, '\\u003c'))
+    .replace('/*__LT_WORKER__*/', () => JSON.stringify(worker).replace(/</g, '\\u003c'))
     .replace('/*__LT_CASES__*/', () => String(cases || ''))
     .replace('/*__LT_DEMO__*/', () => JSON.stringify(String(demoLog)));
 }
