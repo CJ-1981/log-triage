@@ -10,10 +10,10 @@ Status: implemented (v1.0.0).
 
 Multiple log files are ingested sequentially by streaming, with progress, cancellation, and bounded memory.
 
-- AC-1: Files can be loaded via multi-file drag & drop and the file picker; pasted text is accepted as an in-memory file.
-- AC-2: Ingestion processes files sequentially with visible per-file and overall progress, and can be cancelled at any time.
-- AC-3: Reading uses `file.stream()` through a chunk buffer and newline splitter with an 8 MB valve; a 300 MB file ingests without exhausting memory.
-- AC-4: Only filtered "kept" lines are retained under a configurable global cap (default 100,000); exact per-file counters (total, kept, dropped) are reported, and `File` handles are retained for later deep scans.
+- AC-1: Files can be loaded via multi-file drag & drop and the file picker; pasted text is accepted as an in-memory file. Dropped folders are traversed recursively (`webkitGetAsEntry`, readEntries drained until empty, depth-capped at 12 and file-capped at 2000): contained files are ingested under their folder-relative names, so identically named logs from different folders stay distinct in the file list, bookmarks and exports; plain file drops keep the direct path.
+- AC-2: Ingestion processes files sequentially with visible per-file and overall progress (worker indexing reports live "Indexing… N%"), and can be cancelled at any time.
+- AC-3: Every file is fully indexed by the paging worker into columnar typed arrays — Float64 line start offsets (exact past the 2 GB point), packed timestamp keys and level codes — so filtering and paging cover every line of multi-GB files without holding raw text in memory; pages of 500 records are materialized on demand from `File.slice` with a byte-bounded LRU cache, and a source that shrinks behind its index surfaces a readable "changed" error instead of garbage.
+- AC-4: The analysis tab works on a bounded per-file sample (configurable "analysis sample limit", default 100,000 lines) taken as the file head plus a ring of the newest lines, so issue scans on big files see both boot-time and end-of-file behavior; exact per-file line/level counters cover the whole file regardless of the sample, and `File` handles are retained for later deep scans.
 
 ### FR-2 — Format autodetection and parsing
 
@@ -162,7 +162,7 @@ Status: implemented (v1.3.0).
 
 - AC-1: A go-to-line box in the viewer toolbar accepts a line number; Enter jumps to it.
 - AC-2: Clicking an instant-search result switches to the viewer and jumps to that line (selection + detail drawer).
-- AC-3: Jumping to a line released by the kept-line cap reports a clear explanatory status instead of failing silently.
+- AC-3: Jumps resolve through the paging worker and load the page containing the target — any indexed line is reachable, in files of any size (there is no kept-line cap anymore); a bookmark jump resolves the bookmark's file-identity key to the currently loaded file first, and a target that truly cannot be found (source changed on disk) reports a clear explanatory status instead of failing silently.
 
 ### FR-19 — Collapsible files panel
 
@@ -247,9 +247,10 @@ Log files often arrive packed, so the ingestion pipeline transparently looks ins
 
 Status: implemented (v1.0.0).
 
-- Streaming ingestion with bounded memory; a 300 MB file can be ingested.
-- The viewer remains smooth at 100k+ kept rows via virtualization.
-- Instant search and filter changes respond interactively (no full re-scan); heavy work stays off the render path.
+- Streaming indexing with bounded memory: raw text is never held for the whole file (columnar offsets only, ~17 bytes per line in the worker), so multi-hundred-MB files and multi-GB archives are practical on desktop; a conservative ceiling is ~4-8 GB per load set.
+- The viewer renders paged 500-row windows (bounded row count at any scroll position) over files with millions of lines; wrap mode estimates heights and measures only rendered rows.
+- Filtering and quick search run in the paging worker (cancellable, stale results discarded) and report live percentage progress; the UI thread only renders the active page.
+- Instant level/time/bookmark-only filters scan the in-worker columns without re-reading the file; text-bearing filters (quick/rules) re-stream from the source `File` with progress.
 
 ### NFR-2 — Privacy
 

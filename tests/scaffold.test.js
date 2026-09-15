@@ -9,6 +9,7 @@ test('buildHTML injects version, modules and demo log into template', () => {
     '<!doctype html><title>Log Triage __LT_VERSION__</title>',
     '<style>/*__LT_CSS__*/</style>',
     '<script>/*__LT_MODULES__*/</script>',
+    '<script>const W = /*__LT_WORKER__*/;</script>',
     '<script>/*__LT_CASES__*/</script>',
     '<script>const DEMO = /*__LT_DEMO__*/;</script>',
   ].join('\n');
@@ -19,11 +20,13 @@ test('buildHTML injects version, modules and demo log into template', () => {
     cases: 'CASE_A();',
     css: 'body{color:red}',
     demoLog: 'line "1"\nline 2',
+    worker: 'var a = 1;',
   });
   assert.ok(html.includes('Log Triage 1.2.3'), 'version token replaced');
   assert.ok(html.includes('moduleA();\nmoduleB();'), 'modules concatenated in order');
   assert.ok(html.includes('CASE_A();'), 'cases injected');
   assert.ok(html.includes('body{color:red}'), 'css injected');
+  assert.ok(html.includes('const W = "var a = 1;";'), 'worker source JSON-encoded');
   assert.ok(html.includes('"line \\"1\\"\\nline 2"'), 'demo log JSON-encoded');
 });
 
@@ -32,11 +35,13 @@ test('buildHTML throws on missing placeholders', () => {
 });
 
 test('buildHTML does not expand $ sequences in module sources (P0 regression)', () => {
-  const template = '__LT_VERSION__/*__LT_CSS__*//*__LT_MODULES__*//*__LT_CASES__*//*__LT_DEMO__*/';
+  const template = '__LT_VERSION__/*__LT_CSS__*//*__LT_MODULES__*//*__LT_WORKER__*//*__LT_CASES__*//*__LT_DEMO__*/';
   const tricky = "s.replace(/[.*+?^${}()|[\\]\\\\]/g, '\\\\$&');";
-  const html = buildHTML({ version: '1.0.0', template, modules: [tricky], css: '', cases: '', demoLog: '' });
+  const html = buildHTML({ version: '1.0.0', template, modules: [tricky], css: '', cases: '', demoLog: '', worker: '</script><script>alert(1)</script>' });
   assert.ok(html.includes("\\$&"), 'the $& escape sequence must survive verbatim');
   assert.ok(!html.includes('/*__LT_MODULES__*/'), 'token must be replaced');
+  assert.ok(!html.includes('</script><script>'), 'worker source must be < -escaped (no script breakout)');
+  assert.ok(html.includes('\\u003c/script>'), 'escaped worker source present');
 });
 
 test('fnv1a32 is deterministic, hex, and input-sensitive', () => {
@@ -72,14 +77,15 @@ test('timestampedName prefixes sortable timestamp', () => {
 // P0 regression guard (2026-09 review): pii-remote.js shipped missing from
 // MODULE_ORDER, so the built single-file app threw on the Providers tab while
 // every test layer stayed green. Every non-glue src module must be bundled.
-test('MODULE_ORDER bundles every non-glue src module', () => {
+test('MODULE_ORDER + WORKER_ORDER bundle every non-glue src module', () => {
   const fs = require('node:fs');
   const path = require('node:path');
-  const { MODULE_ORDER } = require('../build.js');
+  const { MODULE_ORDER, WORKER_ORDER } = require('../build.js');
   const GLUE = new Set(['app.js', 'app-filecache.js', '_src.js']);
   const onDisk = fs.readdirSync(path.join(__dirname, '..', 'src')).filter((f) => f.endsWith('.js'));
-  const missing = onDisk.filter((f) => !GLUE.has(f) && !MODULE_ORDER.includes(f));
-  assert.deepStrictEqual(missing, [], 'src modules missing from MODULE_ORDER: ' + missing.join(', '));
-  const unknown = MODULE_ORDER.filter((f) => !onDisk.includes(f));
-  assert.deepStrictEqual(unknown, [], 'MODULE_ORDER entries with no file: ' + unknown.join(', '));
+  const bundled = new Set([...MODULE_ORDER, ...WORKER_ORDER]);
+  const missing = onDisk.filter((f) => !GLUE.has(f) && !bundled.has(f));
+  assert.deepStrictEqual(missing, [], 'src modules missing from MODULE_ORDER/WORKER_ORDER: ' + missing.join(', '));
+  const unknown = [...MODULE_ORDER, ...WORKER_ORDER].filter((f) => !onDisk.includes(f));
+  assert.deepStrictEqual(unknown, [], 'bundle entries with no file: ' + unknown.join(', '));
 });

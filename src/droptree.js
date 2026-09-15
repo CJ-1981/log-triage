@@ -1,0 +1,60 @@
+/* Log Triage — droptree.js: folder-recursive drag & drop.
+ * A folder dropped from Explorer shows up in dataTransfer.files as a single
+ * zero-byte pseudo-file; the contained files are only reachable through
+ * DataTransferItem.webkitGetAsEntry(). This walks the entry tree (nested
+ * folders included) and hands plain File objects — renamed to carry their
+ * folder-relative path, so identically named logs from different folders
+ * stay distinct in the file list, bookmarks and exports. */
+(function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  async function collectFromDataTransfer(dt, opts) {
+    const maxFiles = (opts && opts.maxFiles) || 2000;
+    const maxDepth = (opts && opts.maxDepth) || 12;
+    const files = [];
+    let skipped = 0;
+
+    // entries must be captured synchronously during the drop event
+    const entries = [];
+    const items = dt.items ? Array.from(dt.items) : [];
+    for (const item of items) {
+      if (item.kind !== 'file') continue;
+      const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+      if (entry) entries.push(entry);
+    }
+    if (!entries.length) {
+      // plain file drop (no entries API / no folders involved)
+      return { files: Array.from(dt.files || []), skipped: 0 };
+    }
+
+    const asFile = (entry) => new Promise((res, rej) => entry.file(res, rej));
+    const pushFile = async (entry, prefix) => {
+      if (files.length >= maxFiles) { skipped++; return; }
+      const file = await asFile(entry);
+      if (!prefix) { files.push(file); return; }
+      try {
+        files.push(new File([file], prefix + file.name, { type: file.type }));
+      } catch (e) {
+        files.push(file); // File constructor unavailable: keep the bare file
+      }
+    };
+    const walk = async (entry, depth, prefix) => {
+      if (entry.isFile) {
+        await pushFile(entry, prefix);
+      } else if (entry.isDirectory) {
+        if (depth >= maxDepth) { skipped++; return; }
+        const nextPrefix = prefix + entry.name + '/';
+        const reader = entry.createReader();
+        for (;;) {
+          const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+          if (!batch.length) break;
+          for (const child of batch) await walk(child, depth + 1, nextPrefix);
+        }
+      }
+    };
+    for (const entry of entries) await walk(entry, 0, '');
+    return { files, skipped };
+  }
+
+  return { collectFromDataTransfer };
+}));

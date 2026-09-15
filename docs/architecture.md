@@ -16,7 +16,7 @@ flowchart TD
         B2["regex rules — include OR · exclude · highlight"]
         B1 --> B2
     end
-    STORE[("kept-line store — global cap 100k · exact counters per file")]
+    STORE[("paging worker — full-file columnar index (Float64 offsets) · 500-row pages on demand · analysis sample per file")]
     LV["level tally — observed levels drive chips dynamically"]
     MERGE["merged timeline — sorted by ts, file order tiebreak"]
     subgraph S3["3 · Masking engine — lazy"]
@@ -83,8 +83,11 @@ Implemented in G2–G8:
 | `src/pii-remote.js` | Presidio/LLM request builders, response parsers and offset mapping (FR-25); HTTP injected for testability. |
 | `src/filters.js` | Ordered include/exclude/highlight regex rules, case toggle, live hit counters. |
 | `src/levels.js` | Dynamic level tally and chip generation from observed levels; "—" handling for unparseable lines. |
-| `src/search.js` | Instant search over kept lines and ripgrep-style deep scan (`-F -i -w -v`, `-B/-A`, `-c/-l`), capped results. |
-| `src/store.js` | Kept-line store: streaming ingestion valve, global cap, per-file counters, retained `File` handles. |
+| `src/search.js` | Ripgrep-style search building blocks (`-F -i -w -v`, `-B/-A`, `-c/-l`), capped results; the matcher is shared by the instant tab and the paging worker. |
+| `src/paged.js` | Full-file log index: columnar typed arrays (Float64 byte offsets, packed timestamp keys, level codes), streaming line splitter with time-sliced yields and cancellation, on-demand 256-line pages over `File.slice` with a byte-bounded LRU cache, head+tail analysis sampling, and an async merge sort for timeline order. |
+| `src/app-paging-worker.js` | The dedicated paging worker: owns indexes, matching (filter engine + search), timeline ordering, page fetches, locate, and removal; emits throttled progress and honours per-request cancellation tokens. |
+| `src/app-paging.js` | Browser RPC client for the worker (Blob-URL Worker from the inlined worker bundle; progress-aware promises). |
+| `src/store.js` | Analysis-sample store and per-file counters (total/kept/bytes, level tally); the viewer scope is the worker index, not this store. |
 | `src/timeline.js` | Merged-timeline ordering (timestamp sort, file-order tiebreak) and the canvas histogram data. |
 | `src/selection.js` | Selection model: anchor / shift-range / ctrl-toggle / ctrl+A; masked copy with optional `file:lineNo:` prefixes. |
 | `src/bookmarks.js` | Bookmark storage keyed by file identity (name + size + first-line hash), notes, export/import, and `removeAll` behind the bookmarks panel Clear button. |
@@ -120,13 +123,13 @@ The shipped UI glue modules are `src/app.js` and `src/app-filecache.js` (Indexed
 
 ## Data flow
 
-1. **Ingestion (S1).** Each dropped file streams through `file.stream()` into a chunk buffer; a newline splitter with an 8 MB valve emits lines sequentially. Per file, the format is autodetected and each line is parsed into a normalized record. Unparseable lines are kept with level "—". Files whose name ends in `.gz/.tar/.tar.gz/.tgz/.zip/.7z` are instead decompressed recursively (`src/archive.js`, `src/format-7z.js`, `src/lzma.js`) and each contained entry re-enters ingestion under its archive-relative path; per-entry progress overlays the ingest and CRC digests verify payloads where the archive defines them.
-2. **Filtering (S2).** The global filter engine applies dynamic level chips (built from the observed-level tally), the inclusive time range, and ordered include/exclude/highlight regex rules. Only kept lines enter the store, subject to the global cap (default 100k), with exact per-file counters.
-3. **Store fan-out.** The kept-line store feeds the level tally (chips), the merged timeline (timestamp sort, file-order tiebreak — null-timestamp lines such as stack traces attach to the preceding parsed line), the masking engine, the selection model, instant search, and the analysis tab. Retained `File` handles feed the deep scan independently of the store's contents.
+1. **Ingestion (S1).** Each dropped file is handed to the paging worker, which streams it in 1 MB chunks through a newline splitter (time-sliced yields keep the UI responsive; cancellation aborts mid-stream) and builds a columnar index: Float64 line start offsets, packed timestamp keys, level codes, exact per-file level counts, plus a bounded head+tail analysis sample. Files whose name ends in `.gz/.tar/.tar.gz/.tgz/.zip/.7z` are instead decompressed recursively (`src/archive.js`, `src/format-7z.js`, `src/lzma.js`) and each contained entry re-enters ingestion under its archive-relative path; per-entry progress overlays the ingest and CRC digests verify payloads where the archive defines them.
+2. **Filtering (S2).** Filter and search specifications are posted to the worker, which evaluates the global filter engine (dynamic level chips, inclusive time range, ordered include/exclude/highlight regex rules, quick search) across every indexed line — rescanning the source bytes only when a text-bearing pattern is active, otherwise scanning the in-memory columns. Results are ids in timeline order (async merge sort, cancellable, stale queries discarded by token); the UI renders one 500-row page at a time from the worker's page cache.
+3. **Store fan-out.** The worker's per-file counters feed the level tally (chips) and the status bar; the analysis tab consumes the bounded head+tail sample. The masking engine, selection model, and exports operate on the rendered page plus the worker's filtered order; retained `File` handles feed the deep scan independently.
 4. **Masking (S3).** Masking is lazy: ordered built-in rules plus custom rules and any provider findings transform text only at render, copy, and export time; raw text is never rewritten in the store.
 5. **Search (SR).** Instant search queries the kept lines; deep scan re-streams from disk with ripgrep-style flags and merges results grouped by file as `file:lineNo:`.
 6. **UI (S4).** The virtualized viewer renders merged or per-file views with wrap, themes, severity tint, bookmarks, and selection; analysis renders level bars, histogram, clustered top messages, issue scan, PII census, and per-file comparison. The issue-scan rule editor is driven by `state.issueGroups` (five built-in keyword groups, editable and preset-saveable). Responsive breakpoints live in `template.html`: `@media` ≤ 760px (header wraps, tabs scroll, sidebar becomes an overlay drawer) and ≤ 1280px (privacy tagline hidden).
-7. **Export (5).** The exporter serializes sanitized kept/selected lines, search results, and bookmarks to `.log`/`.txt`/`.csv`/`.json` with timestamped filenames. The export tab can additionally group the extract by source file and re-pack it as `.zip`/`.tar`/`.tar.gz`/`.7z` (the `.7z` writer emits stored coders, preserving structure without LZMA encoding per ADR-0011).
+7. **Export (5).** The exporter serializes sanitized selected rows or the full filtered view (walked page by page from the worker with progress), search results, and bookmarks to `.log`/`.txt`/`.csv`/`.json` with timestamped filenames. The export tab can additionally group the extract by source file and re-pack it as `.zip`/`.tar`/`.tar.gz`/`.7z` (the `.7z` writer emits stored coders, preserving structure without LZMA encoding per ADR-0011).
 8. **Presets (6).** Named sets of filter rules, mask rules, and search flags persist to `localStorage` and round-trip as JSON, feeding the filter engine, masking engine, and search. App state persists to `localStorage` under `log_triage_state_v1`, which excludes transient filters (quick search, level chips, time range, search pattern, ★ only-bookmarks) per ADR-0007.
 9. **Self-test (7).** `?selftest` re-validates ingestion, masking, and search in the running build using the shared case suite.
 

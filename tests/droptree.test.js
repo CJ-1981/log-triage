@@ -1,0 +1,116 @@
+'use strict';
+const { test } = require('node:test');
+const assert = require('node:assert');
+const { collectFromDataTransfer } = require('../src/droptree.js');
+
+function mockFile(name, content, type) {
+  return new File([content], name, { type: type || 'text/plain' });
+}
+function fileEntry(file) {
+  return { isFile: true, isDirectory: false, file: (res, rej) => res(file) };
+}
+function dirEntry(name, children) {
+  // real FileSystemDirectoryReader.readEntries returns batches of <=100 and
+  // must be called repeatedly until it yields an empty array
+  const batches = [children.slice(0, 2), children.slice(2), []];
+  return {
+    isFile: false, isDirectory: true, name,
+    createReader: () => ({ readEntries: (res) => res(batches.shift() || []) }),
+  };
+}
+function dtWithItems(entries) {
+  return {
+    items: entries.map((e) => ({ kind: 'file', webkitGetAsEntry: () => e })),
+    files: [],
+  };
+}
+
+test('plain file drop without entries support falls back to dataTransfer.files', async () => {
+  const f1 = mockFile('a.log', 'one\n');
+  const dt = { items: [{ kind: 'file' }], files: [f1] };
+  const { files, skipped } = await collectFromDataTransfer(dt);
+  assert.deepStrictEqual(files, [f1]);
+  assert.strictEqual(skipped, 0);
+});
+
+test('folder drop loads every contained file with folder-relative names', async () => {
+  const dt = dtWithItems([
+    dirEntry('logs', [
+      fileEntry(mockFile('a.log', 'alpha\n')),
+      fileEntry(mockFile('b.log', 'beta\n')),
+      fileEntry(mockFile('c.log', 'gamma\n')),
+      dirEntry('sub', [fileEntry(mockFile('d.log', 'delta\n'))]),
+    ]),
+  ]);
+  const { files, skipped } = await collectFromDataTransfer(dt);
+  assert.deepStrictEqual(files.map((f) => f.name), ['logs/a.log', 'logs/b.log', 'logs/c.log', 'logs/sub/d.log']);
+  assert.strictEqual(files[3].size, 6);
+  assert.strictEqual(skipped, 0);
+});
+
+test('readEntries batching is drained until an empty batch', async () => {
+  // 5 children over batches of 2: 2 + 2 + 1 + empty
+  const kids = [];
+  for (let i = 0; i < 5; i++) kids.push(fileEntry(mockFile('f' + i + '.log', 'x\n')));
+  const dt = dtWithItems([dirEntry('d', kids)]);
+  const { files } = await collectFromDataTransfer(dt);
+  assert.strictEqual(files.length, 5);
+  assert.deepStrictEqual(files.map((f) => f.name), ['d/f0.log', 'd/f1.log', 'd/f2.log', 'd/f3.log', 'd/f4.log']);
+});
+
+test('mixed drop of loose files and folders is fully collected', async () => {
+  const loose = mockFile('top.log', 'top\n');
+  const dt = {
+    items: [
+      { kind: 'file', webkitGetAsEntry: () => fileEntry(loose) },
+      { kind: 'file', webkitGetAsEntry: () => dirEntry('dir', [fileEntry(mockFile('in.log', 'in\n'))]) },
+    ],
+    files: [loose],
+  };
+  const { files } = await collectFromDataTransfer(dt);
+  assert.deepStrictEqual(files.map((f) => f.name), ['top.log', 'dir/in.log']);
+});
+
+test('maxFiles guard skips items past the cap and reports the count', async () => {
+  const kids = [];
+  for (let i = 0; i < 8; i++) kids.push(fileEntry(mockFile('f' + i + '.log', 'x\n')));
+  const dt = dtWithItems([dirEntry('d', kids)]);
+  const { files, skipped } = await collectFromDataTransfer(dt, { maxFiles: 3 });
+  assert.strictEqual(files.length, 3);
+  assert.strictEqual(skipped, 5);
+});
+
+test('maxDepth guard stops descending past the limit', async () => {
+  const deep = fileEntry(mockFile('deep.log', 'd\n'));
+  let entry = dirEntry('l0', [deep]);
+  for (let i = 1; i <= 20; i++) entry = dirEntry('l' + i, [entry]);
+  const dt = dtWithItems([entry]);
+  const { files } = await collectFromDataTransfer(dt, { maxDepth: 5 });
+  assert.strictEqual(files.length, 0, 'file beyond depth cap not collected');
+});
+
+test('empty folder yields no files without failing', async () => {
+  const dt = dtWithItems([dirEntry('empty', [])]);
+  const { files, skipped } = await collectFromDataTransfer(dt);
+  assert.strictEqual(files.length, 0);
+  assert.strictEqual(skipped, 0);
+});
+
+test('falls back to the bare file when the File constructor is unavailable', async () => {
+  const theFile = mockFile('x.log', 'x\n'); // built before the constructor is patched away
+  const RealFile = globalThis.File;
+  globalThis.File = undefined;
+  try {
+    const dt = dtWithItems([dirEntry('d', [fileEntry(theFile)])]);
+    const { files } = await collectFromDataTransfer(dt);
+    assert.deepStrictEqual(files.map((f) => f.name), ['x.log'], 'bare file kept without prefix');
+  } finally {
+    globalThis.File = RealFile;
+  }
+});
+
+test('entry.file() failures reject so the caller can report them', async () => {
+  const bad = { isFile: true, isDirectory: false, file: (res, rej) => rej(new Error('gone')) };
+  const dt = dtWithItems([dirEntry('d', [bad])]);
+  await assert.rejects(() => collectFromDataTransfer(dt), /gone/);
+});
