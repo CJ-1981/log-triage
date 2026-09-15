@@ -1,6 +1,6 @@
 {
   "name": "log-triage",
-  "version": "1.31.1",
+  "version": "1.32.0",
   "description": "Single-file browser-based log triage: load huge log files, filter with regex rules, mask PII, analyze and export sanitized extracts — 100% client-side.",
   "private": true,
   "license": "MIT",

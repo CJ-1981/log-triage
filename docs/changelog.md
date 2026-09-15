@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.32.0 (2026-09-15)
+- Merge pull request #2 from CJ-1981/feature/paging-large-files
+- fix: normalize build inputs to LF for cross-platform reproducible bundle
+- feat: folder drag & drop ingests contained files recursively
+- fix: clear stale busy text when work completes
+- feat: full-file paging viewer for multi-GB logs
+
 ## 1.31.1 (2026-09-14)
 - fix: extract top-level .tar.gz/.tgz and gzip payloads misnamed .tar
 
