@@ -21,6 +21,7 @@
       proxy: { enabled: false, url: '' },
     },
     bookmarks: null, levels: [], rg: { fixed: false, word: false, invert: false, caseMode: 'smart', before: 0, after: 0 },
+    searchHistory: [], quickHistory: [],
   });
   let state = defaults();
 
@@ -382,6 +383,70 @@
   }
 
   /* ---------------- view model ---------------- */
+  /** Most-recent-first term history: case-insensitive dedupe, capped at 20. */
+  function pushTerm(list, term) {
+    const t = String(term || '').trim();
+    if (!t) return list;
+    return [t].concat(list.filter((x) => x.toLowerCase() !== t.toLowerCase())).slice(0, 20);
+  }
+  /** Dropdown of previously used terms under a text input. Picking an entry
+   * fills the input and fires its normal 'input' handling (debounced). */
+  function attachHistory(input, key) {
+    let dd = null, items = [], active = -1;
+    const close = () => {
+      if (dd) { dd.remove(); dd = null; }
+      items = []; active = -1;
+      input.removeEventListener('keydown', navKey, true);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+    const render = () => {
+      close();
+      const term = input.value.trim().toLowerCase();
+      items = (state[key] || []).filter((h) => !term || h.toLowerCase().includes(term)).slice(0, 12);
+      if (!items.length) return;
+      dd = document.createElement('div');
+      dd.className = 'history-dd';
+      dd.innerHTML = items.map((h, i) => '<div class="history-item' + (i === 0 ? ' active' : '') + '" data-i="' + i + '">' + esc(h) + '</div>').join('');
+      active = 0;
+      dd.addEventListener('mousedown', (e) => {
+        e.preventDefault(); // keep input focus: blur-close must not win
+        const item = e.target.closest('.history-item');
+        if (item) pick(Number(item.dataset.i));
+      });
+      document.body.appendChild(dd);
+      const r = input.getBoundingClientRect();
+      dd.style.left = r.left + 'px';
+      dd.style.top = (r.bottom + 2) + 'px';
+      dd.style.width = Math.max(r.width, 220) + 'px';
+      input.addEventListener('keydown', navKey, true);
+      window.addEventListener('scroll', close, true);
+      window.addEventListener('resize', close);
+    };
+    const pick = (i) => {
+      if (i < 0 || i >= items.length) return;
+      input.value = items[i];
+      close();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const navKey = (e) => {
+      if (!dd) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        active = e.key === 'ArrowDown' ? Math.min(items.length - 1, active + 1) : Math.max(0, active - 1);
+        Array.from(dd.children).forEach((c, i) => c.classList.toggle('active', i === active));
+      } else if (e.key === 'Enter' && active >= 0) {
+        e.preventDefault(); e.stopPropagation();
+        pick(active);
+      } else if (e.key === 'Escape') {
+        close();
+      }
+    };
+    input.addEventListener('focus', render);
+    input.addEventListener('input', render);
+    input.addEventListener('blur', () => setTimeout(close, 120));
+  }
+
   let view = [];            // current visible records
   let seqToIdx = new Map();
   let filteredCount = 0;
@@ -1924,10 +1989,13 @@
       state.quick = $('quick').value;
       if (quickTimer) clearTimeout(quickTimer);
       quickTimer = setTimeout(() => {
+        if (state.quick.trim()) state.quickHistory = pushTerm(state.quickHistory, state.quick);
         filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null; filter.compileQuick();
         saveState(); rebuildView();
       }, 200);
     };
+    attachHistory($('rg-pattern'), 'searchHistory');
+    attachHistory($('quick'), 'quickHistory');
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
@@ -1958,7 +2026,13 @@
       state.rgPattern = $('rg-pattern').value;
       $('search-progress').textContent = '…';
       if (rgTimer) clearTimeout(rgTimer);
-      rgTimer = setTimeout(runInstantSearch, 250);
+      rgTimer = setTimeout(() => {
+        if (state.rgPattern.trim()) {
+          state.searchHistory = pushTerm(state.searchHistory, state.rgPattern);
+          saveState();
+        }
+        runInstantSearch();
+      }, 250);
     };
     ;['rg-fixed', 'rg-word', 'rg-invert', 'rg-case'].forEach((id) => {
       $(id).onchange = () => {

@@ -136,6 +136,9 @@ mark { background: var(--hl); color: var(--bg); border-radius: 2px; }
 #viewer-busy.active { display:flex; align-items:center; gap:8px; }
 #viewer-busy.active::before { content:''; width:14px; height:14px; border:2px solid var(--border); border-top-color:var(--accent); border-radius:50%; animation:spin .8s linear infinite; }
 .line-preview-note { color:var(--accent); }
+.history-dd { position:fixed; z-index:60; background:var(--surface); border:1px solid var(--border); border-radius:6px; box-shadow:0 6px 20px rgba(0,0,0,.3); max-height:240px; overflow-y:auto; font-size:12px; }
+.history-item { padding:5px 10px; cursor:pointer; font-family:var(--mono); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; color:var(--fg); }
+.history-item:hover, .history-item.active { background:var(--selection); color:var(--accent); }
 #drawer { display: none; position: absolute; right: 12px; bottom: 12px; width: 560px; max-width: 92%; max-height: 72%; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.35); font-family: var(--mono); font-size: 12px; z-index: 30; }
 #drawer.open { display: block; }
 #drawer h3 { font-size: 13px; margin-bottom: 8px; display:flex; justify-content: space-between; }
