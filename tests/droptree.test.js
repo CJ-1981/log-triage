@@ -33,6 +33,73 @@ test('plain file drop without entries support falls back to dataTransfer.files',
   assert.strictEqual(skipped, 0);
 });
 
+test('plain file drops use dataTransfer.files even when entry.file() is poisoned', async () => {
+  // Chromium can open dataTransfer.files at >260-char paths, while the
+  // entries API's entry.file() throws NotFoundError there — the drop must
+  // keep using the working File objects for plain files
+  const working = mockFile('deep.log', 'readable via dt.files\n');
+  const poisoned = {
+    isFile: true, isDirectory: false, name: 'deep.log',
+    file: (res, rej) => rej(new Error('A requested file or directory could not be found at the time an operation was processed.')),
+  };
+  const dt = {
+    items: [{ kind: 'file', webkitGetAsEntry: () => poisoned }],
+    files: [working],
+  };
+  const { files, failed, skipped } = await collectFromDataTransfer(dt);
+  assert.deepStrictEqual(files, [working], 'dt.files File kept verbatim');
+  assert.strictEqual(failed.length, 0);
+  assert.strictEqual(skipped, 0);
+});
+
+test('falls back to entry.file() when dt.files has no slot for an item', async () => {
+  const f = mockFile('from-entry.log', 'entry read\n');
+  const dt = {
+    items: [{ kind: 'file', webkitGetAsEntry: () => fileEntry(f) }],
+    files: [], // synthetic drops may carry no files list at all
+  };
+  const { files, failed } = await collectFromDataTransfer(dt);
+  assert.deepStrictEqual(files.map((x) => x.name), ['from-entry.log']);
+  assert.strictEqual(failed.length, 0);
+});
+
+test('entry.file() rejection in the fallback lands in failed[]', async () => {
+  const dt = {
+    items: [{ kind: 'file', webkitGetAsEntry: () => ({ isFile: true, isDirectory: false, file: (res, rej) => rej(new Error('NotFoundError: too deep')) }) }],
+    files: [],
+  };
+  const { files, failed } = await collectFromDataTransfer(dt);
+  assert.strictEqual(files.length, 0);
+  assert.strictEqual(failed.length, 1);
+  assert.match(failed[0].error, /too deep/);
+});
+
+test('an item the browser exposes neither as file nor entry is reported', async () => {
+  const dt = { items: [{ kind: 'file' }], files: [] };
+  const { files, failed } = await collectFromDataTransfer(dt);
+  assert.strictEqual(files.length, 0);
+  assert.strictEqual(failed.length, 1);
+  assert.match(failed[0].error, /did not expose/);
+});
+
+test('in a mixed drop the loose file comes from dataTransfer.files slot alignment', async () => {
+  const working = mockFile('loose.log', 'loose\n');
+  const poisoned = {
+    isFile: true, isDirectory: false, name: 'loose.log',
+    file: (res, rej) => rej(new Error('NotFoundError')),
+  };
+  const dt = {
+    items: [
+      { kind: 'file', webkitGetAsEntry: () => dirEntry('dir', [fileEntry(mockFile('in.log', 'in\n'))]) },
+      { kind: 'file', webkitGetAsEntry: () => poisoned },
+    ],
+    files: [mockFile('folder-pseudo-entry', ''), working], // slot 0 = folder pseudo, slot 1 = the file
+  };
+  const { files, failed } = await collectFromDataTransfer(dt);
+  assert.deepStrictEqual(files.map((f) => f.name), ['loose.log', 'dir/in.log'], 'folder walked, loose file from slot 1');
+  assert.strictEqual(failed.length, 0);
+});
+
 test('folder drop loads every contained file with folder-relative names', async () => {
   const dt = dtWithItems([
     dirEntry('logs', [
