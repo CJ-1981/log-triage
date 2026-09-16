@@ -21,7 +21,7 @@
       proxy: { enabled: false, url: '' },
     },
     bookmarks: null, levels: [], rg: { fixed: false, word: false, invert: false, caseMode: 'smart', before: 0, after: 0 },
-    searchHistory: [], quickHistory: [],
+    srWrapOn: true, searchHistory: [], quickHistory: [],
   });
   let state = defaults();
 
@@ -1662,6 +1662,15 @@
     viewer().classList.toggle('nowrap', !on);
     invalidateHeights(); saveState(); renderRows();
   }
+  function setSearchWrap(on) {
+    // the Search tab keeps its own wrap preference, independent of the viewer's
+    state.srWrapOn = on;
+    $('btn-sr-wrap').textContent = 'Wrap: ' + (on ? 'ON' : 'OFF');
+    $('btn-sr-wrap').classList.toggle('on', on);
+    const box = $('search-results');
+    if (box) box.classList.toggle('nowrap', !on);
+    saveState();
+  }
   function setFollow(on) {
     state.follow = on;
     $('btn-follow').textContent = 'Follow: ' + (on ? 'ON' : 'OFF');
@@ -1996,6 +2005,7 @@
     };
     attachHistory($('rg-pattern'), 'searchHistory');
     attachHistory($('quick'), 'quickHistory');
+    $('btn-sr-wrap').onclick = () => setSearchWrap(!state.srWrapOn);
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
@@ -2135,6 +2145,7 @@
     setMask(state.maskOn);
     setWrap(state.wrapOn);
     setFollow(state.follow);
+    setSearchWrap(state.srWrapOn !== false);
     syncMasksFromState(); syncRgFromState();
     renderChips(); renderRules(); renderPresets(); renderFiles(); renderBookmarks(); updateStatus();
     bindViewer();

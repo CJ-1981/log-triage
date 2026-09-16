@@ -205,6 +205,8 @@ details.sr-group > summary.sr-file .count-pill { margin-left: 8px; }
 .sr-row .srt { flex: none; min-width: 132px; color: var(--muted); padding-right: 10px; }
 .sr-row .srx { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; word-break: break-all; }
 .sr-row.hit { background: var(--selection); }
+#search-results.nowrap .sr-row { white-space: pre; width: max-content; }
+#search-results.nowrap .sr-row .srx { flex: none; }
 #search-progress { padding: 4px 10px; color: var(--muted); font-size: 12px; }
 
 /* masks */
@@ -343,6 +345,7 @@ table.rules { min-width: 620px; }
             -B<input type="text" id="rg-before" value="0" style="width:36px"></label>
           <label title="Context after (-A): deep scan also shows this many lines AFTER each match — 1 line = 0">
             -A<input type="text" id="rg-after" value="0" style="width:36px"></label>
+          <button id="btn-sr-wrap" title="Wrap long matched lines within the panel (OFF: one scrollable line per match)">Wrap: ON</button>
           <button id="btn-deepscan" class="primary" title="Scan the complete indexed files from disk with context">Deep scan files</button>
           <button id="btn-deep-cancel" class="hidden" title="stop the running deep scan">✕ Cancel</button>
           <button id="btn-rg-collapse" title="collapse all file groups">Collapse all</button>
