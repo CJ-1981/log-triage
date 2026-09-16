@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.32.2 (2026-09-16)
+- Merge pull request #8 from CJ-1981/fix/plain-file-long-path-drop
+- fix: plain-file drop keeps using dataTransfer.files (long-path safe)
+
 ## 1.32.1 (2026-09-16)
 - Merge pull request #7 from CJ-1981/fix/long-path-drop-reporting
 - fix: folder drop reports unreadable entries instead of loading nothing
