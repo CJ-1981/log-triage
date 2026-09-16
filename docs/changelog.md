@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.33.0 (2026-09-16)
+- Merge pull request #9 from CJ-1981/feat/search-history-dropdown
+- feat: search history dropdown for the rg pattern and quick filter
+
 ## 1.32.2 (2026-09-16)
 - Merge pull request #8 from CJ-1981/fix/plain-file-long-path-drop
 - fix: plain-file drop keeps using dataTransfer.files (long-path safe)
