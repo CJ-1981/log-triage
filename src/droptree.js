@@ -12,6 +12,7 @@
     const maxFiles = (opts && opts.maxFiles) || 2000;
     const maxDepth = (opts && opts.maxDepth) || 12;
     const files = [];
+    const failed = [];         // { name, error, pathLen } — unreadable entries
     let skipped = 0;
 
     // entries must be captured synchronously during the drop event
@@ -24,13 +25,22 @@
     }
     if (!entries.length) {
       // plain file drop (no entries API / no folders involved)
-      return { files: Array.from(dt.files || []), skipped: 0 };
+      return { files: Array.from(dt.files || []), failed, skipped: 0 };
     }
 
+    const pathLen = (entry) => (entry.fullPath ? String(entry.fullPath).length : 0);
     const asFile = (entry) => new Promise((res, rej) => entry.file(res, rej));
     const pushFile = async (entry, prefix) => {
       if (files.length >= maxFiles) { skipped++; return; }
-      const file = await asFile(entry);
+      let file;
+      try {
+        file = await asFile(entry);
+      } catch (err) {
+        // Chromium cannot resolve file entries beyond the Windows 260-char
+        // MAX_PATH (NotFoundError) — isolate the failure, keep the rest
+        failed.push({ name: prefix + entry.name, error: err.message, pathLen: pathLen(entry) });
+        return;
+      }
       if (!prefix) { files.push(file); return; }
       try {
         files.push(new File([file], prefix + file.name, { type: file.type }));
@@ -41,19 +51,32 @@
     const walk = async (entry, depth, prefix) => {
       if (entry.isFile) {
         await pushFile(entry, prefix);
-      } else if (entry.isDirectory) {
-        if (depth >= maxDepth) { skipped++; return; }
-        const nextPrefix = prefix + entry.name + '/';
-        const reader = entry.createReader();
-        for (;;) {
-          const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
-          if (!batch.length) break;
-          for (const child of batch) await walk(child, depth + 1, nextPrefix);
+        return;
+      }
+      if (!entry.isDirectory) return;
+      if (depth >= maxDepth) { skipped++; return; }
+      const nextPrefix = prefix + entry.name + '/';
+      const reader = entry.createReader();
+      for (;;) {
+        let batch;
+        try {
+          batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+        } catch (err) {
+          failed.push({ name: nextPrefix, error: err.message, pathLen: pathLen(entry) });
+          return;
         }
+        if (!batch.length) break;
+        for (const child of batch) await walk(child, depth + 1, nextPrefix);
       }
     };
-    for (const entry of entries) await walk(entry, 0, '');
-    return { files, skipped };
+    for (const entry of entries) {
+      try {
+        await walk(entry, 0, '');
+      } catch (err) {
+        failed.push({ name: entry.name, error: err.message, pathLen: pathLen(entry) });
+      }
+    }
+    return { files, failed, skipped };
   }
 
   return { collectFromDataTransfer };

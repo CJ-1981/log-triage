@@ -202,13 +202,27 @@
   function loadFiles(fileList) { const pending = loadSerial.then(() => ingestFiles(fileList)); loadSerial = pending.catch(pagingError); return pending; }
   async function handleDrop(dt) {
     // dropped folders are walked recursively (src/droptree.js); the contained
-    // files keep their folder-relative path in the file list
+    // files keep their folder-relative path in the file list. Unreadable
+    // entries (typically Windows >260-char paths, which Chromium's entry
+    // resolution cannot open even with LongPathsEnabled) are isolated and
+    // reported instead of aborting the whole drop.
     if (!dt) return;
     try {
-      const { files, skipped } = await LT.collectFromDataTransfer(dt, { maxFiles: 2000 });
-      if (skipped) flash(skipped + ' dropped item(s) skipped (file limit)');
+      const { files, failed, skipped } = await LT.collectFromDataTransfer(dt, { maxFiles: 2000 });
       if (files.length) loadFiles(files);
-      else if (!skipped) flash('nothing loadable in the drop');
+      const notes = [];
+      if (skipped) notes.push(skipped + ' dropped item(s) skipped (file limit)');
+      if (failed.length) {
+        const shown = failed.slice(0, 3).map((f) => f.name.split('/').pop() || f.name);
+        let why = failed[0].error;
+        if (failed.some((f) => (f.pathLen || 0) > 250) || /could not be found|not found/i.test(failed.map((f) => f.error).join(' '))) {
+          why = 'path likely exceeds the Windows 260-character limit — copy the folder to a short path (e.g. C:\\Temp\\logs) and drop it again';
+        }
+        notes.push(failed.length + ' file(s) could not be read (' + shown.join(', ') + (failed.length > 3 ? ', …' : '') + '): ' + why);
+      }
+      if (notes.length) {
+        flash(notes.join(' · '), failed.length ? 15000 : 4000);
+      } else if (!files.length) flash('nothing loadable in the drop');
     } catch (err) {
       flash('drop failed: ' + err.message);
     }
@@ -1587,9 +1601,9 @@
     saveState(); rebuildView();
   }
 
-  function flash(msg) {
+  function flash(msg, ms) {
     $('st-progress').textContent = msg;
-    setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
+    setTimeout(() => { $('st-progress').textContent = ''; }, ms || 4000);
   }
   function syncRgFromState() {
     $('rg-fixed').checked = state.rg.fixed; $('rg-word').checked = state.rg.word;

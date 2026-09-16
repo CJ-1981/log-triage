@@ -109,8 +109,26 @@ test('falls back to the bare file when the File constructor is unavailable', asy
   }
 });
 
-test('entry.file() failures reject so the caller can report them', async () => {
-  const bad = { isFile: true, isDirectory: false, file: (res, rej) => rej(new Error('gone')) };
-  const dt = dtWithItems([dirEntry('d', [bad])]);
-  await assert.rejects(() => collectFromDataTransfer(dt), /gone/);
+test('an unreadable file is isolated into failed[] without killing the batch', async () => {
+  const longPath = 'C:\\\\' + 'deep\\'.repeat(50) + 'gone.log';
+  const bad = { isFile: true, isDirectory: false, fullPath: longPath, file: (res, rej) => rej(new Error('A requested file or directory could not be found at the time an operation was processed.')) };
+  const dt = dtWithItems([dirEntry('d', [bad, fileEntry(mockFile('ok.log', 'fine\n'))])]);
+  const { files, failed, skipped } = await collectFromDataTransfer(dt);
+  assert.deepStrictEqual(files.map((f) => f.name), ['d/ok.log'], 'readable sibling still collected');
+  assert.strictEqual(failed.length, 1);
+  assert.match(failed[0].error, /could not be found/);
+  assert.ok(failed[0].pathLen > 250, 'fullPath length reported for the long-path hint');
+  assert.strictEqual(skipped, 0);
+});
+
+test('readEntries failure on a subfolder is reported without losing other files', async () => {
+  const brokenDir = {
+    isFile: false, isDirectory: true, name: 'broken',
+    createReader: () => ({ readEntries: (res, rej) => rej(new Error('access denied')) }),
+  };
+  const dt = dtWithItems([dirEntry('root', [brokenDir, fileEntry(mockFile('good.log', 'g\n'))])]);
+  const { files, failed } = await collectFromDataTransfer(dt);
+  assert.deepStrictEqual(files.map((f) => f.name), ['root/good.log']);
+  assert.strictEqual(failed.length, 1);
+  assert.match(failed[0].error, /access denied/);
 });

@@ -3446,6 +3446,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     const maxFiles = (opts && opts.maxFiles) || 2000;
     const maxDepth = (opts && opts.maxDepth) || 12;
     const files = [];
+    const failed = [];         // { name, error, pathLen } — unreadable entries
     let skipped = 0;
 
     // entries must be captured synchronously during the drop event
@@ -3458,13 +3459,22 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     }
     if (!entries.length) {
       // plain file drop (no entries API / no folders involved)
-      return { files: Array.from(dt.files || []), skipped: 0 };
+      return { files: Array.from(dt.files || []), failed, skipped: 0 };
     }
 
+    const pathLen = (entry) => (entry.fullPath ? String(entry.fullPath).length : 0);
     const asFile = (entry) => new Promise((res, rej) => entry.file(res, rej));
     const pushFile = async (entry, prefix) => {
       if (files.length >= maxFiles) { skipped++; return; }
-      const file = await asFile(entry);
+      let file;
+      try {
+        file = await asFile(entry);
+      } catch (err) {
+        // Chromium cannot resolve file entries beyond the Windows 260-char
+        // MAX_PATH (NotFoundError) — isolate the failure, keep the rest
+        failed.push({ name: prefix + entry.name, error: err.message, pathLen: pathLen(entry) });
+        return;
+      }
       if (!prefix) { files.push(file); return; }
       try {
         files.push(new File([file], prefix + file.name, { type: file.type }));
@@ -3475,19 +3485,32 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     const walk = async (entry, depth, prefix) => {
       if (entry.isFile) {
         await pushFile(entry, prefix);
-      } else if (entry.isDirectory) {
-        if (depth >= maxDepth) { skipped++; return; }
-        const nextPrefix = prefix + entry.name + '/';
-        const reader = entry.createReader();
-        for (;;) {
-          const batch = await new Promise((res, rej) => reader.readEntries(res, rej));
-          if (!batch.length) break;
-          for (const child of batch) await walk(child, depth + 1, nextPrefix);
+        return;
+      }
+      if (!entry.isDirectory) return;
+      if (depth >= maxDepth) { skipped++; return; }
+      const nextPrefix = prefix + entry.name + '/';
+      const reader = entry.createReader();
+      for (;;) {
+        let batch;
+        try {
+          batch = await new Promise((res, rej) => reader.readEntries(res, rej));
+        } catch (err) {
+          failed.push({ name: nextPrefix, error: err.message, pathLen: pathLen(entry) });
+          return;
         }
+        if (!batch.length) break;
+        for (const child of batch) await walk(child, depth + 1, nextPrefix);
       }
     };
-    for (const entry of entries) await walk(entry, 0, '');
-    return { files, skipped };
+    for (const entry of entries) {
+      try {
+        await walk(entry, 0, '');
+      } catch (err) {
+        failed.push({ name: entry.name, error: err.message, pathLen: pathLen(entry) });
+      }
+    }
+    return { files, failed, skipped };
   }
 
   return { collectFromDataTransfer };
@@ -3697,13 +3720,27 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   function loadFiles(fileList) { const pending = loadSerial.then(() => ingestFiles(fileList)); loadSerial = pending.catch(pagingError); return pending; }
   async function handleDrop(dt) {
     // dropped folders are walked recursively (src/droptree.js); the contained
-    // files keep their folder-relative path in the file list
+    // files keep their folder-relative path in the file list. Unreadable
+    // entries (typically Windows >260-char paths, which Chromium's entry
+    // resolution cannot open even with LongPathsEnabled) are isolated and
+    // reported instead of aborting the whole drop.
     if (!dt) return;
     try {
-      const { files, skipped } = await LT.collectFromDataTransfer(dt, { maxFiles: 2000 });
-      if (skipped) flash(skipped + ' dropped item(s) skipped (file limit)');
+      const { files, failed, skipped } = await LT.collectFromDataTransfer(dt, { maxFiles: 2000 });
       if (files.length) loadFiles(files);
-      else if (!skipped) flash('nothing loadable in the drop');
+      const notes = [];
+      if (skipped) notes.push(skipped + ' dropped item(s) skipped (file limit)');
+      if (failed.length) {
+        const shown = failed.slice(0, 3).map((f) => f.name.split('/').pop() || f.name);
+        let why = failed[0].error;
+        if (failed.some((f) => (f.pathLen || 0) > 250) || /could not be found|not found/i.test(failed.map((f) => f.error).join(' '))) {
+          why = 'path likely exceeds the Windows 260-character limit — copy the folder to a short path (e.g. C:\\Temp\\logs) and drop it again';
+        }
+        notes.push(failed.length + ' file(s) could not be read (' + shown.join(', ') + (failed.length > 3 ? ', …' : '') + '): ' + why);
+      }
+      if (notes.length) {
+        flash(notes.join(' · '), failed.length ? 15000 : 4000);
+      } else if (!files.length) flash('nothing loadable in the drop');
     } catch (err) {
       flash('drop failed: ' + err.message);
     }
@@ -5082,9 +5119,9 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     saveState(); rebuildView();
   }
 
-  function flash(msg) {
+  function flash(msg, ms) {
     $('st-progress').textContent = msg;
-    setTimeout(() => { $('st-progress').textContent = ''; }, 4000);
+    setTimeout(() => { $('st-progress').textContent = ''; }, ms || 4000);
   }
   function syncRgFromState() {
     $('rg-fixed').checked = state.rg.fixed; $('rg-word').checked = state.rg.word;
