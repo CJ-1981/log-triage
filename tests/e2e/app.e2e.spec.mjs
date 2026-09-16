@@ -1133,6 +1133,41 @@ test('search status discloses the analysis-sample scope and full-file filtering'
   assert.match(status, /viewer filtering searches complete indexed files/, 'full-file scope disclosed: ' + status);
 });
 
+test('search history dropdown persists across reload and re-runs picked terms', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  // record a quick-filter term and an rg search term
+  await page.fill('#quick', 'heartbeat');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
+  await page.fill('#rg-pattern', 'VHal');
+  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 15000 });
+
+  // reload: histories persist (the filters themselves stay transient)
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 15000 });
+
+  // quick history dropdown: focus lists the recorded term; picking re-runs it
+  await page.evaluate(() => document.getElementById('quick').focus());
+  await page.waitForFunction(() => document.querySelectorAll('.history-dd .history-item').length > 0, null, { timeout: 8000 });
+  const quickItems = await page.evaluate(() => Array.from(document.querySelectorAll('.history-dd .history-item')).map((e) => e.textContent));
+  assert.ok(quickItems.includes('heartbeat'), 'quick history lists heartbeat, got: ' + quickItems.join(', '));
+  await page.click('.history-dd .history-item');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, { timeout: 8000 });
+  assert.strictEqual(await page.inputValue('#quick'), 'heartbeat', 'picked term filled the input');
+
+  // rg history dropdown as well
+  await page.evaluate(() => {
+    document.querySelector('#tabs button[data-tab=search]').click();
+    document.getElementById('rg-pattern').focus();
+  });
+  await page.waitForFunction(() => document.querySelectorAll('.history-dd .history-item').length > 0, null, { timeout: 8000 });
+  const rgItems = await page.evaluate(() => Array.from(document.querySelectorAll('.history-dd .history-item')).map((e) => e.textContent));
+  assert.ok(rgItems.includes('VHal'), 'rg history lists VHal, got: ' + rgItems.join(', '));
+});
+
 test('drag-and-drop loads the file exactly once', async () => {
   await fresh();
   await page.evaluate(() => {
