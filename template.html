@@ -87,6 +87,9 @@ header h1 span { color: var(--accent); }
 .badge.fmt { color: var(--accent); border-color: var(--accent); }
 .badge.err-b { color: var(--err); border-color: var(--err); }
 #dropzone { margin: 10px; border: 2px dashed var(--border); border-radius: 8px; padding: 14px 8px; text-align: center; color: var(--muted); font-size: 12.5px; }
+.file-tools { display: flex; gap: 4px; padding: 6px 10px 2px; }
+.file-tools input { flex: 1; min-width: 0; font-size: 12px; padding: 3px 6px; }
+.file-tools select { font-size: 12px; max-width: 108px; }
 #dropzone.drag { border-color: var(--accent); color: var(--accent); }
 #archive-progress { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 100; }
 #archive-progress.visible { display: flex; }
@@ -282,6 +285,18 @@ table.rules { min-width: 620px; }
     <aside id="sidebar">
       <div id="files-section" class="side-section">
         <div class="side-head">Files <button id="clear-files" title="remove all files">Clear</button></div>
+        <div class="file-tools">
+          <input type="search" id="file-filter" placeholder="filter by name…" title="show only files whose name contains this text">
+          <select id="file-sort" title="sort the file list">
+            <option value="default">load order</option>
+            <option value="name">name A→Z</option>
+            <option value="name-desc">name Z→A</option>
+            <option value="size-desc">size ↓</option>
+            <option value="size">size ↑</option>
+            <option value="lines-desc">lines ↓</option>
+            <option value="lines">lines ↑</option>
+          </select>
+        </div>
         <div id="file-list"></div>
         <div id="dropzone">drop log files here<br>or</div>
         <div id="side-actions">

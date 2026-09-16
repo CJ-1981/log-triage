@@ -302,11 +302,28 @@
     renderFiles();
   }
 
+  let fileFilterText = '';  // transient: name filter for the files panel
+  let fileSortMode = 'default'; // transient: default | name | name-desc | size(-desc) | lines(-desc)
   function renderFiles() {
     const el = $('file-list');
     el.innerHTML = '';
-    for (const f of files) {
-      const st = store.stats().files[f.id] || { total: 0, kept: 0 };
+    const q = fileFilterText.trim().toLowerCase();
+    const matchQ = (name) => !q || String(name).toLowerCase().includes(q);
+    const stats = store.stats().files;
+    const cmp = (a, b) => {
+      switch (fileSortMode) {
+        case 'name': return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
+        case 'name-desc': return b.name.toLowerCase().localeCompare(a.name.toLowerCase());
+        case 'size': return (a.size || 0) - (b.size || 0);
+        case 'size-desc': return (b.size || 0) - (a.size || 0);
+        case 'lines': return ((stats[a.id] || {}).total || 0) - ((stats[b.id] || {}).total || 0);
+        case 'lines-desc': return ((stats[b.id] || {}).total || 0) - ((stats[a.id] || {}).total || 0);
+        default: return 0;
+      }
+    };
+    const live = files.filter((f) => matchQ(f.name)).sort(cmp);
+    for (const f of live) {
+      const st = stats[f.id] || { total: 0, kept: 0 };
       const div = document.createElement('div');
       div.className = 'file-item' + (state.activeFile === f.id ? ' active' : '');
       div.innerHTML = '<button class="fx" data-remove="' + esc(f.id) + '" title="remove this file">✕</button>' +
@@ -328,8 +345,11 @@
       el.appendChild(div);
     }
     // cached entries from previous sessions
-    for (const c of cacheEntries) {
-      if (files.some((f) => f.name === c.name && f.size === c.size)) continue; // superseded by a live load
+    const cached = cacheEntries
+      .filter((c) => !files.some((f) => f.name === c.name && f.size === c.size)) // superseded by a live load
+      .filter((c) => matchQ(c.name))
+      .sort(cmp);
+    for (const c of cached) {
       const div = document.createElement('div');
       const fx = document.createElement('button');
       fx.className = 'fx'; fx.textContent = '✕'; fx.title = 'remove from cache';
@@ -350,6 +370,9 @@
           '<span>' + LT.fmtBytes(c.size) + '</span></div>');
       }
       el.appendChild(div);
+    }
+    if (!live.length && !cached.length && q) {
+      el.insertAdjacentHTML('beforeend', '<div class="muted" style="padding:8px 10px">no files match the filter</div>');
     }
   }
 
@@ -1969,8 +1992,11 @@
       if (!t.trim()) return;
       loadFiles([new File([t], 'pasted.log', { type: 'text/plain' })]);
     };
+    $('file-filter').oninput = (e) => { fileFilterText = e.target.value; renderFiles(); };
+    $('file-sort').onchange = (e) => { fileSortMode = e.target.value; renderFiles(); };
     $('clear-files').onclick = async () => {
       ++viewToken; ++pageToken; ingestAbort = true;
+      fileFilterText = ''; $('file-filter').value = '';
       await paging.request('cancel');
       for (const f of files) await paging.request('remove', { fileId: f.id });
       files.slice().forEach((f) => store.removeFile(f.id));
