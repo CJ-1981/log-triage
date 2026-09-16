@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.34.0 (2026-09-16)
+- Merge pull request #11 from CJ-1981/fix/search-row-overflow
+- test: wait for the async go-to-line jump instead of a fixed delay
+- feat: own Wrap toggle for the Search tab results
+
 ## 1.33.1 (2026-09-16)
 - Merge pull request #10 from CJ-1981/fix/search-row-overflow
 - fix: search results wrap long matched lines instead of overflowing
