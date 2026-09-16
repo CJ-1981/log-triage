@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.33.1 (2026-09-16)
+- Merge pull request #10 from CJ-1981/fix/search-row-overflow
+- fix: search results wrap long matched lines instead of overflowing
+
 ## 1.33.0 (2026-09-16)
 - Merge pull request #9 from CJ-1981/feat/search-history-dropdown
 - feat: search history dropdown for the rg pattern and quick filter
