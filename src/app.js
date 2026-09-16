@@ -885,6 +885,11 @@
       esc(file) + ' <span class="count-pill">' + matchCount + '</span></summary>' + rowsHtml + '</details>';
   }
 
+  /** Uniform full-width bands: row/groups live inside a max-content inner
+   * wrapper so every background band stretches to the widest line (Wrap: OFF)
+   * or the panel width (Wrap: ON) — never to each line's own text length. */
+  function srInner(html) { return '<div class="sr-inner">' + html + '</div>'; }
+
   function renderSearchRows(res, mode, ms) {
     const out = $('search-results');
     // instant search runs over the analysis sample (bounded); the viewer's
@@ -908,8 +913,8 @@
       const name = nameOf(rec.fileId);
       (byFile[name] = byFile[name] || []).push({ lineNo: rec.lineNo, ts: rec.ts, text: displayText(rec) });
     }
-    out.innerHTML = Object.keys(byFile).map((f) =>
-      groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true)).join(''), byFile[f].length)).join('') ||
+    out.innerHTML = srInner(Object.keys(byFile).map((f) =>
+      groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true)).join(''), byFile[f].length)).join('')) ||
       '<div class="muted" style="padding:20px">no matches</div>';
   }
 
@@ -987,10 +992,10 @@
       out.innerHTML = Object.keys(byFile).map((f) => '<div class="sr-file">' + esc(f) + '</div>').join('');
       return;
     }
-    out.innerHTML = Object.keys(byFile).map((f) => {
+    out.innerHTML = srInner(Object.keys(byFile).map((f) => {
       const matches = byFile[f].filter((r) => r.isMatch).length;
       return groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch)).join(''), matches);
-    }).join('') || '<div class="muted" style="padding:20px">no matches</div>';
+    }).join('')) || '<div class="muted" style="padding:20px">no matches</div>';
   }
 
   /* ---------------- filters panel ---------------- */
