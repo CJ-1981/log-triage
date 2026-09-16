@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## 1.32.1 (2026-09-16)
+- Merge pull request #7 from CJ-1981/fix/long-path-drop-reporting
+- fix: folder drop reports unreadable entries instead of loading nothing
+- Merge pull request #6 from CJ-1981/test/real-drop-cdp
+- test: real Chromium multi-folder drop via CDP DragData.files
+- Merge pull request #5 from CJ-1981/test/multi-folder-drop
+- test: multi-folder drag & drop in one drop ingests everything
+- Merge pull request #4 from CJ-1981/port/wip-wording
+- ui: wording for the paging model (analysis-sample scope)
+- Merge pull request #3 from CJ-1981/ui/files-clear-button
+- ui: files panel header button reads Clear instead of ✕
+
 ## 1.32.0 (2026-09-15)
 - Merge pull request #2 from CJ-1981/feature/paging-large-files
 - fix: normalize build inputs to LF for cross-platform reproducible bundle
