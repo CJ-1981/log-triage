@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.35.0 (2026-09-16)
+- Merge pull request #13 from CJ-1981/fix/search-row-overflow
+- docs: test-plan item for the files panel filter and sort
+- feat: files panel filter box and sort dropdown
+
 ## 1.34.1 (2026-09-16)
 - Merge pull request #12 from CJ-1981/fix/search-row-overflow
 - fix: search result bands stretch uniformly like the viewer
