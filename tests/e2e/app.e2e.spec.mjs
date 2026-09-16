@@ -1225,6 +1225,36 @@ test('dropping MULTIPLE folders plus a loose file in one drop ingests everything
     'both folders and the loose file ingested with folder-relative names');
 });
 
+test('REAL Chromium drop of two folders ingests everything (CDP-dispatched)', async () => {
+  await fresh();
+  // build real folders on disk and drop them through the browser's own drag
+  // machinery (Input.dispatchDragEvent with DragData.files) — no mocks
+  const base = join(root, 'tests', 'tmp', 'real-drop-' + Date.now());
+  fs.mkdirSync(join(base, 'dropA'), { recursive: true });
+  fs.mkdirSync(join(base, 'dropB', 'sub'), { recursive: true });
+  fs.writeFileSync(join(base, 'dropA', 'a1.log'), 'alpha one\n');
+  fs.writeFileSync(join(base, 'dropA', 'a2.log'), 'alpha two\n');
+  fs.writeFileSync(join(base, 'dropB', 'b1.log'), 'beta one\n');
+  fs.writeFileSync(join(base, 'dropB', 'sub', 'b2.log'), 'beta two\n');
+  try {
+    const box = await page.evaluate(() => {
+      const r = document.getElementById('dropzone').getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    const cdp = await page.context().newCDPSession(page);
+    const dragData = { items: [], files: [join(base, 'dropA'), join(base, 'dropB')], dragOperationsMask: 1 };
+    await cdp.send('Input.dispatchDragEvent', { type: 'dragEnter', x: box.x, y: box.y, data: dragData });
+    await cdp.send('Input.dispatchDragEvent', { type: 'dragOver', x: box.x, y: box.y, data: dragData });
+    await cdp.send('Input.dispatchDragEvent', { type: 'drop', x: box.x, y: box.y, data: dragData });
+    await page.waitForFunction(() => document.getElementById('st-total').textContent === '4', null, { timeout: 15000 });
+    const names = await page.evaluate(() => Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent).sort());
+    assert.deepStrictEqual(names, ['dropA/a1.log', 'dropA/a2.log', 'dropB/b1.log', 'dropB/sub/b2.log'],
+      'real drop ingests both folders with folder-relative names');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('search tab rg options have explanatory tooltips', async () => {
   await fresh();
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
