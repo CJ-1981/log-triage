@@ -498,7 +498,7 @@ test('search results use separate file, line and timestamp columns', async () =>
   assert.match(row.text, /ecu=gateway/);
 });
 
-test('search matches scroll horizontally on narrow viewports (no truncation)', async () => {
+test('search matches wrap on narrow viewports (no truncation, no overflow)', async () => {
   await fresh();
   await click('btn-demo');
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
@@ -520,12 +520,8 @@ test('search matches scroll horizontally on narrow viewports (no truncation)', a
       textLen: row.querySelector('.srx').textContent.length
     };
   })())`).then(JSON.parse);
-  assert.ok(geo.hScroll, 'results panel gains a horizontal scroll range on narrow screens');
-  assert.ok(geo.cellW > 200, 'match text cell is not squeezed to nothing: ' + geo.cellW);
-  await page.evaluate(() => { document.getElementById('search-results').scrollLeft = 300; });
-  await page.waitForTimeout(150);
-  const sl = await page.evaluate(() => document.getElementById('search-results').scrollLeft);
-  assert.ok(sl > 100, 'panel scrolls horizontally, scrollLeft=' + sl);
+  assert.ok(!geo.hScroll, 'rows wrap instead of gaining a horizontal overflow on narrow screens');
+  assert.ok(geo.cellW > 100, 'match text cell is not squeezed to nothing: ' + geo.cellW);
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
@@ -1362,6 +1358,36 @@ test('REAL drop of plain FILES via CDP loads them; deep paths degrade gracefully
   } finally {
     fs.rmSync(base, { recursive: true, force: true });
   }
+});
+
+test('search results wrap long matched lines instead of overflowing', async () => {
+  await fresh();
+  const big = join(os.tmpdir(), 'lt-srwrap-' + Date.now() + '.log');
+  const lines = [
+    '09-11 22:14:01.100  1000  2000 I VHal: short normal line',
+    '09-11 22:14:02.100  1000  2000 I VHal: RARETERM payload ' + 'x'.repeat(3000) + ' END',
+    '09-11 22:14:03.100  1000  2000 I VHal: another short line',
+  ];
+  fs.writeFileSync(big, lines.join('\n') + '\n');
+  await page.setInputFiles('#file-input', [big]);
+  await page.waitForFunction(() => Number(document.getElementById('st-total').textContent) >= 3, null, { timeout: 15000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
+  await page.fill('#rg-pattern', 'RARETERM');
+  await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 15000 });
+  await page.waitForSelector('.sr-row.hit');
+  const m = await page.evaluate(() => {
+    const box = document.getElementById('search-results');
+    const row = document.querySelector('.sr-row.hit');
+    return {
+      containerW: box.clientWidth,
+      rowW: row.scrollWidth,
+      rowBg: getComputedStyle(row).backgroundColor,
+      pageBg: getComputedStyle(document.body).backgroundColor,
+    };
+  });
+  assert.ok(m.rowW <= m.containerW + 2, 'wrapped row fits the container: row=' + m.rowW + ' container=' + m.containerW);
+  assert.notStrictEqual(m.rowBg, m.pageBg, 'hit row has a visible highlight background');
+  fs.rmSync(big, { force: true });
 });
 
 test('search tab rg options have explanatory tooltips', async () => {
