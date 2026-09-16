@@ -129,11 +129,10 @@ test('stress: go-to-line jumps to an exact line late in the file', async () => {
     g.value = String(t);
     g.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
   }, target);
-  await page.waitForTimeout(300);
+  // the jump is async (worker locate + page load) — wait for the line
+  await page.waitForFunction((t) => Array.from(document.querySelectorAll('.vrow .ln')).map((x) => Number(x.textContent)).includes(t), target, { timeout: 15000 });
   const st = await state();
   assert.ok(st.scrollTop > 0, 'scrolled for line ' + target);
-  const near = await page.evaluate(() => Array.from(document.querySelectorAll('.vrow .ln')).map((x) => Number(x.textContent)));
-  assert.ok(near.includes(target), 'line ' + target + ' rendered, got ' + near.slice(0, 5));
   const drawer = await page.evaluate(() => document.getElementById('drawer').textContent);
   assert.match(drawer, new RegExp('Line ' + target));
 });

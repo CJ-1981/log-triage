@@ -1387,6 +1387,24 @@ test('search results wrap long matched lines instead of overflowing', async () =
   });
   assert.ok(m.rowW <= m.containerW + 2, 'wrapped row fits the container: row=' + m.rowW + ' container=' + m.containerW);
   assert.notStrictEqual(m.rowBg, m.pageBg, 'hit row has a visible highlight background');
+
+  // the Search tab has its own wrap toggle: OFF = one scrollable line per match
+  assert.strictEqual(await page.textContent('#btn-sr-wrap'), 'Wrap: ON');
+  await page.click('#btn-sr-wrap');
+  await page.waitForFunction(() => document.getElementById('search-results').classList.contains('nowrap'), null, { timeout: 5000 });
+  const off = await page.evaluate(() => {
+    const box = document.getElementById('search-results');
+    const row = document.querySelector('.sr-row.hit');
+    return { boxW: box.clientWidth, rowW: row.scrollWidth, btn: document.getElementById('btn-sr-wrap').textContent };
+  });
+  assert.ok(off.rowW > off.boxW + 2, 'nowrap mode overflows horizontally again: row=' + off.rowW + ' box=' + off.boxW);
+  assert.strictEqual(off.btn, 'Wrap: OFF');
+
+  // the preference survives a reload
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.getElementById('btn-sr-wrap') && document.getElementById('btn-sr-wrap').textContent === 'Wrap: OFF', null, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
+  await page.click('#btn-sr-wrap'); // back to ON for other tests
   fs.rmSync(big, { force: true });
 });
 
