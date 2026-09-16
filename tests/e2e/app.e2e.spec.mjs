@@ -525,6 +525,49 @@ test('search matches wrap on narrow viewports (no truncation, no overflow)', asy
   await page.setViewportSize({ width: 1440, height: 900 });
 });
 
+test('files panel filter narrows by name and sort reorders the list', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'demo.log'),
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+    join(root, 'tests', 'fixtures', 'apache.log'),
+  ]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '57', null, { timeout: 8000 });
+  const names = () => page.evaluate(() => Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent));
+
+  // filter by name
+  await page.fill('#file-filter', 'sys');
+  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 1, null, { timeout: 5000 });
+  assert.strictEqual((await names())[0], 'syslog.log', 'filter narrows to syslog.log');
+  await page.fill('#file-filter', 'zzz-no-match');
+  await page.waitForFunction(() => /no files match the filter/.test(document.getElementById('file-list').textContent), null, { timeout: 5000 });
+  await page.fill('#file-filter', '');
+
+  // sort by name A→Z: apache.log, demo.log, syslog.log
+  await page.selectOption('#file-sort', 'name');
+  await page.waitForFunction(() => {
+    const n = Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent);
+    return n.length === 3 && n[0] === 'apache.log';
+  }, null, { timeout: 5000 });
+  assert.deepStrictEqual(await names(), ['apache.log', 'demo.log', 'syslog.log'], 'name A→Z order');
+
+  // sort by lines ↓: demo.log (44) first
+  await page.selectOption('#file-sort', 'lines-desc');
+  await page.waitForFunction(() => {
+    const n = Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent);
+    return n.length === 3 && n[0] === 'demo.log';
+  }, null, { timeout: 5000 });
+  assert.deepStrictEqual(await names(), ['demo.log', 'syslog.log', 'apache.log'], 'lines ↓ order');
+
+  // back to load order
+  await page.selectOption('#file-sort', 'default');
+  await page.waitForFunction(() => {
+    const n = Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent);
+    return n.length === 3 && n[0] === 'demo.log';
+  }, null, { timeout: 5000 });
+  assert.deepStrictEqual(await names(), ['demo.log', 'syslog.log', 'apache.log'], 'load order restored');
+});
+
 test('per-file ✕ removes that file only (lines, counters, chips)', async () => {
   await fresh();
   await page.setInputFiles('#file-input', [
@@ -1549,6 +1592,8 @@ test('loads a .7z archive: extracted files appear in the file list', { skip: !fi
     Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent));
   assert.ok(names.includes('bundle/a.log'), 'bundle/a.log listed, got: ' + names.join(', '));
   assert.ok(names.includes('bundle/sub/b.log'), 'bundle/sub/b.log listed, got: ' + names.join(', '));
+  // the count commits after the worker index + query — wait for it
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '8', null, { timeout: 8000 });
   const st = await status();
   assert.strictEqual(st.fmt, 'logcat', 'inner log detected as logcat');
   assert.strictEqual(st.total, '8', '4 lines per inner log');
