@@ -799,10 +799,10 @@
 
   function renderSearchRows(res, mode, ms) {
     const out = $('search-results');
-    const stNow = store.stats();
-    const notInMemory = stNow.totalLines - stNow.keptInMemory;
-    $('search-progress').textContent = res.total + ' match(es) over kept lines in ' + ms.toFixed(0) + ' ms' +
-      (notInMemory > 0 ? ' — kept lines only (' + notInMemory.toLocaleString() + ' earlier lines released): use Deep scan for full-file search' : '');
+    // instant search runs over the analysis sample (bounded); the viewer's
+    // filter/paging always cover the complete indexed files, so there is no
+    // "kept lines only" nag here anymore
+    $('search-progress').textContent = res.total + ' match(es) in analysis sample in ' + ms.toFixed(0) + ' ms — viewer filtering searches complete indexed files';
     const nameOf = (fileId) => fileDisplayName(fileId);
     if (mode === 'count') {
       out.innerHTML = Object.keys(res.byFile).map((f) => '<div class="sr-file">' + esc(nameOf(f)) + ': ' + res.byFile[f] + '</div>').join('') ||

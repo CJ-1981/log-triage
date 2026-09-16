@@ -1116,7 +1116,7 @@ test('ingest falls back to FileReader when File.stream is broken', async () => {
   assert.strictEqual(fmt, 'logcat', 'full pipeline ran over the fallback path');
 });
 
-test('search status discloses kept-lines-only scope when lines were trimmed', async () => {
+test('search status discloses the analysis-sample scope and full-file filtering', async () => {
   await fresh();
   const big = join(os.tmpdir(), 'lt-scope-' + Date.now() + '.log');
   const lines = [];
@@ -1129,8 +1129,8 @@ test('search status discloses kept-lines-only scope when lines were trimmed', as
   await page.fill('#rg-pattern', 'fill line');
   await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 30000 });
   const status = await page.evaluate(() => document.getElementById('search-progress').textContent);
-  assert.match(status, /kept lines only/, 'scope disclosed: ' + status);
-  assert.match(status, /Deep scan/, 'deep scan suggested: ' + status);
+  assert.match(status, /in analysis sample/, 'sample scope disclosed: ' + status);
+  assert.match(status, /viewer filtering searches complete indexed files/, 'full-file scope disclosed: ' + status);
 });
 
 test('drag-and-drop loads the file exactly once', async () => {

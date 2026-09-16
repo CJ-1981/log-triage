@@ -340,7 +340,7 @@ table.rules { min-width: 620px; }
             -B<input type="text" id="rg-before" value="0" style="width:36px"></label>
           <label title="Context after (-A): deep scan also shows this many lines AFTER each match — 1 line = 0">
             -A<input type="text" id="rg-after" value="0" style="width:36px"></label>
-          <button id="btn-deepscan" class="primary" title="Deep scan: re-read the COMPLETE files from disk, ignoring the kept-line cap — finds matches that are no longer in memory; the instant results above only cover kept lines">Deep scan files</button>
+          <button id="btn-deepscan" class="primary" title="Scan the complete indexed files from disk with context">Deep scan files</button>
           <button id="btn-deep-cancel" class="hidden" title="stop the running deep scan">✕ Cancel</button>
           <button id="btn-rg-collapse" title="collapse all file groups">Collapse all</button>
           <button id="btn-rg-expand" title="expand all file groups">Expand all</button>
@@ -491,7 +491,7 @@ table.rules { min-width: 620px; }
             <input type="file" id="config-file" accept=".json" class="hidden">
           </div>
           <p class="muted" id="config-status"></p>
-          <h2>Kept-line cap</h2>
+          <h2>Analysis sample size</h2>
           <div class="rowline">
             <label>analysis sample lines per file <input id="cfg-cap" type="text" value="100000" style="width:120px"></label>
             <span class="muted">Applies to analysis sampling on the next load. Viewing, filtering and paging cover every indexed line.</span>
