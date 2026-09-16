@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.34.1 (2026-09-16)
+- Merge pull request #12 from CJ-1981/fix/search-row-overflow
+- fix: search result bands stretch uniformly like the viewer
+
 ## 1.34.0 (2026-09-16)
 - Merge pull request #11 from CJ-1981/fix/search-row-overflow
 - test: wait for the async go-to-line jump instead of a fixed delay
