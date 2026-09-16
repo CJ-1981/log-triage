@@ -15,21 +15,47 @@
     const failed = [];         // { name, error, pathLen } — unreadable entries
     let skipped = 0;
 
-    // entries must be captured synchronously during the drop event
-    const entries = [];
-    const items = dt.items ? Array.from(dt.items) : [];
-    for (const item of items) {
-      if (item.kind !== 'file') continue;
-      const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
-      if (entry) entries.push(entry);
-    }
-    if (!entries.length) {
-      // plain file drop (no entries API / no folders involved)
-      return { files: Array.from(dt.files || []), failed, skipped: 0 };
-    }
-
     const pathLen = (entry) => (entry.fullPath ? String(entry.fullPath).length : 0);
     const asFile = (entry) => new Promise((res, rej) => entry.file(res, rej));
+    // Entries must be captured synchronously during the drop event. Plain
+    // files keep coming from dataTransfer.files — those File objects Chromium
+    // can open even beyond the Windows 260-char MAX_PATH, while the entries
+    // API's entry.file() throws NotFoundError there (regression guard). Only
+    // DIRECTORIES need the entries walk; dataTransfer.files cannot see inside
+    // them. Chromium orders dt.files 1:1 with the file-kind items, so each
+    // item keeps its slot whether it is a folder or a loose file; when the
+    // list has no slot for an item (synthetic drops), entry.file() is used.
+    const items = dt.items ? Array.from(dt.items) : [];
+    const allFiles = Array.from(dt.files || []);
+    const dirs = [];
+    const loose = [];          // promises resolving to File | null
+    let listIdx = 0;
+    for (const item of items) {
+      if (item.kind !== 'file') continue;
+      const fromList = allFiles[listIdx] || null;
+      const entry = item.webkitGetAsEntry ? item.webkitGetAsEntry() : null;
+      if (entry && entry.isDirectory) {
+        dirs.push(entry);
+        listIdx++;
+        continue;
+      }
+      if (fromList) loose.push(Promise.resolve({ f: fromList }));
+      else if (entry) loose.push(asFile(entry).then((f) => ({ f }), (err) => ({ err, name: entry.name })));
+      else loose.push(Promise.resolve({}));
+      listIdx++;
+    }
+    const looseSettled = await Promise.all(loose.map((p) => p.then((s) => s, (err) => ({ err }))));
+    for (const s of looseSettled) {
+      if (s && s.f) files.push(s.f);
+      else if (s && s.err) failed.push({ name: s.name || '(dropped file)', error: s.err.message, pathLen: 0 });
+      else failed.push({ name: '(dropped file)', error: 'the browser did not expose this file', pathLen: 0 });
+    }
+    if (!dirs.length) {
+      // no folders anywhere in the drop: the direct File objects are the
+      // whole story (and the only long-path-safe representation of them)
+      return { files, failed, skipped: 0 };
+    }
+
     const pushFile = async (entry, prefix) => {
       if (files.length >= maxFiles) { skipped++; return; }
       let file;
@@ -69,7 +95,7 @@
         for (const child of batch) await walk(child, depth + 1, nextPrefix);
       }
     };
-    for (const entry of entries) {
+    for (const entry of dirs) {
       try {
         await walk(entry, 0, '');
       } catch (err) {

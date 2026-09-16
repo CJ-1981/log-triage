@@ -222,7 +222,9 @@
       }
       if (notes.length) {
         flash(notes.join(' · '), failed.length ? 15000 : 4000);
-      } else if (!files.length) flash('nothing loadable in the drop');
+      } else if (!files.length) {
+        flash('nothing loadable in the drop — the files could not be read (the path may exceed the Windows 260-character limit)', 15000);
+      }
     } catch (err) {
       flash('drop failed: ' + err.message);
     }
@@ -269,6 +271,13 @@
       onKeptChanged();
       if (entry.status === 'done') await cacheLoadedFile(entry, f);
       if (ingestAbort) break;
+    }
+    // a 0-byte file that was handed to us readable-looking (drag & drop from
+    // a >260-char Windows path does exactly this) indexes to nothing — warn
+    // instead of silently showing an empty entry
+    const empty = files.filter((f) => f.status === 'done' && f.size === 0 && !f.lines);
+    if (empty.length) {
+      flash(empty.length + ' loaded file(s) contain 0 lines (' + empty.slice(0, 3).map((f) => f.name).join(', ') + (empty.length > 3 ? ', …' : '') + ') — the file(s) may be unreadable (e.g. the Windows 260-character path limit): copy them to a short path and try again', 15000);
     }
     saveState();
   }

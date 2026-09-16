@@ -1255,6 +1255,80 @@ test('REAL Chromium drop of two folders ingests everything (CDP-dispatched)', as
   }
 });
 
+test('REAL drop of two plain FILES via CDP loads both', async () => {
+  await fresh();
+  const base = join(root, 'tests', 'tmp', 'real-files-' + Date.now());
+  fs.mkdirSync(base, { recursive: true });
+  fs.writeFileSync(join(base, 'one.log'), 'file one line\n');
+  fs.writeFileSync(join(base, 'two.log'), 'file two line\n');
+  try {
+    const box = await page.evaluate(() => {
+      const r = document.getElementById('dropzone').getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    const cdp = await page.context().newCDPSession(page);
+    const dragData = { items: [], files: [join(base, 'one.log'), join(base, 'two.log')], dragOperationsMask: 1 };
+    await cdp.send('Input.dispatchDragEvent', { type: 'dragEnter', x: box.x, y: box.y, data: dragData });
+    await cdp.send('Input.dispatchDragEvent', { type: 'dragOver', x: box.x, y: box.y, data: dragData });
+    await cdp.send('Input.dispatchDragEvent', { type: 'drop', x: box.x, y: box.y, data: dragData });
+    await page.waitForFunction(() => document.getElementById('st-total').textContent === '2', null, { timeout: 15000 });
+    const names = await page.evaluate(() => Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent).sort());
+    assert.deepStrictEqual(names, ['one.log', 'two.log'], 'both plain files ingested');
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
+test('REAL drop of plain FILES via CDP loads them; deep paths degrade gracefully', async () => {
+  await fresh();
+  // regression guard for the plain-file drop path: the app must use the
+  // dataTransfer.files File objects (readable at >260-char paths in real
+  // Explorer drops; the entries API's entry.file() throws NotFoundError
+  // there). Under CDP dispatch, deep paths may be unreadable in Chromium
+  // itself — the app must then show the long-path guidance instead of
+  // loading nothing silently.
+  const base = join(root, 'tests', 'tmp', 'deep-files-' + Date.now());
+  let deep = join(base, 'R V D C (Size-17.4 MB)');
+  for (let i = 0; i < 6; i++) { deep = join(deep, 'level-with-a-fairly-long-name-0123456789-' + i); fs.mkdirSync(deep, { recursive: true }); }
+  const f1 = join(deep, 'logcat@20260911_16-12-29-119-Batch_2873_merged.log');
+  const f2 = join(deep, 'second@20260911_(Size-17.4 MB).log');
+  fs.writeFileSync(f1, 'deep file one\n');
+  fs.writeFileSync(f2, 'deep file two\n');
+  if (f1.length <= 260) console.log('  note: test path is not actually long (' + f1.length + ')');
+  try {
+    const box = await page.evaluate(() => {
+      const r = document.getElementById('dropzone').getBoundingClientRect();
+      return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+    });
+    const cdp = await page.context().newCDPSession(page);
+    const dragData = { items: [], files: [f1, f2], dragOperationsMask: 1 };
+    await cdp.send('Input.dispatchDragEvent', { type: 'dragEnter', x: box.x, y: box.y, data: dragData });
+    await cdp.send('Input.dispatchDragEvent', { type: 'dragOver', x: box.x, y: box.y, data: dragData });
+    await cdp.send('Input.dispatchDragEvent', { type: 'drop', x: box.x, y: box.y, data: dragData });
+    await page.waitForFunction(() => {
+      const total = document.getElementById('st-total').textContent;
+      const msg = document.getElementById('st-progress').textContent;
+      return msg.includes('0 lines') || msg.includes('could not be read') || total === '2';
+    }, null, { timeout: 15000 });
+    const outcome = await page.evaluate(() => ({
+      total: document.getElementById('st-total').textContent,
+      message: document.getElementById('st-progress').textContent,
+      names: Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent).sort(),
+    }));
+    if (outcome.total === '2' && !outcome.message.includes('0 lines')) {
+      assert.deepStrictEqual(outcome.names, ['logcat@20260911_16-12-29-119-Batch_2873_merged.log', 'second@20260911_(Size-17.4 MB).log'],
+        'deep files loaded via the dataTransfer.files path');
+      console.log('  environment: deep dt.files readable — files loaded');
+    } else {
+      assert.match(outcome.message, /0 lines|could not be read/, 'graceful report shown: ' + outcome.message);
+      assert.match(outcome.message, /260-character/, 'actionable hint shown');
+      console.log('  environment: deep dt.files unreadable under CDP — graceful report shown');
+    }
+  } finally {
+    fs.rmSync(base, { recursive: true, force: true });
+  }
+});
+
 test('search tab rg options have explanatory tooltips', async () => {
   await fresh();
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
