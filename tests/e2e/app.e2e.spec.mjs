@@ -682,10 +682,28 @@ test('drag handle resizes the bookmarks panel', async () => {
   assert.ok(shrunk < grown, 'dragging down shrinks the bookmarks panel: ' + grown + ' -> ' + shrunk);
 });
 
-test('config tab exports and imports filter/mask/issue-scan configuration', async () => {
+test('config tab exports and imports filters, highlighters, masks and issue-scan configuration', async () => {
   await fresh();
   await click('btn-demo');
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  // Add a highlighter with non-default options so every exported field is covered.
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await click('btn-add-highlight');
+  await page.evaluate(() => {
+    const set = (key, value) => {
+      const el = document.querySelector('#rule-rows [data-k="' + key + '"]');
+      if (el.type === 'checkbox') el.checked = value;
+      else el.value = value;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    set('name', 'exported highlighter');
+    set('pattern', 'ActivityManager');
+    set('caseSensitive', true);
+    set('matchMode', 'regex');
+    set('target', 'row');
+    set('color', '#12ab34');
+    set('enabled', false);
+  });
   // change config: disable the VIN mask rule
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
   await page.evaluate(() => document.querySelector('[data-mask="vin"]').click());
@@ -701,6 +719,10 @@ test('config tab exports and imports filter/mask/issue-scan configuration', asyn
   const cfg = JSON.parse(fs.readFileSync(path, 'utf8'));
   assert.strictEqual(cfg.masks.enabled.vin, false, 'exported config carries the disabled vin rule');
   assert.strictEqual(cfg.issueGroups.length, 14, 'all fourteen issue-scan groups exported');
+  assert.deepStrictEqual(cfg.filters.rules[0], {
+    name: 'exported highlighter', pattern: 'ActivityManager', caseSensitive: true,
+    action: 'highlight', enabled: false, matchMode: 'regex', target: 'row', color: '#12ab34',
+  }, 'exported config carries every highlighter field');
   // re-enable vin, then import the config: it must be disabled again
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
   await page.evaluate(() => document.querySelector('[data-mask="vin"]').click());
@@ -712,6 +734,19 @@ test('config tab exports and imports filter/mask/issue-scan configuration', asyn
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
   const vinCheckbox = await page.evaluate(() => document.querySelector('[data-mask="vin"]').checked);
   assert.strictEqual(vinCheckbox, false, 'import re-applied the disabled vin rule');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  const importedHighlighter = await page.evaluate(() => {
+    const value = (key) => {
+      const el = document.querySelector('#rule-rows [data-k="' + key + '"]');
+      return el.type === 'checkbox' ? el.checked : el.value;
+    };
+    return {
+      name: value('name'), pattern: value('pattern'), caseSensitive: value('caseSensitive'),
+      action: value('action'), enabled: value('enabled'), matchMode: value('matchMode'),
+      target: value('target'), color: value('color'),
+    };
+  });
+  assert.deepStrictEqual(importedHighlighter, cfg.filters.rules[0], 'import restored every highlighter field');
 });
 
 test('mobile layout: page fits width, files panel is an overlay drawer, mask cards stack', async () => {
