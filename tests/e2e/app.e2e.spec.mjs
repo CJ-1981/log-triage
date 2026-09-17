@@ -124,6 +124,9 @@ test('color highlighter paints matching text and rows without filtering', async 
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44');
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
   await click('btn-add-highlight');
+  assert.equal(await page.locator('#rule-rows .rule-swatch').count(), 8, 'simple color palette is visible');
+  await page.locator('#rule-rows .rule-swatch[data-color="#60a5fa"]').click();
+  assert.equal(await page.locator('#rule-rows .rule-swatch[data-color="#60a5fa"]').getAttribute('aria-pressed'), 'true', 'chosen palette color is marked');
   const pattern = page.locator('#rule-rows tr [data-k=pattern]');
   await pattern.click();
   const focusState = await pattern.evaluate((el) => ({
@@ -137,7 +140,7 @@ test('color highlighter paints matching text and rows without filtering', async 
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
   await page.waitForFunction(() => document.querySelectorAll('.rule-highlight-text').length > 0);
   assert.strictEqual(await page.textContent('#st-shown'), '44', 'highlight rules do not filter lines');
-  assert.equal(await page.$eval('.rule-highlight-text', (el) => getComputedStyle(el).backgroundColor), 'rgb(255, 209, 102)');
+  assert.equal(await page.$eval('.rule-highlight-text', (el) => getComputedStyle(el).backgroundColor), 'rgb(96, 165, 250)');
 
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
   await page.evaluate(() => {
@@ -153,7 +156,8 @@ test('color highlighter paints matching text and rows without filtering', async 
   await click('btn-demo');
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
   await page.waitForFunction(() => document.querySelector('.vrow.rule-highlight-row'));
-  assert.equal(await page.$eval('#rule-rows [data-k=color]', (el) => el.value), '#ffd166', 'highlight color persists');
+  assert.equal(await page.$eval('#rule-rows [data-k=color]', (el) => el.value), '#60a5fa', 'highlight color persists');
+  assert.equal(await page.getAttribute('#rule-rows .rule-swatch[data-color="#60a5fa"]', 'aria-pressed'), 'true', 'saved palette color remains selected');
 });
 
 test('multi-file load keeps per-file counters and merged view', async () => {

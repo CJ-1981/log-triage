@@ -1,7 +1,7 @@
 # Changelog
 
 ## Unreleased
-- feat: configurable literal/regex color highlighters for matching text or complete viewer rows
+- feat: configurable literal/regex color highlighters for matching text or complete viewer rows, with a one-click preset palette and custom color picker
 
 ## 1.35.0 (2026-09-16)
 - Merge pull request #13 from CJ-1981/fix/search-row-overflow

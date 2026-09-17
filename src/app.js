@@ -54,6 +54,10 @@
   let cacheEntries = [];                              // restored entries from previous sessions (IDB)
   let displayCache = new Map();                       // seq -> rendered text (masked or raw)
   let compiledHighlights = [];
+  const HIGHLIGHT_PALETTE = [
+    ['Yellow', '#ffd166'], ['Orange', '#ff9f1c'], ['Red', '#ff6b6b'], ['Pink', '#f472b6'],
+    ['Purple', '#c084fc'], ['Blue', '#60a5fa'], ['Cyan', '#22d3ee'], ['Green', '#4ade80'],
+  ];
 
   const $ = (id) => document.getElementById(id);
   const esc = LT.escapeHtml;
@@ -1072,12 +1076,22 @@
         '</select></td>' +
         '<td>' + (r.action === 'highlight' ? '<select data-i="' + i + '" data-k="matchMode"><option value="regex"' + (r.matchMode !== 'literal' ? ' selected' : '') + '>regex</option><option value="literal"' + (r.matchMode === 'literal' ? ' selected' : '') + '>literal</option></select>' : '<span class="muted">—</span>') + '</td>' +
         '<td>' + (r.action === 'highlight' ? '<select data-i="' + i + '" data-k="target"><option value="text"' + (r.target !== 'row' ? ' selected' : '') + '>text</option><option value="row"' + (r.target === 'row' ? ' selected' : '') + '>row</option></select>' : '<span class="muted">—</span>') + '</td>' +
-        '<td>' + (r.action === 'highlight' ? '<input type="color" class="rule-color" data-i="' + i + '" data-k="color" value="' + LT.normalizeColor(r.color) + '" title="Highlight color">' : '<span class="muted">—</span>') + '</td>' +
+        '<td>' + (r.action === 'highlight' ? '<div class="rule-color-cell"><div class="rule-palette" role="group" aria-label="Highlight color presets">' +
+        HIGHLIGHT_PALETTE.map((c) => '<button type="button" class="rule-swatch' + (LT.normalizeColor(r.color) === c[1] ? ' active' : '') + '" data-i="' + i + '" data-color="' + c[1] + '" style="--swatch:' + c[1] + '" title="' + c[0] + '" aria-label="' + c[0] + '" aria-pressed="' + (LT.normalizeColor(r.color) === c[1]) + '"></button>').join('') +
+        '</div><input type="color" class="rule-color" data-i="' + i + '" data-k="color" value="' + LT.normalizeColor(r.color) + '" title="Custom color" aria-label="Custom highlight color"></div>' : '<span class="muted">—</span>') + '</td>' +
         '<td><span class="count-pill" id="hits-' + i + '">' + (filter.hits[r.id] || 0) + '</span></td>' +
         '<td><button data-del="' + i + '">✕</button></td>';
       tb.appendChild(tr);
     });
     tb.onclick = (e) => {
+      const swatch = e.target.closest && e.target.closest('.rule-swatch');
+      if (swatch) {
+        const r = state.rules[Number(swatch.dataset.i)];
+        if (!r || r.action !== 'highlight') return;
+        r.color = LT.normalizeColor(swatch.dataset.color);
+        refreshHighlights(); saveState(); renderRules(); renderRows();
+        return;
+      }
       const del = e.target.dataset && e.target.dataset.del;
       if (del == null) return;
       const removed = state.rules.splice(Number(del), 1)[0];
