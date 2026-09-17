@@ -45,6 +45,16 @@ The same viewer in the light **Paper** theme:
 
 **On mobile:** the files panel opens via the header "☰ Files" toggle and overlays the viewer; wrap mode reflows long lines to the column width.
 
+## Color highlighters
+
+1. Open **Filters** and choose **+ Add highlighter**.
+2. Enter a pattern and choose **literal** for ordinary text or **regex** for a regular expression. The case toggle applies to either mode.
+3. Choose **text** to color only matching characters or **row** to tint the complete log row.
+4. Pick one of the eight preset swatches, or use the custom color control for any other color. The selected swatch has an accent ring.
+5. Use the **on** checkbox to temporarily disable the highlighter without deleting it.
+
+Highlighters are additive presentation rules: they never remove lines or change the matching-line count. Matching runs on the masked display text and repaints the current 500-line page without rescanning the source file; the same rules apply as paging continues through the complete result set. Earlier highlighter rules win when colored text ranges overlap. Rules and their `matchMode`, `target`, and `color` fields persist in local state, named presets, and Config-tab JSON export/import.
+
 ## Features overview
 
 - **Multi-file loading** — sequential ingestion with per-file and overall progress, cancel support, and exact per-file counters. Drag & drop accepts loose files and whole folders: dropped folders are walked recursively and their files ingest under folder-relative names (`logs/sub/b.log`), so same-named logs from different folders stay distinct. Every file is fully indexed by a dedicated paging worker (columnar line offsets/timestamps/levels, Float64 so multi-GB offsets stay exact); the whole indexed file — not a capped in-memory window — is the viewing and filtering scope. A configurable per-file "analysis sample" (default 100,000 lines, head + newest tail) bounds the analysis-tab data only.
@@ -83,7 +93,7 @@ Requirements: Node.js 22.
 npm test          # Unit + bump suites (node:test)
 npm run test:gate # Unit tests + coverage gate (>=90% line / >=85% branch on core src modules)
 npm run build     # Build log-triage.html from src/
-npm run e2e       # Playwright end-to-end tests (53 specs: 45 app + 8 stress)
+npm run e2e       # Playwright end-to-end tests (63 specs: 55 app + 8 stress)
 npm run e2e:stress # Stress suite only (generated big fixture)
 npm run bump      # Semver bump from conventional commits (CI runs this automatically on main)
 ```
