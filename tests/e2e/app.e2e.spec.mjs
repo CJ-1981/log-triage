@@ -160,6 +160,21 @@ test('color highlighter paints matching text and rows without filtering', async 
   assert.equal(await page.getAttribute('#rule-rows .rule-swatch[data-color="#60a5fa"]', 'aria-pressed'), 'true', 'saved palette color remains selected');
 });
 
+test('viewer fills its viewport after a rule is disabled from the Filters tab', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await click('btn-add-rule');
+  await page.locator('#rule-rows [data-k=enabled]').uncheck();
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForTimeout(50);
+  const visibleRows = await page.locator('#viewer .vrow').count();
+  assert.ok(visibleRows > 5, 'visible viewer renders more than the five hidden-tab overscan rows; got ' + visibleRows);
+  assert.strictEqual(await page.textContent('#st-shown'), '44', 'disabling the rule restores the complete result count');
+});
+
 test('multi-file load keeps per-file counters and merged view', async () => {
   await fresh();
   await page.setInputFiles('#file-input', [

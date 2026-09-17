@@ -5402,6 +5402,10 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   function switchTab(name) {
     document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + name));
+    // Filtering can finish while this tab is hidden. Its zero clientHeight
+    // intentionally renders only the five overscan rows, so fill the real
+    // viewport once the browser has applied the visible-tab layout.
+    if (name === 'viewer') requestAnimationFrame(renderRows);
     if (name === 'analysis') renderAnalysis();
     if (name === 'masks') renderMasks();
     if (name === 'filters') renderRules();
