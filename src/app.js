@@ -1822,9 +1822,11 @@
   function makeClearable(input) {
     if (!input || input.dataset.clearable === '1' || input.type !== 'text') return;
     const wasFocused = document.activeElement === input;
+    const ruleWidth = input.closest('table.rules') ? input.getBoundingClientRect().width : 0;
     input.dataset.clearable = '1';
     const wrap = document.createElement('span');
     wrap.className = 'clr-wrap';
+    if (ruleWidth) wrap.style.width = ruleWidth + 'px';
     const inline = input.getAttribute('style') || '';
     if (inline.includes('flex')) {
       wrap.setAttribute('style', inline);

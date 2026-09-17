@@ -1635,10 +1635,18 @@ test('text inputs get an inline ✕ clear button that empties and re-fires', asy
   // dynamically rendered rows (filter rule editor) become clearable on focus
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
   await page.evaluate(() => document.getElementById('btn-add-rule').click());
-  await page.evaluate(() => document.querySelector('#rule-rows input[type=text]').focus());
-  const dyn = await page.evaluate(() =>
-    !!document.querySelector('#rule-rows input[type=text]').closest('.clr-wrap'));
-  assert.ok(dyn, 'dynamically rendered rule input wrapped on focus');
+  const dyn = await page.evaluate(() => {
+    const input = document.querySelector('#rule-rows [data-k=pattern]');
+    const before = input.getBoundingClientRect().width;
+    input.focus();
+    return {
+      wrapped: !!input.closest('.clr-wrap'),
+      before,
+      after: input.getBoundingClientRect().width,
+    };
+  });
+  assert.ok(dyn.wrapped, 'dynamically rendered rule input wrapped on focus');
+  assert.ok(Math.abs(dyn.after - dyn.before) <= 1, 'focused rule input keeps its width: ' + JSON.stringify(dyn));
 });
 
 test('issue scan groups by kind with severity color coding', async () => {
