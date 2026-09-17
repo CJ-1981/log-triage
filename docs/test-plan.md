@@ -107,7 +107,7 @@ App suite (45 specs) — coverage includes:
 8. Masked export download, byte-checked.
 9. Files-panel collapse/expand and persistence of the collapsed state.
 10. File-item click switches the viewer between loaded files.
-11. Search-results horizontal scrolling at a 420 px viewport (full text reachable).
+11. Search-results wrap at a 420 px viewport (rows fit the panel, no horizontal overflow, text cell usable; Wrap: OFF gives one scrollable line per match).
 12. Mobile layout at 390×844: no page overflow, files panel as overlay drawer, mask cards stacked.
 13. Wrap geometry: no horizontal overflow in wrap mode, tall wrapped rows measured correctly, correct scroll position after jumps.
 14. Horizontal scrolling in the nowrap viewer, sized from the longest line.
