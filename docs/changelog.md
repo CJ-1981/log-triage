@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.37.0 (2026-09-17)
+- Merge pull request #16 from CJ-1981/feat/zen-mode
+- feat: zen mode — viewer-only focus view with Esc and floating exit
+
 ## 1.36.0 (2026-09-17)
 - Merge pull request #15 from CJ-1981/feature/color-highlighter
 - docs: explain color highlighter workflow
