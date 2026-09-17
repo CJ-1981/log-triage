@@ -1,6 +1,9 @@
 # Changelog
 
 ## Unreleased
+- feat: configurable literal/regex color highlighters for matching text or complete viewer rows, with a one-click preset palette and custom color picker
+- fix: refill the virtualized Viewer viewport after rules are changed from the hidden Filters tab
+- fix: keep rule-table fields at a stable width across repeated focus and rerender cycles
 
 ## 1.35.0 (2026-09-16)
 - Merge pull request #13 from CJ-1981/fix/search-row-overflow

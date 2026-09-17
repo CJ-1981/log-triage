@@ -1,6 +1,6 @@
 # Requirements
 
-Version reference: v1.22.1 (release). Requirements are numbered and testable; each functional requirement (FR) carries acceptance criteria (AC) that map directly to the shared test suite (`tests/core-cases.js`) and the Playwright e2e scope (see `docs/test-plan.md`). All requirements are implemented as of the v1.22.1 release.
+Version reference: v1.35.0 plus Unreleased changes. Requirements are numbered and testable; each functional requirement (FR) carries acceptance criteria (AC) that map directly to the shared test suite (`tests/core-cases.js`) and the Playwright e2e scope (see `docs/test-plan.md`).
 
 ## Functional requirements
 
@@ -62,11 +62,14 @@ Status: implemented (v1.0.0).
 
 ### FR-7 — Regex filter rules
 
-Status: implemented (v1.0.0).
+Status: implemented (v1.0.0); color-highlighter editor enhanced in Unreleased.
 
 - AC-1: Ordered rules of three kinds are supported: include (OR-combined), exclude (subtractive), and highlight (additive).
 - AC-2: A case-sensitivity toggle applies to rule matching.
 - AC-3: Live per-rule hit counters update as rules and data change.
+- AC-4: Highlight rules support literal or regex matching, text or whole-row targets, eight one-click preset colors, and a custom color picker; the active preset is visibly and accessibly selected.
+- AC-5: Visual highlighting operates on the masked display text, does not change the filtered line count, and persists through local state, presets, and config export/import with `name`, `pattern`, `caseSensitive`, `action`, `enabled`, `matchMode`, `target`, and `color` preserved.
+- AC-6: Editing, adding, disabling, or deleting a rule while the Viewer tab is hidden must not truncate its virtualized window: returning to Viewer fills the viewport and paging still covers the complete filtered result set. Rule text fields retain stable widths through repeated focus/edit/rerender cycles.
 
 ### FR-8 — Dynamic level chips and time-range filter
 

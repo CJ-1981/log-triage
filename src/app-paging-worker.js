@@ -33,7 +33,7 @@ async function query(id, spec, search) {
   filter.setRules(spec.rules || []); filter.setLevels(spec.levels || []); filter.quick = spec.quick || null;
   filter.timeFrom = spec.timeFrom || ''; filter.timeTo = spec.timeTo || '';
   const searcher = search ? LT.buildSearcher(spec.pattern, spec.options) : null;
-  const rawNeeded = search || !!filter.quick || filter.rules.some((r) => r.enabled);
+  const rawNeeded = search || !!filter.quick || filter.rules.some((r) => r.enabled && r.action !== 'highlight');
   const chosen = sources.filter((s) => !s.removed && (!spec.fileId || spec.fileId === s.id));
   const matches = new LT.Column(Float64Array);
   const bookmarkSets = new Map((spec.bookmarks || []).map(([fileId, lines]) => [fileId, new Set(lines)]));

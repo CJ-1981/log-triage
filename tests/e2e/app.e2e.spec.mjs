@@ -118,6 +118,63 @@ test('quick filter narrows view and highlights matches', async () => {
   assert.strictEqual(marks, 4);
 });
 
+test('color highlighter paints matching text and rows without filtering', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await click('btn-add-highlight');
+  assert.equal(await page.locator('#rule-rows .rule-swatch').count(), 8, 'simple color palette is visible');
+  await page.locator('#rule-rows .rule-swatch[data-color="#60a5fa"]').click();
+  assert.equal(await page.locator('#rule-rows .rule-swatch[data-color="#60a5fa"]').getAttribute('aria-pressed'), 'true', 'chosen palette color is marked');
+  const pattern = page.locator('#rule-rows tr [data-k=pattern]');
+  await pattern.click();
+  const focusState = await pattern.evaluate((el) => ({
+    focused: document.activeElement === el,
+    active: document.activeElement && (document.activeElement.id || document.activeElement.dataset.k || document.activeElement.tagName),
+  }));
+  assert.equal(focusState.focused, true, 'pattern field keeps focus after click; active element: ' + focusState.active);
+  await pattern.fill('ActivityManager');
+  assert.equal(await pattern.inputValue(), 'ActivityManager', 'pattern text is enterable');
+  await pattern.press('Tab');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForFunction(() => document.querySelectorAll('.rule-highlight-text').length > 0);
+  assert.strictEqual(await page.textContent('#st-shown'), '44', 'highlight rules do not filter lines');
+  assert.equal(await page.$eval('.rule-highlight-text', (el) => getComputedStyle(el).backgroundColor), 'rgb(96, 165, 250)');
+
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await page.evaluate(() => {
+    const target = document.querySelector('#rule-rows [data-k=target]');
+    target.value = 'row';
+    target.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForFunction(() => document.querySelector('.vrow.rule-highlight-row'));
+  assert.strictEqual(await page.textContent('#st-shown'), '44');
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await page.waitForFunction(() => document.querySelector('.vrow.rule-highlight-row'));
+  assert.equal(await page.$eval('#rule-rows [data-k=color]', (el) => el.value), '#60a5fa', 'highlight color persists');
+  assert.equal(await page.getAttribute('#rule-rows .rule-swatch[data-color="#60a5fa"]', 'aria-pressed'), 'true', 'saved palette color remains selected');
+});
+
+test('viewer fills its viewport after a rule is disabled from the Filters tab', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await click('btn-add-rule');
+  await page.locator('#rule-rows [data-k=enabled]').uncheck();
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForTimeout(50);
+  const visibleRows = await page.locator('#viewer .vrow').count();
+  assert.ok(visibleRows > 5, 'visible viewer renders more than the five hidden-tab overscan rows; got ' + visibleRows);
+  assert.strictEqual(await page.textContent('#st-shown'), '44', 'disabling the rule restores the complete result count');
+});
+
 test('multi-file load keeps per-file counters and merged view', async () => {
   await fresh();
   await page.setInputFiles('#file-input', [
@@ -644,10 +701,28 @@ test('drag handle resizes the bookmarks panel', async () => {
   assert.ok(shrunk < grown, 'dragging down shrinks the bookmarks panel: ' + grown + ' -> ' + shrunk);
 });
 
-test('config tab exports and imports filter/mask/issue-scan configuration', async () => {
+test('config tab exports and imports filters, highlighters, masks and issue-scan configuration', async () => {
   await fresh();
   await click('btn-demo');
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  // Add a highlighter with non-default options so every exported field is covered.
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await click('btn-add-highlight');
+  await page.evaluate(() => {
+    const set = (key, value) => {
+      const el = document.querySelector('#rule-rows [data-k="' + key + '"]');
+      if (el.type === 'checkbox') el.checked = value;
+      else el.value = value;
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    set('name', 'exported highlighter');
+    set('pattern', 'ActivityManager');
+    set('caseSensitive', true);
+    set('matchMode', 'regex');
+    set('target', 'row');
+    set('color', '#12ab34');
+    set('enabled', false);
+  });
   // change config: disable the VIN mask rule
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
   await page.evaluate(() => document.querySelector('[data-mask="vin"]').click());
@@ -663,6 +738,10 @@ test('config tab exports and imports filter/mask/issue-scan configuration', asyn
   const cfg = JSON.parse(fs.readFileSync(path, 'utf8'));
   assert.strictEqual(cfg.masks.enabled.vin, false, 'exported config carries the disabled vin rule');
   assert.strictEqual(cfg.issueGroups.length, 14, 'all fourteen issue-scan groups exported');
+  assert.deepStrictEqual(cfg.filters.rules[0], {
+    name: 'exported highlighter', pattern: 'ActivityManager', caseSensitive: true,
+    action: 'highlight', enabled: false, matchMode: 'regex', target: 'row', color: '#12ab34',
+  }, 'exported config carries every highlighter field');
   // re-enable vin, then import the config: it must be disabled again
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
   await page.evaluate(() => document.querySelector('[data-mask="vin"]').click());
@@ -674,6 +753,19 @@ test('config tab exports and imports filter/mask/issue-scan configuration', asyn
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
   const vinCheckbox = await page.evaluate(() => document.querySelector('[data-mask="vin"]').checked);
   assert.strictEqual(vinCheckbox, false, 'import re-applied the disabled vin rule');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  const importedHighlighter = await page.evaluate(() => {
+    const value = (key) => {
+      const el = document.querySelector('#rule-rows [data-k="' + key + '"]');
+      return el.type === 'checkbox' ? el.checked : el.value;
+    };
+    return {
+      name: value('name'), pattern: value('pattern'), caseSensitive: value('caseSensitive'),
+      action: value('action'), enabled: value('enabled'), matchMode: value('matchMode'),
+      target: value('target'), color: value('color'),
+    };
+  });
+  assert.deepStrictEqual(importedHighlighter, cfg.filters.rules[0], 'import restored every highlighter field');
 });
 
 test('mobile layout: page fits width, files panel is an overlay drawer, mask cards stack', async () => {
@@ -1540,13 +1632,24 @@ test('text inputs get an inline ✕ clear button that empties and re-fires', asy
   s = await state();
   assert.strictEqual(s.val, '', 'input emptied by ✕');
   assert.ok(s.hidden, 'clear button hidden once empty');
-  // dynamically rendered rows (filter rule editor) become clearable on focus
+  // Dense rule-table inputs stay plain: wrapping them changes the automatic
+  // column width after every edit/rerender cycle.
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
   await page.evaluate(() => document.getElementById('btn-add-rule').click());
-  await page.evaluate(() => document.querySelector('#rule-rows input[type=text]').focus());
-  const dyn = await page.evaluate(() =>
-    !!document.querySelector('#rule-rows input[type=text]').closest('.clr-wrap'));
-  assert.ok(dyn, 'dynamically rendered rule input wrapped on focus');
+  const pattern = () => page.locator('#rule-rows [data-k=pattern]');
+  const before = await pattern().evaluate((el) => el.getBoundingClientRect().width);
+  await pattern().click();
+  const firstFocus = await pattern().evaluate((el) => ({ width: el.getBoundingClientRect().width, wrapped: !!el.closest('.clr-wrap') }));
+  await pattern().fill('ActivityManager');
+  await pattern().press('Tab');
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false');
+  const beforeSecondFocus = await pattern().evaluate((el) => el.getBoundingClientRect().width);
+  await pattern().click();
+  const secondFocus = await pattern().evaluate((el) => ({ width: el.getBoundingClientRect().width, wrapped: !!el.closest('.clr-wrap') }));
+  assert.ok(!firstFocus.wrapped && !secondFocus.wrapped, 'rule inputs are not wrapped by the standalone-field clear control');
+  assert.ok(Math.abs(firstFocus.width - before) <= 1, 'first focus keeps rule input width');
+  assert.ok(Math.abs(secondFocus.width - beforeSecondFocus) <= 1, 'focus after rerender keeps rule input width');
+  assert.ok(Math.abs(secondFocus.width - before) <= 1, 'repeated edits do not grow the rule column');
 });
 
 test('issue scan groups by kind with severity color coding', async () => {

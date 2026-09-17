@@ -1,8 +1,8 @@
 # Test plan
 
-Version reference: v1.22.1. Development was test-driven and proceeded through quality gates G0–G8. Each gate has entry/exit criteria; coverage is mechanically enforced.
+Version reference: v1.35.0 plus Unreleased changes. Development was test-driven and proceeded through quality gates G0–G8. Each gate has entry/exit criteria; coverage is mechanically enforced.
 
-**Current status: v1.22.1 — all gates G0–G8 done; review hardening (2026-09) on branch review/v1.22.x.**
+**Current status: v1.35.0 plus Unreleased — all gates G0–G8 done.**
 
 ## Quality gates
 
@@ -27,7 +27,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 ### G3 — Filter engine and dynamic level tally
 
 - Entry criteria: G2 complete.
-- Exit criteria: ordered include (OR) / exclude / highlight regex rules with case toggle; live hit counters correct under rule edits; dynamic level chips derived from the parsed severity ladder (logcat V/D/I/W/E/F, mapped syslog severities, CLF mapped to I/W/E via status) and regenerated per load; "—" lines bypass level filters; inclusive time-range prefix compare verified across file boundaries; coverage gate green on `filters`, `levels`.
+- Exit criteria: ordered include (OR) / exclude rules plus additive color highlighters with case toggle; highlighters support literal/regex matching, text/row targets, preset/custom colors, masked-text rendering, overlap priority, persistence, and config round-trip without changing the filtered count; live hit counters correct under rule edits; dynamic level chips derived from the parsed severity ladder (logcat V/D/I/W/E/F, mapped syslog severities, CLF mapped to I/W/E via status) and regenerated per load; "—" lines bypass level filters; inclusive time-range prefix compare verified across file boundaries; coverage gate green on `filters`, `highlights`, and `levels`.
 - Status: **done**.
 
 ### G4 — Ripgrep-style search
@@ -95,7 +95,7 @@ Version reference: v1.22.1. Development was test-driven and proceeded through qu
 
 ## E2e scope (Playwright — 53 specs: 45 app + 8 stress)
 
-App suite (45 specs) — coverage includes:
+App suite (55 specs) — coverage includes:
 
 1. `?selftest` page runs and reports green.
 2. Demo load: format detection, level chips, and masking indications correct.
@@ -134,6 +134,9 @@ App suite (45 specs) — coverage includes:
 33. Real Android bugreport zip (local file, not in CI): 155 MB zip with 315 entries incl. a 1.5 GB dumpstate_board.bin — the board dump is stream-converted to a capped 64 MB `dumpstate_board.bin.log` text entry (newest text, CRC verified, no NUL bytes), ~314 text entries load recursively (301+ file items), and the bugreport text is searchable (verified locally against bugreport-gecko_gas zips; also validated in Node: 555,930-line 88 MB merged logcat batch ingests with exact counts; Node re-verification of the 1.6 GB board dump: 328 entries in ~35 s, ~900 MB peak RSS, 666k log lines extracted).
 34. Real TCAM log set (local folder, not in CI): 241 archives (`backup/*.tar.gz` × 172, `umdplog/kmesglog_*.tar` × 68 misnamed-gzip, plus 1) all extract in Node — 4,502 entries / 6.88 GB expanded text in ~26 s, zero failures; the kmesglog tars decompress via gzip-magic sniffing and yield kernel ring-buffer logs.
 35. Real 88 MB / 555,930-line logcat through the actual paging-worker code path (Node harness, `tests/tmp/large-file-check.cjs`): index in ~2.5 s with exact level counters; unfiltered view = all 555,930 lines (previously capped at ~100k); quick filter re-stream returns every match (236 for the reported SEAT_OCCU/Bluetooth pattern) in ~2 s; page fetch ~20 ms; go-to-line 450002 resolves to its view position in ~0.7 s.
+36. Color highlighter editor: the pattern field accepts real click/typing input and retains focus; literal matching colors text, row mode tints the complete row, a one-click palette color is visibly selected, the shown-line count is unchanged, and the rule/color survive reload.
+37. Highlighter config round trip: JSON export preserves every rule field (`name`, `pattern`, `caseSensitive`, `action`, `enabled`, `matchMode`, `target`, `color`) and import restores the same editor state.
+38. Rule-editor layout regressions: disabling a rule while Filters is visible must return to a Viewer filled beyond the five hidden-tab overscan rows, and repeated pattern-field focus/edit/rerender cycles must not change the input or column width.
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 

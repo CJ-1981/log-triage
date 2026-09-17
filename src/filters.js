@@ -49,7 +49,8 @@
     setRules(rules) {
       this.rules = rules.slice();
       this._compiled = this.rules.map((r) => {
-        const c = compile(r.pattern, !!r.caseSensitive);
+        const pattern = r.action === 'highlight' && r.matchMode === 'literal' ? escapeRegExp(r.pattern) : r.pattern;
+        const c = compile(pattern, !!r.caseSensitive);
         return { def: r, ok: c.ok, re: c.re, error: c.error || null };
       });
     }
