@@ -142,19 +142,22 @@ Status: implemented (v1.3.0); extended in v1.12.1 (drawer as bottom sheet, 100dv
 - AC-3: Mask cards stack in a single column on narrow screens.
 - AC-4 (v1.12.1): The drawer renders as a bottom sheet on narrow screens, and the app fills the dynamic viewport height (100dvh).
 
-### FR-16 — Search-match horizontal scrolling
+### FR-16 — Search-match display: wrap or scroll (per-tab preference)
 
-Status: implemented (v1.3.0).
+Status: wrap default implemented (v1.33.1); toggle implemented (v1.34.0).
 
 - AC-1: Search-match rows use dedicated file / line / timestamp / text columns.
-- AC-2: On narrow viewports the row scrolls horizontally so the full text is reachable — no ellipsis truncation.
+- AC-2: Long matched lines wrap inside the panel by default — the row's highlight band covers the full wrapped block and no text extends past the panel edge; the rendered text is bounded to a 2,000-character preview with click-to-open-full-text in the drawer.
+- AC-3: A Wrap: ON/OFF toggle next to Deep scan switches between wrapped rows (ON) and one horizontally scrollable line per match (OFF, full text reachable — no ellipsis truncation); the preference is per-tab (independent of the viewer's wrap setting) and persists.
+- AC-4: Hit rows carry a visible highlight tint (distinct from the page background) and context rows a muted style.
 
-### FR-17 — Debounced text inputs
+### FR-17 — Debounced text inputs and search-term history
 
-Status: implemented (v1.3.0).
+Status: debounce implemented (v1.3.0); history dropdown implemented (v1.33.0).
 
 - AC-1: Instant-search matching is debounced 250 ms and runs after typing pauses.
 - AC-2: The viewer quick filter is debounced 200 ms.
+- AC-3: Both fields keep a search-term history shown as a dropdown on focus/typing: substring-filtered, most recent first, capped at 20, deduped case-insensitively, persisted in localStorage. Picking an entry (click or ↑/↓ + Enter) fills the input and re-runs the search. Terms are recorded only when a search executes with a non-empty value; the active filters themselves stay transient (ADR-0012).
 
 ### FR-18 — Go-to-line and search-result click-to-jump
 
@@ -164,13 +167,15 @@ Status: implemented (v1.3.0).
 - AC-2: Clicking an instant-search result switches to the viewer and jumps to that line (selection + detail drawer).
 - AC-3: Jumps resolve through the paging worker and load the page containing the target — any indexed line is reachable, in files of any size (there is no kept-line cap anymore); a bookmark jump resolves the bookmark's file-identity key to the currently loaded file first, and a target that truly cannot be found (source changed on disk) reports a clear explanatory status instead of failing silently.
 
-### FR-19 — Collapsible files panel
+### FR-19 — Collapsible files panel, with name filter and sort
 
-Status: implemented (v1.3.0).
+Status: collapse implemented (v1.3.0); filter and sort implemented (v1.35.0).
 
 - AC-1: The files panel toggles via the header "☰ Files" button; the collapsed state persists.
 - AC-2: The panel auto-collapses on narrow screens until toggled.
 - AC-3: Clicking a file in the list switches the viewer to that file.
+- AC-4: A text box filters the list by file name — live files and cached entries, case-insensitive substring; an unmatched filter shows a "no files match the filter" hint, and Clear-all resets it.
+- AC-5: A dropdown sorts the list by load order (default), name A→Z / Z→A, size ↑/↓, or line count ↑/↓ (using per-file totals); sorting reorders only the rendered list, not the underlying load order.
 
 ### FR-20 — File cache / session restore
 
