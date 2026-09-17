@@ -99,6 +99,7 @@ Status: implemented (v1.0.0).
 - AC-2: Both merged-timeline view (sorted by timestamp, file order as tiebreak) and per-file views are available.
 - AC-3: A wrap toggle switches between pre-wrapped (variable row heights with a measured-height cache) and single-line modes; severity badges and W/E/F row tint are always visible.
 - AC-4: Six themes switch via `body[data-theme]` CSS variables: Midnight (default), Paper, Solarized Dark, Solarized Light, Monokai, High Contrast. The header exposes them through a compact icon button that opens the theme dropdown (replacing the former inline `<select>`, so the mobile header stays on one line); the choice persists.
+- AC-5: Zen mode (viewer toolbar button) hides the header, files panel, level chips, viewer toolbar, pager and status bar so the log viewer fills the window; on entry a brief hint explains the exits; a faint floating "✕ Zen" button (full opacity on hover/focus) and the Esc key exit it, as does clicking the toolbar Zen button again. The mode is session-only (never persisted), and Esc in Zen mode exits Zen instead of clearing the selection.
 
 ### FR-11 — Selection, copy, and bookmarks
 
