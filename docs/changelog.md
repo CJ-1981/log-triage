@@ -1,6 +1,20 @@
 # Changelog
 
 ## Unreleased
+
+## 1.36.0 (2026-09-17)
+- Merge pull request #15 from CJ-1981/feature/color-highlighter
+- docs: explain color highlighter workflow
+- fix: stabilize rule table input sizing
+- fix: preserve focused rule field width
+- fix: refill viewer after rule changes
+- feat: add highlight color palette
+- test: cover highlighter config round trip
+- fix: keep highlighter inputs focused
+- feat: add configurable color highlighters
+- Merge pull request #14 from CJ-1981/fix/search-row-overflow
+- docs: requirements/architecture/decisions coverage for v1.33.0-v1.35.0 features
+
 - feat: configurable literal/regex color highlighters for matching text or complete viewer rows, with a one-click preset palette and custom color picker
 - fix: refill the virtualized Viewer viewport after rules are changed from the hidden Filters tab
 - fix: keep rule-table fields at a stable width across repeated focus and rerender cycles
