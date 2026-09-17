@@ -30,7 +30,7 @@
       // transient view state (quick filter, level chips, time range, search
       // pattern) is deliberately NOT persisted: a new session must start
       // unfiltered, or freshly loaded files can appear invisible
-      const { quick, levels, timeFrom, timeTo, rgPattern, showOnlyBookmarked, ...persisted } = state;
+      const { quick, levels, timeFrom, timeTo, rgPattern, showOnlyBookmarked, zenOn, ...persisted } = state;
       const s = Object.assign({}, persisted, { bookmarks: bookmarksStore.toJSON() });
       localStorage.setItem(STATE_KEY, JSON.stringify(s));
     } catch (e) { /* storage may be unavailable on file:// in some browsers */ }
@@ -1770,6 +1770,27 @@
     if (box) box.classList.toggle('nowrap', !on);
     saveState();
   }
+  let zenHintTimer = null;
+  function setZen(on) {
+    // session-only focus mode: hides header, sidebar, chips, toolbar, pager
+    // and status bar so the viewer fills the window. Not persisted — a
+    // reload must never start hidden. Exits: Esc, the floating ✕ Zen button,
+    // or the toolbar Zen button again.
+    state.zenOn = !!on;
+    document.body.classList.toggle('zen', state.zenOn);
+    $('btn-zen').classList.toggle('on', state.zenOn);
+    const hint = $('zen-hint');
+    if (zenHintTimer) { clearTimeout(zenHintTimer); zenHintTimer = null; }
+    if (state.zenOn) {
+      hint.textContent = 'Zen mode — Esc or the ✕ button exits';
+      hint.classList.add('show');
+      zenHintTimer = setTimeout(() => hint.classList.remove('show'), 2600);
+    } else {
+      hint.classList.remove('show');
+    }
+    invalidateHeights();
+    renderRows();
+  }
   function setFollow(on) {
     state.follow = on;
     $('btn-follow').textContent = 'Follow: ' + (on ? 'ON' : 'OFF');
@@ -2116,6 +2137,8 @@
     attachHistory($('rg-pattern'), 'searchHistory');
     attachHistory($('quick'), 'quickHistory');
     $('btn-sr-wrap').onclick = () => setSearchWrap(!state.srWrapOn);
+    $('btn-zen').onclick = () => setZen(!state.zenOn);
+    $('zen-fab').onclick = () => setZen(false);
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
@@ -2273,6 +2296,7 @@
       if (e.key === 'm' || e.key === 'M') setMask(!state.maskOn);
       else if (e.key === 'w' || e.key === 'W') setWrap(!state.wrapOn);
       else if (e.key === 'b' || e.key === 'B') { if (view.length) toggleBookmark(selection.count ? selection.indices()[0] : Number((viewer().querySelector('.vrow') || { dataset: { idx: 0 } }).dataset.idx || 0)); }
+      else if (e.key === 'Escape' && state.zenOn) { setZen(false); e.preventDefault(); }
       else if (e.key === 'Escape') { selection.clear(); $('drawer').className = ''; renderRows(); updateStatus(); }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c')) { if (selection.count) { copySelection(); e.preventDefault(); } }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'a')) { selection.selectAll(view.length); renderRows(); updateStatus(); e.preventDefault(); }

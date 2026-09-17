@@ -90,6 +90,16 @@ header h1 span { color: var(--accent); }
 .file-tools { display: flex; gap: 4px; padding: 6px 10px 2px; }
 .file-tools input { flex: 1; min-width: 0; font-size: 12px; padding: 3px 6px; }
 .file-tools select { font-size: 12px; max-width: 108px; }
+/* Zen mode: everything except the log viewer disappears; the viewer fills
+   the whole window. A faint floating button (full opacity on hover) plus
+   Esc are the exits. */
+body.zen header, body.zen #sidebar, body.zen #chips-row, body.zen #vtools, body.zen #pager, body.zen #statusbar { display: none !important; }
+body.zen #viewer-wrap { position: fixed; inset: 0; z-index: 40; background: var(--bg); }
+#zen-fab { display: none; position: fixed; top: 10px; right: 12px; z-index: 70; opacity: .3; transition: opacity .15s ease; }
+#zen-fab:hover, #zen-fab:focus { opacity: 1; }
+body.zen #zen-fab { display: inline-block; }
+#zen-hint { position: fixed; top: 46px; right: 12px; z-index: 70; padding: 6px 10px; background: var(--surface); border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; color: var(--fg); opacity: 0; pointer-events: none; transition: opacity .25s ease; }
+#zen-hint.show { opacity: 1; }
 #dropzone.drag { border-color: var(--accent); color: var(--accent); }
 #archive-progress { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 100; }
 #archive-progress.visible { display: flex; }
@@ -337,6 +347,7 @@ table.rules { min-width: 620px; }
           <select id="view-mode" title="view"><option value="merged">Merged timeline</option><option value="file">Per file</option></select>
           <button id="btn-copy" title="copy selection (Ctrl+C)">Copy selection</button>
           <select id="copy-prefix" title="copy prefix"><option value="none">plain</option><option value="ln">[Ln]</option><option value="file:line">file:line:</option></select>
+          <button id="btn-zen" title="Zen mode: hide everything except the log viewer so you can focus on the log text — press Esc or click again to exit">Zen</button>
         </div>
         <div id="viewer-wrap">
           <div id="viewer"><div id="vspacer"></div></div>
@@ -348,6 +359,8 @@ table.rules { min-width: 620px; }
           <label>Page <input id="page-number" type="text" inputmode="numeric" value="1" aria-label="Page number"></label><span id="page-count">of 1</span>
           <button id="page-next" title="Next page">Next</button><button id="page-last" title="Last page">Last</button><span id="page-range"></span>
         </div>
+        <button id="zen-fab" title="Exit zen mode (Esc)">✕&nbsp;Zen</button>
+        <div id="zen-hint" role="status" aria-live="polite"></div>
         <div id="statusbar">
           <span>lines: <b id="st-total">0</b></span>
           <span>indexed: <b id="st-kept">0</b></span>

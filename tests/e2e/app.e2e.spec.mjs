@@ -625,6 +625,47 @@ test('files panel filter narrows by name and sort reorders the list', async () =
   assert.deepStrictEqual(await names(), ['demo.log', 'syslog.log', 'apache.log'], 'load order restored');
 });
 
+test('zen mode hides all chrome, exits via Esc and via the floating button', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  await page.click('#btn-zen');
+  await page.waitForFunction(() => document.body.classList.contains('zen'), null, { timeout: 5000 });
+  const zen = await page.evaluate(() => {
+    const vis = (el) => el && getComputedStyle(el).display !== 'none';
+    const vw = document.getElementById('viewer-wrap').getBoundingClientRect();
+    return {
+      headerHidden: !vis(document.querySelector('header')),
+      sidebarHidden: !vis(document.getElementById('sidebar')),
+      statusHidden: !vis(document.getElementById('statusbar')),
+      pagerHidden: !vis(document.getElementById('pager')),
+      toolbarHidden: !vis(document.getElementById('vtools')),
+      viewerFull: Math.abs(vw.height - window.innerHeight) <= 2 && Math.abs(vw.width - window.innerWidth) <= 2,
+      rows: document.querySelectorAll('.vrow').length,
+      fabVisible: vis(document.getElementById('zen-fab')),
+      hintShown: document.getElementById('zen-hint').classList.contains('show'),
+    };
+  });
+  assert.ok(zen.headerHidden && zen.sidebarHidden && zen.statusHidden && zen.pagerHidden && zen.toolbarHidden, 'all chrome hidden in zen mode');
+  assert.ok(zen.viewerFull, 'viewer fills the window');
+  assert.ok(zen.rows > 0, 'log rows still rendered in zen mode');
+  assert.ok(zen.fabVisible, 'floating exit button visible');
+  assert.ok(zen.hintShown, 'exit hint shown on entry');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.body.classList.contains('zen'), null, { timeout: 5000 });
+  assert.ok(await page.evaluate(() => getComputedStyle(document.querySelector('header')).display !== 'none'), 'header visible again after Esc');
+  // re-enter, then exit via the floating ✕ Zen button
+  await page.click('#btn-zen');
+  await page.waitForFunction(() => document.body.classList.contains('zen'), null, { timeout: 5000 });
+  await page.click('#zen-fab');
+  await page.waitForFunction(() => !document.body.classList.contains('zen'), null, { timeout: 5000 });
+  // zen is session-only: a reload never starts hidden
+  await page.click('#btn-zen');
+  await page.waitForFunction(() => document.body.classList.contains('zen'), null, { timeout: 5000 });
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => !document.body.classList.contains('zen'), null, { timeout: 5000 });
+});
+
 test('per-file ✕ removes that file only (lines, counters, chips)', async () => {
   await fresh();
   await page.setInputFiles('#file-input', [
