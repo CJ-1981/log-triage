@@ -1818,15 +1818,14 @@
   /* ---------------- universal inline ✕ clear for text inputs ---------------- */
   /* Wraps a text input in a .clr-wrap span (transferring flex styles so row
    * layout is preserved) and appends an ✕ button that empties the field and
-   * re-fires input/change so the app's live filters react. */
+   * re-fires input/change so the app's live filters react. Dense rule-table
+   * inputs stay plain because wrapping them changes automatic column sizing. */
   function makeClearable(input) {
-    if (!input || input.dataset.clearable === '1' || input.type !== 'text') return;
+    if (!input || input.dataset.clearable === '1' || input.type !== 'text' || input.closest('table.rules')) return;
     const wasFocused = document.activeElement === input;
-    const ruleWidth = input.closest('table.rules') ? input.getBoundingClientRect().width : 0;
     input.dataset.clearable = '1';
     const wrap = document.createElement('span');
     wrap.className = 'clr-wrap';
-    if (ruleWidth) wrap.style.width = ruleWidth + 'px';
     const inline = input.getAttribute('style') || '';
     if (inline.includes('flex')) {
       wrap.setAttribute('style', inline);

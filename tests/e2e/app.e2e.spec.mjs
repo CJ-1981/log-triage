@@ -1632,21 +1632,24 @@ test('text inputs get an inline ✕ clear button that empties and re-fires', asy
   s = await state();
   assert.strictEqual(s.val, '', 'input emptied by ✕');
   assert.ok(s.hidden, 'clear button hidden once empty');
-  // dynamically rendered rows (filter rule editor) become clearable on focus
+  // Dense rule-table inputs stay plain: wrapping them changes the automatic
+  // column width after every edit/rerender cycle.
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
   await page.evaluate(() => document.getElementById('btn-add-rule').click());
-  const dyn = await page.evaluate(() => {
-    const input = document.querySelector('#rule-rows [data-k=pattern]');
-    const before = input.getBoundingClientRect().width;
-    input.focus();
-    return {
-      wrapped: !!input.closest('.clr-wrap'),
-      before,
-      after: input.getBoundingClientRect().width,
-    };
-  });
-  assert.ok(dyn.wrapped, 'dynamically rendered rule input wrapped on focus');
-  assert.ok(Math.abs(dyn.after - dyn.before) <= 1, 'focused rule input keeps its width: ' + JSON.stringify(dyn));
+  const pattern = () => page.locator('#rule-rows [data-k=pattern]');
+  const before = await pattern().evaluate((el) => el.getBoundingClientRect().width);
+  await pattern().click();
+  const firstFocus = await pattern().evaluate((el) => ({ width: el.getBoundingClientRect().width, wrapped: !!el.closest('.clr-wrap') }));
+  await pattern().fill('ActivityManager');
+  await pattern().press('Tab');
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false');
+  const beforeSecondFocus = await pattern().evaluate((el) => el.getBoundingClientRect().width);
+  await pattern().click();
+  const secondFocus = await pattern().evaluate((el) => ({ width: el.getBoundingClientRect().width, wrapped: !!el.closest('.clr-wrap') }));
+  assert.ok(!firstFocus.wrapped && !secondFocus.wrapped, 'rule inputs are not wrapped by the standalone-field clear control');
+  assert.ok(Math.abs(firstFocus.width - before) <= 1, 'first focus keeps rule input width');
+  assert.ok(Math.abs(secondFocus.width - beforeSecondFocus) <= 1, 'focus after rerender keeps rule input width');
+  assert.ok(Math.abs(secondFocus.width - before) <= 1, 'repeated edits do not grow the rule column');
 });
 
 test('issue scan groups by kind with severity color coding', async () => {
