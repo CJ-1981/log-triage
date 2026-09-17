@@ -67,6 +67,8 @@ Status: implemented (v1.0.0).
 - AC-1: Ordered rules of three kinds are supported: include (OR-combined), exclude (subtractive), and highlight (additive).
 - AC-2: A case-sensitivity toggle applies to rule matching.
 - AC-3: Live per-rule hit counters update as rules and data change.
+- AC-4: Highlight rules support literal or regex matching, custom colors, and text or whole-row targets.
+- AC-5: Visual highlighting operates on the masked display text, does not change the filtered line count, and persists through presets/config export.
 
 ### FR-8 — Dynamic level chips and time-range filter
 

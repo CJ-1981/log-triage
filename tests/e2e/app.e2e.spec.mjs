@@ -118,6 +118,40 @@ test('quick filter narrows view and highlights matches', async () => {
   assert.strictEqual(marks, 4);
 });
 
+test('color highlighter paints matching text and rows without filtering', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await click('btn-add-highlight');
+  await page.evaluate(() => {
+    const row = document.querySelector('#rule-rows tr');
+    const pattern = row.querySelector('[data-k=pattern]');
+    pattern.value = 'ActivityManager';
+    pattern.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForFunction(() => document.querySelectorAll('.rule-highlight-text').length > 0);
+  assert.strictEqual(await page.textContent('#st-shown'), '44', 'highlight rules do not filter lines');
+  assert.equal(await page.$eval('.rule-highlight-text', (el) => getComputedStyle(el).backgroundColor), 'rgb(255, 209, 102)');
+
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await page.evaluate(() => {
+    const target = document.querySelector('#rule-rows [data-k=target]');
+    target.value = 'row';
+    target.dispatchEvent(new Event('change', { bubbles: true }));
+  });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForFunction(() => document.querySelector('.vrow.rule-highlight-row'));
+  assert.strictEqual(await page.textContent('#st-shown'), '44');
+
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await page.waitForFunction(() => document.querySelector('.vrow.rule-highlight-row'));
+  assert.equal(await page.$eval('#rule-rows [data-k=color]', (el) => el.value), '#ffd166', 'highlight color persists');
+});
+
 test('multi-file load keeps per-file counters and merged view', async () => {
   await fresh();
   await page.setInputFiles('#file-input', [

@@ -53,9 +53,24 @@
   const files = [];                                   // {id, name, size, file, format, done}
   let cacheEntries = [];                              // restored entries from previous sessions (IDB)
   let displayCache = new Map();                       // seq -> rendered text (masked or raw)
+  let compiledHighlights = [];
 
   const $ = (id) => document.getElementById(id);
   const esc = LT.escapeHtml;
+
+  function normalizeRule(rule) {
+    const r = Object.assign({ name: 'rule', pattern: '', caseSensitive: false, action: 'include', enabled: true }, rule || {});
+    if (r.action === 'highlight') {
+      if (r.matchMode !== 'literal') r.matchMode = 'regex';
+      if (r.target !== 'row') r.target = 'text';
+      r.color = LT.normalizeColor(r.color);
+    }
+    return r;
+  }
+
+  function refreshHighlights() {
+    compiledHighlights = LT.compileHighlightRules(state.rules.map((r, i) => Object.assign({ id: 'r' + i }, r)));
+  }
 
   /* ---------------- ingestion ---------------- */
   const VALVE = 8 * 1024 * 1024;
@@ -648,7 +663,13 @@
       row.className = cls;
       const bmk = bookmarksStore.has(bookmarkKeyFor(rec.fileId), rec.lineNo);
       const text = displayText(rec);
-      const hl = quickSpans(text);
+      const visual = LT.highlightText(text, compiledHighlights);
+      const hl = highlightedHtml(text, visual.spans);
+      if (visual.row && !selection.has(i)) {
+        row.classList.add('rule-highlight-row');
+        row.style.setProperty('--rule-row-color', visual.row.color + '33');
+        row.title = visual.row.name;
+      }
       row.innerHTML =
         '<div class="vcell bm' + (bmk ? ' marked' : '') + '" data-bm="' + i + '">' + (bmk ? '★' : '☆') + '</div>' +
         '<div class="vcell ln">' + rec.lineNo + '</div>' +
@@ -678,27 +699,39 @@
     return st ? st.raw.slice(0, 200) : '*';
   }
 
-  function quickSpans(text) {
-    if (!filter._quickRe) return null;
-    // the quick regex is compiled non-global; clone it with /g for span scanning
+  function quickMatchSpans(text) {
+    if (!filter._quickRe) return [];
     const src = filter._quickRe;
     const re = src.global ? src : new RegExp(src.source, src.flags + 'g');
     const spans = [];
     let m;
     re.lastIndex = 0;
     while ((m = re.exec(text)) !== null) {
-      if (m[0].length === 0) { re.lastIndex++; continue; }
-      spans.push([m.index, m.index + m[0].length]);
+      if (!m[0].length) { re.lastIndex++; continue; }
+      spans.push({ start: m.index, end: m.index + m[0].length });
       if (spans.length >= 100) break;
     }
-    if (!src.global) re.lastIndex = 0;
-    if (!spans.length) return null;
-    let out = '', pos = 0;
-    for (const [a, b] of spans) {
-      out += esc(text.slice(pos, a)) + '<mark>' + esc(text.slice(a, b)) + '</mark>';
-      pos = b;
+    re.lastIndex = 0;
+    return spans;
+  }
+
+  function highlightedHtml(text, colored) {
+    const quick = quickMatchSpans(text);
+    if (!quick.length && !colored.length) return null;
+    const points = new Set([0, text.length]);
+    for (const s of quick.concat(colored)) { points.add(s.start); points.add(s.end); }
+    const sorted = Array.from(points).sort((a, b) => a - b);
+    let out = '';
+    for (let i = 0; i < sorted.length - 1; i++) {
+      const a = sorted[i], b = sorted[i + 1];
+      if (a === b) continue;
+      const value = esc(text.slice(a, b));
+      if (quick.some((s) => a >= s.start && b <= s.end)) { out += '<mark>' + value + '</mark>'; continue; }
+      const rule = colored.find((s) => a >= s.start && b <= s.end);
+      if (rule) out += '<span class="rule-highlight-text" title="' + esc(rule.name) + '" style="background:' + rule.color + ';color:' + LT.textColor(rule.color) + '">' + value + '</span>';
+      else out += value;
     }
-    return out + esc(text.slice(pos));
+    return out;
   }
 
   function updateStatus() {
@@ -826,12 +859,14 @@
     const d = $('drawer');
     d.className = 'open';
     const maskedLine = engine.maskLine(rec.raw);
+    const maskedVisual = LT.highlightText(maskedLine, compiledHighlights);
+    const maskedHtml = highlightedHtml(maskedLine, maskedVisual.spans) || esc(maskedLine);
     d.innerHTML = '<h3>Line ' + rec.lineNo + ' — ' + esc(fileDisplayName(rec.fileId)) +
       '<button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
       '<dl>' +
       dv('ts', rec.ts) + dv('level', rec.level) + dv('tag', rec.tag) +
       dv('pid', rec.pid) + dv('tid', rec.tid) +
-      '<div><dt>masked <button type="button" class="drawer-cp" data-what="masked" title="copy masked line">copy</button></dt><dd>' + esc(maskedLine) + '</dd></div>' +
+      '<div><dt>masked <button type="button" class="drawer-cp" data-what="masked" title="copy masked line">copy</button></dt><dd>' + maskedHtml + '</dd></div>' +
       '<div><dt>raw <button type="button" class="drawer-cp" data-what="raw" title="copy raw line">copy</button></dt><dd class="raw">' + esc(rec.raw) + '</dd></div>' +
       '</dl>';
     for (const btn of d.querySelectorAll('.drawer-cp')) {
@@ -1035,29 +1070,47 @@
         '<td><select data-i="' + i + '" data-k="action">' +
         ['include', 'exclude', 'highlight'].map((a) => '<option' + (r.action === a ? ' selected' : '') + '>' + a + '</option>').join('') +
         '</select></td>' +
+        '<td>' + (r.action === 'highlight' ? '<select data-i="' + i + '" data-k="matchMode"><option value="regex"' + (r.matchMode !== 'literal' ? ' selected' : '') + '>regex</option><option value="literal"' + (r.matchMode === 'literal' ? ' selected' : '') + '>literal</option></select>' : '<span class="muted">—</span>') + '</td>' +
+        '<td>' + (r.action === 'highlight' ? '<select data-i="' + i + '" data-k="target"><option value="text"' + (r.target !== 'row' ? ' selected' : '') + '>text</option><option value="row"' + (r.target === 'row' ? ' selected' : '') + '>row</option></select>' : '<span class="muted">—</span>') + '</td>' +
+        '<td>' + (r.action === 'highlight' ? '<input type="color" class="rule-color" data-i="' + i + '" data-k="color" value="' + LT.normalizeColor(r.color) + '" title="Highlight color">' : '<span class="muted">—</span>') + '</td>' +
         '<td><span class="count-pill" id="hits-' + i + '">' + (filter.hits[r.id] || 0) + '</span></td>' +
         '<td><button data-del="' + i + '">✕</button></td>';
       tb.appendChild(tr);
     });
     tb.onchange = tb.onclick = (e) => {
       const del = e.target.dataset && e.target.dataset.del;
-      if (del != null) { state.rules.splice(Number(del), 1); applyFilters(); return; }
+      if (del != null) {
+        const removed = state.rules.splice(Number(del), 1)[0];
+        if (removed && removed.action === 'highlight') { refreshHighlights(); saveState(); renderRules(); renderRows(); }
+        else applyFilters();
+        return;
+      }
       const i = e.target.dataset && e.target.dataset.i;
       const k = e.target.dataset && e.target.dataset.k;
       if (i == null || !k) return;
       const r = state.rules[Number(i)];
       if (!r) return;
+      const wasHighlight = r.action === 'highlight';
       r[k] = e.target.type === 'checkbox' ? e.target.checked : e.target.value;
+      if (wasHighlight && r.action === 'highlight') {
+        Object.assign(r, normalizeRule(r));
+        refreshHighlights();
+        saveState(); renderRules(); renderRows();
+        return;
+      }
       applyFilters();
     };
   }
 
   function ruleError(r) {
+    if (r.action === 'highlight' && r.matchMode === 'literal') return null;
     try { new RegExp(r.pattern, r.caseSensitive ? '' : 'i'); return null; } catch (e) { return e.message; }
   }
 
   function applyFilters() {
+    state.rules = state.rules.map(normalizeRule);
     filter.setRules(state.rules.map((r, i) => Object.assign({ id: 'r' + i }, r)));
+    refreshHighlights();
     filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null; filter.compileQuick();
     filter.setLevels(state.levels);
     filter.timeFrom = $('time-from').value.trim();
@@ -1078,7 +1131,7 @@
     };
   }
   function applyPreset(p) {
-    state.rules = p.rules || [];
+    state.rules = (p.rules || []).map(normalizeRule);
     state.quick = p.quick || '';
     state.levels = p.levels || [];
     state.issueGroups = Array.isArray(p.issueGroups) ? JSON.parse(JSON.stringify(p.issueGroups)) : JSON.parse(JSON.stringify(LT.DEFAULT_ISSUE_GROUPS));
@@ -1536,7 +1589,7 @@
   function applyConfig(cfg) {
     const applied = [];
     if (cfg.filters && Array.isArray(cfg.filters.rules)) {
-      state.rules = cfg.filters.rules.map((r) => Object.assign({ name: 'rule', pattern: '', caseSensitive: false, action: 'include', enabled: true }, r));
+      state.rules = cfg.filters.rules.map(normalizeRule);
       if (typeof cfg.filters.timeFrom === 'string') { state.timeFrom = cfg.filters.timeFrom; $('time-from').value = state.timeFrom; }
       if (typeof cfg.filters.timeTo === 'string') { state.timeTo = cfg.filters.timeTo; $('time-to').value = state.timeTo; }
       applyFilters(); renderRules();
@@ -1790,6 +1843,9 @@
   /* ---------------- boot ---------------- */
   function boot() {
     loadState();
+    state.rules = (state.rules || []).map(normalizeRule);
+    filter.setRules(state.rules.map((r, i) => Object.assign({ id: 'r' + i }, r)));
+    refreshHighlights();
     store.cap = state.cap || 100000;
     if (!Array.isArray(state.issueGroups)) {
       state.issueGroups = JSON.parse(JSON.stringify(LT.DEFAULT_ISSUE_GROUPS));
@@ -2118,6 +2174,11 @@
     };
 
     $('btn-add-rule').onclick = () => { state.rules.push({ name: 'rule ' + (state.rules.length + 1), pattern: '', caseSensitive: false, action: 'include', enabled: true }); renderRules(); };
+    $('btn-add-highlight').onclick = () => {
+      const number = state.rules.filter((r) => r.action === 'highlight').length + 1;
+      state.rules.push(normalizeRule({ name: 'highlight ' + number, pattern: '', caseSensitive: false, action: 'highlight', enabled: true, matchMode: 'literal', target: 'text', color: LT.DEFAULT_COLOR }));
+      saveState(); refreshHighlights(); renderRules();
+    };
     ;['time-from', 'time-to'].forEach((id) => { $(id).onchange = applyFilters; });
 
     $('btn-preset-save').onclick = () => {

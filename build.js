@@ -14,6 +14,7 @@ const MODULE_ORDER = [
   'pii-provider.js',
   'pii-remote.js',
   'filters.js',
+  'highlights.js',
   'levels.js',
   'search.js',
   'store.js',
