@@ -1077,14 +1077,14 @@
         '<td><button data-del="' + i + '">✕</button></td>';
       tb.appendChild(tr);
     });
-    tb.onchange = tb.onclick = (e) => {
+    tb.onclick = (e) => {
       const del = e.target.dataset && e.target.dataset.del;
-      if (del != null) {
-        const removed = state.rules.splice(Number(del), 1)[0];
-        if (removed && removed.action === 'highlight') { refreshHighlights(); saveState(); renderRules(); renderRows(); }
-        else applyFilters();
-        return;
-      }
+      if (del == null) return;
+      const removed = state.rules.splice(Number(del), 1)[0];
+      if (removed && removed.action === 'highlight') { refreshHighlights(); saveState(); renderRules(); renderRows(); }
+      else applyFilters();
+    };
+    tb.onchange = (e) => {
       const i = e.target.dataset && e.target.dataset.i;
       const k = e.target.dataset && e.target.dataset.k;
       if (i == null || !k) return;
@@ -1803,6 +1803,7 @@
    * re-fires input/change so the app's live filters react. */
   function makeClearable(input) {
     if (!input || input.dataset.clearable === '1' || input.type !== 'text') return;
+    const wasFocused = document.activeElement === input;
     input.dataset.clearable = '1';
     const wrap = document.createElement('span');
     wrap.className = 'clr-wrap';
@@ -1838,6 +1839,9 @@
       input.focus();
     });
     sync();
+    // Dynamically rendered fields are decorated on their first focusin. Moving
+    // the input into the wrapper blurs it, so restore the user's active field.
+    if (wasFocused) input.focus({ preventScroll: true });
   }
 
   /* ---------------- boot ---------------- */

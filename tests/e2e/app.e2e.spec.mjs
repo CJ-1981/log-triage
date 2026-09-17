@@ -124,12 +124,16 @@ test('color highlighter paints matching text and rows without filtering', async 
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44');
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
   await click('btn-add-highlight');
-  await page.evaluate(() => {
-    const row = document.querySelector('#rule-rows tr');
-    const pattern = row.querySelector('[data-k=pattern]');
-    pattern.value = 'ActivityManager';
-    pattern.dispatchEvent(new Event('change', { bubbles: true }));
-  });
+  const pattern = page.locator('#rule-rows tr [data-k=pattern]');
+  await pattern.click();
+  const focusState = await pattern.evaluate((el) => ({
+    focused: document.activeElement === el,
+    active: document.activeElement && (document.activeElement.id || document.activeElement.dataset.k || document.activeElement.tagName),
+  }));
+  assert.equal(focusState.focused, true, 'pattern field keeps focus after click; active element: ' + focusState.active);
+  await pattern.fill('ActivityManager');
+  assert.equal(await pattern.inputValue(), 'ActivityManager', 'pattern text is enterable');
+  await pattern.press('Tab');
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
   await page.waitForFunction(() => document.querySelectorAll('.rule-highlight-text').length > 0);
   assert.strictEqual(await page.textContent('#st-shown'), '44', 'highlight rules do not filter lines');
