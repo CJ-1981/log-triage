@@ -1,8 +1,10 @@
 # Test plan
 
-Version reference: v1.35.0 plus Unreleased changes. Development was test-driven and proceeded through quality gates G0–G8. Each gate has entry/exit criteria; coverage is mechanically enforced.
+Version reference: v1.39.1 plus Unreleased changes. Development was test-driven and proceeded through quality gates G0–G8. Each gate has entry/exit criteria; coverage is mechanically enforced.
 
-**Current status: v1.35.0 plus Unreleased — all gates G0–G8 done.**
+**Current status: v1.39.1 plus Unreleased — all gates G0–G8 done.**
+
+Note: the G0–G8 records below are historical — they describe the design verified at each gate (kept-line store, 100k cap). The current architecture (full-file worker indexing, 500-row paging, per-file analysis sample) supersedes them; current behavior is specified in `docs/requirements.md` and asserted by the browser-matrix items numbered 30+ and the stress suite.
 
 ## Quality gates
 
