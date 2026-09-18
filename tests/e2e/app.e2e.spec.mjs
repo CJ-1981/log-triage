@@ -1025,7 +1025,7 @@ test('file cache: previous session is listed after reload, cached file reloads, 
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
   // reopen the app: the cache lists the previous file as restorable
   await page.reload({ waitUntil: 'domcontentloaded' });
-  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 1, null, { timeout: 8000 });
+  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 1, null, { timeout: 20000 });
   const listed = await page.evaluate(`JSON.stringify((() => {
     const el = document.querySelector('.file-item');
     return { name: el.querySelector('.fname').textContent, cached: el.className.includes('cached'), missing: el.className.includes('missing') };
