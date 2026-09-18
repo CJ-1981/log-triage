@@ -3973,11 +3973,12 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         entry.status = 'error';
         flash('could not read ' + f.name + ': ' + err.message);
       }
+      // in per-file mode a freshly loaded file becomes the displayed one, so
+      // new content is never hidden behind another file's view — select it
+      // BEFORE the rebuild so the query and the panel highlight agree
+      if (entry.status === 'done' && state.viewMode === 'file') { state.activeFile = entry.id; $('view-mode').value = 'file'; }
       renderFiles();
-      onKeptChanged();
-      // in per-file mode a freshly loaded file becomes the displayed one,
-      // so new content is never hidden behind another file's view
-      if (entry.status === 'done' && state.viewMode === 'file') { state.activeFile = entry.id; $('view-mode').value = 'file'; renderFiles(); }
+      await onKeptChanged();
       if (entry.status === 'done') await cacheLoadedFile(entry, f);
       if (ingestAbort) break;
     }
@@ -4284,13 +4285,21 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   const showStartMark = () => pageStart === 0 && view.length > 0;
   const showEndMark = () => view.length > 0 && pageStart + view.length >= filteredCount;
   const topOffset = () => (showStartMark() ? MARK_H : 0);
+  // physical-log wording is only truthful without active filters; with any
+  // filter the bands bound the MATCHING results instead
+  const viewIsFiltered = () => !!(filter.quick || state.levels.length || filter.timeFrom || filter.timeTo ||
+    state.showOnlyBookmarked || (state.rules || []).some((r) => r.enabled !== false && String(r.pattern || '').trim()));
   function markLabel(which) {
     const perFile = state.viewMode === 'file' && state.activeFile;
     const fname = perFile ? (files.find((f) => f.id === state.activeFile) || {}).name || 'file' : null;
-    if (which === 'start') {
-      return fname ? '▲ start of ' + fname : '▲ start of merged log (' + files.length + ' file' + (files.length === 1 ? '' : 's') + ')';
+    const scope = fname || ('merged log (' + files.length + ' file' + (files.length === 1 ? '' : 's') + ')');
+    const first = view[0], last = view[view.length - 1];
+    if (viewIsFiltered()) {
+      return which === 'start'
+        ? '▲ first match in ' + scope + ' — source line ' + (first ? first.lineNo : 0)
+        : '▼ last match in ' + scope + ' — source line ' + (last ? last.lineNo : 0) + ' — ' + filteredCount.toLocaleString() + ' matches';
     }
-    const last = view[view.length - 1];
+    if (which === 'start') return '▲ start of ' + scope;
     return fname
       ? '▼ end of ' + fname + ' — line ' + (last ? last.lineNo : 0)
       : '▼ end of merged log — ' + filteredCount.toLocaleString() + ' lines';
