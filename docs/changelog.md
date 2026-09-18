@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.40.0 (2026-09-18)
+- Merge pull request #23 from CJ-1981/feat/reload-all-cached
+- feat: Reload button restores all cached files in one click
+
 ## 1.39.2 (2026-09-18)
 - Merge pull request #22 from CJ-1981/fix/review-p1-p2
 - fix: address code review P1 (select new file before rebuild) and P2 (honest boundary labels)
