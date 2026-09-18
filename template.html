@@ -124,8 +124,11 @@ body.zen #zen-fab { display: inline-block; }
 #viewer { position: absolute; inset: 0; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
 #vspacer { position: relative; width: 100%; min-width: 0; }
 #viewer.nowrap #vspacer { width: max-content; min-width: 100%; }
-/* start/end-of-log marker bands (pagination orientation aids) */
-.vmark { position: absolute; left: 0; right: 0; height: 26px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; background: var(--surface); }
+/* start/end-of-log marker bands (pagination orientation aids). The band
+   spans the full scroll width, but its label is sticky-left so it stays in
+   view even when long lines make the spacer wider than the viewport. */
+.vmark { position: absolute; left: 0; right: 0; height: 26px; display: flex; align-items: center; justify-content: flex-start; color: var(--fg); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; background: var(--surface2); }
+.vmark > span { position: sticky; left: 0; padding: 0 12px; }
 .vmark.start { top: 0; border-bottom: 1px dashed var(--border); }
 .vmark.end { border-top: 1px dashed var(--border); }
 .vrow { display: flex; white-space: pre; height: var(--row-h); line-height: var(--row-h); cursor: text; }

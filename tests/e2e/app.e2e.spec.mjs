@@ -695,19 +695,28 @@ test('viewer shows start and end of log bands on first and last pages only', asy
   await fresh();
   const big = join(os.tmpdir(), 'lt-marks-' + Date.now() + '.log');
   const lines = [];
-  for (let i = 1; i <= 1200; i++) lines.push('09-11 22:14:01.' + String(i % 1000).padStart(3, '0') + '  1000  2000 I VHal: line ' + i);
+  // long lines: in nowrap mode the spacer is max-content wide, so the band
+  // labels must stay pinned into the visible viewport (sticky-left)
+  const pad = 'payload '.repeat(40);
+  for (let i = 1; i <= 1200; i++) lines.push('09-11 22:14:01.' + String(i % 1000).padStart(3, '0') + '  1000  2000 I VHal: line ' + i + ' ' + pad);
   fs.writeFileSync(big, lines.join('\n') + '\n');
   await page.setInputFiles('#file-input', [big]);
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '1200', null, { timeout: 15000 });
-  const marks = () => page.evaluate(() => ({
-    start: !!document.querySelector('.vmark.start'),
-    end: !!document.querySelector('.vmark.end'),
-    startText: (document.querySelector('.vmark.start') || { textContent: '' }).textContent,
-    endText: (document.querySelector('.vmark.end') || { textContent: '' }).textContent,
-  }));
+  const marks = () => page.evaluate(() => {
+    const viewer = document.getElementById('viewer');
+    const vr = viewer.getBoundingClientRect();
+    const label = (sel) => {
+      const el = document.querySelector(sel + ' > span');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { text: el.textContent, left: r.left, right: r.right, visible: r.left >= vr.left - 1 && r.left < vr.right - 10 };
+    };
+    return { start: label('.vmark.start'), end: label('.vmark.end') };
+  });
   let m = await marks();
   assert.ok(m.start && !m.end, 'first page shows the start band only');
-  assert.match(m.startText, /start of/i);
+  assert.match(m.start.text, /start of/i);
+  assert.ok(m.start.visible, 'start label is inside the visible viewport at scrollLeft 0 (left=' + m.start.left + ')');
   await page.click('#page-next');
   await page.waitForFunction(() => document.getElementById('page-number').value === '2', null, { timeout: 5000 });
   m = await marks();
@@ -716,7 +725,17 @@ test('viewer shows start and end of log bands on first and last pages only', asy
   await page.waitForFunction(() => document.getElementById('page-number').value === '3', null, { timeout: 5000 });
   m = await marks();
   assert.ok(!m.start && m.end, 'last page shows the end band only');
-  assert.match(m.endText, /end of/i);
+  assert.match(m.end.text, /end of/i);
+  // scroll to the very bottom: the end band must be in view
+  await page.evaluate(() => { const v = document.getElementById('viewer'); v.scrollTop = v.scrollHeight; });
+  await page.waitForTimeout(200);
+  const endInView = await page.evaluate(() => {
+    const el = document.querySelector('.vmark.end');
+    const vr = document.getElementById('viewer').getBoundingClientRect();
+    const r = el.getBoundingClientRect();
+    return r.bottom <= vr.bottom + 1 && r.top >= vr.top - 1;
+  });
+  assert.ok(endInView, 'end band sits inside the viewer at full scroll-down');
   fs.rmSync(big, { force: true });
 });
 
