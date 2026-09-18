@@ -311,7 +311,7 @@ table.rules { min-width: 620px; }
   <div id="main">
     <aside id="sidebar">
       <div id="files-section" class="side-section">
-        <div class="side-head">Files <button id="clear-files" title="remove all files">Clear</button></div>
+        <div class="side-head">Files <span style="display:flex;gap:4px"><button id="reload-cached" class="hidden" title="reload all cached files from the previous session">Reload</button><button id="clear-files" title="remove all files">Clear</button></span></div>
         <div class="file-tools">
           <input type="search" id="file-filter" placeholder="filter by name…" title="show only files whose name contains this text">
           <select id="file-sort" title="sort the file list">

@@ -190,6 +190,7 @@ Status: implemented (v1.12.1).
 - AC-1: Every successfully loaded file's content is cached in IndexedDB (database `log-triage-cache`).
 - AC-2: Reopening the app lists previously loaded files; clicking an entry with cached content reloads the file.
 - AC-3: Entries whose cached content is missing (quota rejected / file too large, or load failed) render greyed out with a "file not found" badge and a removable ✕.
+- AC-5: While restorable cached files exist that are not currently loaded, the files panel header shows a Reload button (left of Clear) that re-ingests every such cached file in one click; it hides again once nothing is pending.
 - AC-4: Removing a file purges its cache entry and clears its bookmarks; browser-close persistence is unchanged.
 
 ### FR-21 — Analysis tab file scoping

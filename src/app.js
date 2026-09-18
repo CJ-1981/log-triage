@@ -330,6 +330,8 @@
   function renderFiles() {
     const el = $('file-list');
     el.innerHTML = '';
+    // the Reload button appears only while restorable cached files exist
+    $('reload-cached').classList.toggle('hidden', pendingCachedEntries().length === 0);
     const q = fileFilterText.trim().toLowerCase();
     const matchQ = (name) => !q || String(name).toLowerCase().includes(q);
     const stats = store.stats().files;
@@ -405,6 +407,17 @@
   async function loadCachedFile(c) {
     if (!c.data) { flash('file not found: ' + c.name); return; }
     await loadFiles([new File([c.data], c.name, { type: 'text/plain' })]);
+  }
+
+  /** Cached entries from previous sessions that are not loaded right now. */
+  function pendingCachedEntries() {
+    return cacheEntries.filter((c) => c.data && !files.some((f) => f.name === c.name && f.size === c.size));
+  }
+  /** One click restores every cached file instead of clicking each entry. */
+  async function reloadAllCached() {
+    const pending = pendingCachedEntries();
+    if (!pending.length) return;
+    await loadFiles(pending.map((c) => new File([c.data], c.name, { type: 'text/plain' })));
   }
 
   function removeFileById(id) {
@@ -2154,6 +2167,7 @@
     };
     $('file-filter').oninput = (e) => { fileFilterText = e.target.value; renderFiles(); };
     $('file-sort').onchange = (e) => { fileSortMode = e.target.value; renderFiles(); };
+    $('reload-cached').onclick = () => reloadAllCached();
     $('clear-files').onclick = async () => {
       ++viewToken; ++pageToken; ingestAbort = true;
       fileFilterText = ''; $('file-filter').value = '';
