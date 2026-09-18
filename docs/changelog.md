@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.38.0 (2026-09-18)
+- Merge pull request #18 from CJ-1981/feat/files-panel-highlight
+- feat: files panel highlights mirror the viewer scope
+
 ## 1.37.1 (2026-09-18)
 - Merge pull request #17 from CJ-1981/fix/ba-input-width
 - test: accept line-at-top-of-page as a valid go-to-line jump
