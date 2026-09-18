@@ -721,7 +721,9 @@
     if (showStartMark()) {
       const m = document.createElement('div');
       m.className = 'vmark start';
-      m.textContent = markLabel('start');
+      const s = document.createElement('span');
+      s.textContent = markLabel('start');
+      m.appendChild(s);
       spacer.appendChild(m);
     }
     spacer.appendChild(inner);
@@ -729,7 +731,9 @@
       const m = document.createElement('div');
       m.className = 'vmark end';
       m.style.top = (topOffset() + rowsHeight()) + 'px';
-      m.textContent = markLabel('end');
+      const s = document.createElement('span');
+      s.textContent = markLabel('end');
+      m.appendChild(s);
       spacer.appendChild(m);
     }
     if (state.wrapOn) {
