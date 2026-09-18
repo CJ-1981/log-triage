@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.39.1 (2026-09-18)
+- Merge pull request #21 from CJ-1981/fix/marker-visibility
+- fix: keep start/end-of-log band labels visible with long lines
+
 ## 1.39.0 (2026-09-18)
 - Merge pull request #20 from CJ-1981/fix/highlight-color-flake
 - test: poll for the highlight span color instead of one-shot sampling
