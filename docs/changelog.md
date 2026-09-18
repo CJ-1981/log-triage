@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.39.0 (2026-09-18)
+- Merge pull request #20 from CJ-1981/fix/highlight-color-flake
+- test: poll for the highlight span color instead of one-shot sampling
+- Merge pull request #19 from CJ-1981/feat/log-boundary-bands
+- feat: start/end-of-log bands in the viewer for pagination orientation
+
 ## 1.38.0 (2026-09-18)
 - Merge pull request #18 from CJ-1981/feat/files-panel-highlight
 - feat: files panel highlights mirror the viewer scope
