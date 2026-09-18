@@ -739,6 +739,59 @@ test('viewer shows start and end of log bands on first and last pages only', asy
   fs.rmSync(big, { force: true });
 });
 
+test('per-file mode displays the newly loaded file, not the previous one (review P1)', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('.file-item').click());
+  await page.waitForFunction(() => document.getElementById('view-mode').value === 'file', null, { timeout: 5000 });
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'syslog.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
+  // the rebuild must run with the NEW file selected: shown count and rows
+  // belong to syslog.log (8 lines), and the highlight agrees
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '8', null, { timeout: 8000 });
+  const info = await page.evaluate(() => ({
+    active: (document.querySelector('.file-item.active .fname') || { textContent: '' }).textContent,
+    firstRow: (document.querySelector('.vrow .txt') || { textContent: '' }).textContent,
+  }));
+  assert.strictEqual(info.active, 'syslog.log', 'newly loaded file is highlighted');
+  assert.match(info.firstRow, /sshd/, 'viewer rows are from the newly loaded file: ' + info.firstRow.slice(0, 60));
+});
+
+test('boundary bands describe matches, not the physical file, when filtered (review P2)', async () => {
+  await fresh();
+  const big = join(os.tmpdir(), 'lt-marks-filt-' + Date.now() + '.log');
+  const lines = [];
+  for (let i = 1; i <= 1200; i++) lines.push('09-11 22:14:01.' + String(i % 1000).padStart(3, '0') + '  1000  2000 I VHal: line ' + i);
+  fs.writeFileSync(big, lines.join('\n') + '\n');
+  await page.setInputFiles('#file-input', [big]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '1200', null, { timeout: 15000 });
+  await page.evaluate(() => document.querySelector('.file-item').click());
+  await page.waitForFunction(() => document.getElementById('view-mode').value === 'file', null, { timeout: 5000 });
+  await page.fill('#quick', 'line 55');
+  await page.waitForFunction(() => {
+    const n = Number(document.getElementById('st-shown').textContent);
+    return n > 0 && n < 1200;
+  }, null, { timeout: 8000 });
+  const labels = await page.evaluate(() => ({
+    start: (document.querySelector('.vmark.start > span') || { textContent: '' }).textContent,
+    end: (document.querySelector('.vmark.end > span') || { textContent: '' }).textContent,
+  }));
+  assert.match(labels.start, /first match/i, 'filtered start band says first match: ' + labels.start);
+  assert.doesNotMatch(labels.start, /start of/i, 'filtered start band must not claim the physical start');
+  assert.match(labels.end, /last match/i, 'filtered end band says last match: ' + labels.end);
+  assert.doesNotMatch(labels.end, /end of/i, 'filtered end band must not claim the physical end');
+  await page.fill('#quick', '');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '1200', null, { timeout: 8000 });
+  const plainStart = await page.evaluate(() => (document.querySelector('.vmark.start > span') || { textContent: '' }).textContent);
+  assert.match(plainStart, /start of/i, 'unfiltered start band uses physical wording');
+  await page.click('#page-last');
+  await page.waitForFunction(() => document.getElementById('page-number').value === '3', null, { timeout: 5000 });
+  const plainEnd = await page.evaluate(() => (document.querySelector('.vmark.end > span') || { textContent: '' }).textContent);
+  assert.match(plainEnd, /end of/i, 'unfiltered end band uses physical wording');
+  fs.rmSync(big, { force: true });
+});
+
 test('per-file ✕ removes that file only (lines, counters, chips)', async () => {
   await fresh();
   await page.setInputFiles('#file-input', [
