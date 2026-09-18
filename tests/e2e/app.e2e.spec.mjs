@@ -625,6 +625,26 @@ test('files panel filter narrows by name and sort reorders the list', async () =
   assert.deepStrictEqual(await names(), ['demo.log', 'syslog.log', 'apache.log'], 'load order restored');
 });
 
+test('files panel highlights all loaded files in merged mode, only the shown file per-file', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'demo.log'),
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+  ]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
+  const activeNames = () => page.evaluate(() => Array.from(document.querySelectorAll('.file-item.active .fname')).map((e) => e.textContent));
+  assert.deepStrictEqual((await activeNames()).sort(), ['demo.log', 'syslog.log'], 'merged highlights every loaded file');
+  await page.selectOption('#view-mode', 'file');
+  await page.waitForFunction(() => document.querySelectorAll('.file-item.active').length === 1, null, { timeout: 5000 });
+  assert.deepStrictEqual(await activeNames(), ['demo.log'], 'per-file highlights only the shown file');
+  await page.evaluate(() => Array.from(document.querySelectorAll('.file-item')).find((e) => e.textContent.includes('syslog.log')).click());
+  await page.waitForFunction(() => document.getElementById('view-mode').value === 'file', null, { timeout: 5000 });
+  assert.deepStrictEqual(await activeNames(), ['syslog.log'], 'clicking a file moves the highlight in per-file mode');
+  await page.selectOption('#view-mode', 'merged');
+  await page.waitForFunction(() => document.querySelectorAll('.file-item.active').length === 2, null, { timeout: 5000 });
+  assert.deepStrictEqual((await activeNames()).sort(), ['demo.log', 'syslog.log'], 'merged highlights all again');
+});
+
 test('zen mode hides all chrome, exits via Esc and via the floating button', async () => {
   await fresh();
   await click('btn-demo');

@@ -289,6 +289,9 @@
       }
       renderFiles();
       onKeptChanged();
+      // in per-file mode a freshly loaded file becomes the displayed one,
+      // so new content is never hidden behind another file's view
+      if (entry.status === 'done' && state.viewMode === 'file') { state.activeFile = entry.id; $('view-mode').value = 'file'; renderFiles(); }
       if (entry.status === 'done') await cacheLoadedFile(entry, f);
       if (ingestAbort) break;
     }
@@ -341,10 +344,13 @@
       }
     };
     const live = files.filter((f) => matchQ(f.name)).sort(cmp);
+    // merged timeline shows every loaded file, so highlight them all;
+    // per-file mode highlights only the file actually on screen
+    const mergedView = state.viewMode !== 'file' || !state.activeFile;
     for (const f of live) {
       const st = stats[f.id] || { total: 0, kept: 0 };
       const div = document.createElement('div');
-      div.className = 'file-item' + (state.activeFile === f.id ? ' active' : '');
+      div.className = 'file-item' + (mergedView || state.activeFile === f.id ? ' active' : '');
       div.innerHTML = '<button class="fx" data-remove="' + esc(f.id) + '" title="remove this file">✕</button>' +
         '<div class="fname">' + esc(f.name) + '</div>' +
         '<div class="fmeta"><span class="badge fmt">' + esc(f.format) + '</span>' +
@@ -504,6 +510,9 @@
     const token = ++viewToken; ++pageToken;
     const bt = busy('Filtering all indexed lines…');
     if (state.activeFile && !files.some((f) => f.id === state.activeFile)) { state.activeFile = null; state.viewMode = 'merged'; $('view-mode').value = 'merged'; }
+    // invariant: 'file' mode always displays exactly one file; a restored
+    // session may carry viewMode=file with no active file — pick the first
+    if (state.viewMode === 'file' && !state.activeFile && files.length) { state.activeFile = files[0].id; $('view-mode').value = 'file'; }
     const spec = {
       fileId: state.viewMode === 'file' ? state.activeFile : null,
       rules: filter.rules, quick: filter.quick, levels: filter.levels,
@@ -2142,7 +2151,13 @@
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
-    $('view-mode').onchange = () => { state.viewMode = $('view-mode').value; saveState(); rebuildView(); };
+    $('view-mode').onchange = () => {
+      state.viewMode = $('view-mode').value;
+      // keep the invariant: 'file' mode always has an active file, merged none
+      if (state.viewMode === 'merged') state.activeFile = null;
+      else if (!state.activeFile && files.length) state.activeFile = files[0].id;
+      saveState(); renderFiles(); rebuildView();
+    };
     $('btn-copy').onclick = copySelection;
     $('bookmark-list').addEventListener('click', (e) => {
       const entry = e.target.closest('.bm-entry');
