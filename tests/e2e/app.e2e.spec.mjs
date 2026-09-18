@@ -319,6 +319,22 @@ test('export produces a downloadable txt with masked content', async () => {
   assert.ok(!content.includes('YV4AB9CD12EF34567'), 'exported text contains no raw VIN');
 });
 
+test('CSV and JSON exports honor masking too (privacy)', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  for (const [btn, label] of [['exp-csv', 'csv'], ['exp-json', 'json']]) {
+    const downloadPromise = page.waitForEvent('download', { timeout: 8000 });
+    await click(btn);
+    const download = await downloadPromise;
+    const fs = await import('node:fs');
+    const content = fs.readFileSync(await download.path(), 'utf8');
+    assert.ok(content.includes('YV4**********4567'), label + ' exported masked VIN');
+    assert.ok(!content.includes('YV4AB9CD12EF34567'), label + ' contains no raw VIN');
+  }
+});
+
 test('files panel is collapsible and state persists', async () => {
   await fresh();
   const visible = () => page.evaluate(() => document.getElementById('sidebar').offsetWidth > 0);
