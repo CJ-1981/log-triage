@@ -686,6 +686,35 @@ test('zen mode hides all chrome, exits via Esc and via the floating button', asy
   await page.waitForFunction(() => !document.body.classList.contains('zen'), null, { timeout: 5000 });
 });
 
+test('viewer shows start and end of log bands on first and last pages only', async () => {
+  await fresh();
+  const big = join(os.tmpdir(), 'lt-marks-' + Date.now() + '.log');
+  const lines = [];
+  for (let i = 1; i <= 1200; i++) lines.push('09-11 22:14:01.' + String(i % 1000).padStart(3, '0') + '  1000  2000 I VHal: line ' + i);
+  fs.writeFileSync(big, lines.join('\n') + '\n');
+  await page.setInputFiles('#file-input', [big]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '1200', null, { timeout: 15000 });
+  const marks = () => page.evaluate(() => ({
+    start: !!document.querySelector('.vmark.start'),
+    end: !!document.querySelector('.vmark.end'),
+    startText: (document.querySelector('.vmark.start') || { textContent: '' }).textContent,
+    endText: (document.querySelector('.vmark.end') || { textContent: '' }).textContent,
+  }));
+  let m = await marks();
+  assert.ok(m.start && !m.end, 'first page shows the start band only');
+  assert.match(m.startText, /start of/i);
+  await page.click('#page-next');
+  await page.waitForFunction(() => document.getElementById('page-number').value === '2', null, { timeout: 5000 });
+  m = await marks();
+  assert.ok(!m.start && !m.end, 'middle page shows no bands');
+  await page.click('#page-last');
+  await page.waitForFunction(() => document.getElementById('page-number').value === '3', null, { timeout: 5000 });
+  m = await marks();
+  assert.ok(!m.start && m.end, 'last page shows the end band only');
+  assert.match(m.endText, /end of/i);
+  fs.rmSync(big, { force: true });
+});
+
 test('per-file ✕ removes that file only (lines, counters, chips)', async () => {
   await fresh();
   await page.setInputFiles('#file-input', [
