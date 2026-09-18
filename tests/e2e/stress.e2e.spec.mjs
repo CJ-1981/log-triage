@@ -131,11 +131,20 @@ test('stress: go-to-line jumps to an exact line late in the file', async () => {
   }, target);
   // the jump is async (worker locate + page load) — wait for the line
   await page.waitForFunction((t) => Array.from(document.querySelectorAll('.vrow .ln')).map((x) => Number(x.textContent)).includes(t), target, { timeout: 15000 });
-  const st = await state();
-  // a jump either scrolls within the page or lands the line at the top of
-  // the freshly loaded page (scrollTop 0 is legitimate then)
-  const firstLn = await page.evaluate(() => Number((document.querySelector('.vrow .ln') || { textContent: '0' }).textContent));
-  assert.ok(st.scrollTop > 0 || firstLn === target, 'viewer moved to line ' + target + ' (scrollTop=' + st.scrollTop + ', first rendered=' + firstLn + ')');
+  // the jump is async (worker locate + page load) — wait for the line
+  await page.waitForFunction((t) => Array.from(document.querySelectorAll('.vrow .ln')).map((x) => Number(x.textContent)).includes(t), target, { timeout: 15000 });
+  // assert the real UX property: the target row is inside the viewer
+  // viewport (scroll state is an implementation detail of paging)
+  const inView = await page.evaluate((t) => {
+    const vr = document.getElementById('viewer').getBoundingClientRect();
+    for (const row of document.querySelectorAll('.vrow')) {
+      if (Number(row.querySelector('.ln').textContent) !== t) continue;
+      const r = row.getBoundingClientRect();
+      return r.top >= vr.top - 2 && r.bottom <= vr.bottom + 2;
+    }
+    return false;
+  }, target);
+  assert.ok(inView, 'target line visible in the viewer viewport');
   const drawer = await page.evaluate(() => document.getElementById('drawer').textContent);
   assert.match(drawer, new RegExp('Line ' + target));
 });
