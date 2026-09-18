@@ -140,7 +140,12 @@ test('color highlighter paints matching text and rows without filtering', async 
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
   await page.waitForFunction(() => document.querySelectorAll('.rule-highlight-text').length > 0);
   assert.strictEqual(await page.textContent('#st-shown'), '44', 'highlight rules do not filter lines');
-  assert.equal(await page.$eval('.rule-highlight-text', (el) => getComputedStyle(el).backgroundColor), 'rgb(96, 165, 250)');
+  // rows re-render on rAF/scroll; poll until an attached span reports the
+  // palette color instead of sampling once mid-swap
+  await page.waitForFunction(() => {
+    const el = document.querySelector('.rule-highlight-text');
+    return !!el && getComputedStyle(el).backgroundColor === 'rgb(96, 165, 250)';
+  }, null, { timeout: 5000 });
 
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
   await page.evaluate(() => {
