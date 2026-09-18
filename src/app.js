@@ -589,6 +589,26 @@
   let heights = [];     // wrap mode: px height per row
   let heightSum = [];   // prefix sums
   const ROW_H = 22;
+  const MARK_H = 26;    // fixed height of the start/end-of-log marker bands
+
+  // With pagination it is easy to lose track of where the log begins and
+  // ends, so the first page carries a start band and the last page an end
+  // band inside the scrollable area (they participate in the layout as
+  // fixed-height offsets).
+  const showStartMark = () => pageStart === 0 && view.length > 0;
+  const showEndMark = () => view.length > 0 && pageStart + view.length >= filteredCount;
+  const topOffset = () => (showStartMark() ? MARK_H : 0);
+  function markLabel(which) {
+    const perFile = state.viewMode === 'file' && state.activeFile;
+    const fname = perFile ? (files.find((f) => f.id === state.activeFile) || {}).name || 'file' : null;
+    if (which === 'start') {
+      return fname ? '▲ start of ' + fname : '▲ start of merged log (' + files.length + ' file' + (files.length === 1 ? '' : 's') + ')';
+    }
+    const last = view[view.length - 1];
+    return fname
+      ? '▼ end of ' + fname + ' — line ' + (last ? last.lineNo : 0)
+      : '▼ end of merged log — ' + filteredCount.toLocaleString() + ' lines';
+  }
 
   function invalidateHeights() {
     heights = null; heightSum = null;
@@ -608,13 +628,18 @@
   }
   function sumHeights() { heightSum = [0]; for (let i = 0; i < heights.length; i++) heightSum.push(heightSum[i] + heights[i]); }
 
-  function totalHeight() {
+  function rowsHeight() {
     if (!state.wrapOn) return view.length * ROW_H;
     measureWrap();
     return heightSum[heightSum.length - 1] || 0;
   }
 
+  function totalHeight() {
+    return topOffset() + rowsHeight() + (showEndMark() ? MARK_H : 0);
+  }
+
   function findIndexAtOffset(y) {
+    y = Math.max(0, y - topOffset());
     if (!state.wrapOn) return Math.floor(y / ROW_H);
     measureWrap();
     let lo = 0, hi = heightSum.length - 1;
@@ -653,9 +678,9 @@
     const inner = document.createElement('div');
     if (state.wrapOn) {
       measureWrap();
-      inner.style.transform = 'translateY(' + (heightSum[start] || 0) + 'px)';
+      inner.style.transform = 'translateY(' + (topOffset() + (heightSum[start] || 0)) + 'px)';
     } else {
-      inner.style.transform = 'translateY(' + (start * ROW_H) + 'px)';
+      inner.style.transform = 'translateY(' + (topOffset() + start * ROW_H) + 'px)';
     }
 
     const wrapCls = state.wrapOn ? ' wrap' : '';
@@ -693,7 +718,20 @@
       inner.appendChild(row);
     }
     spacer.innerHTML = '';
+    if (showStartMark()) {
+      const m = document.createElement('div');
+      m.className = 'vmark start';
+      m.textContent = markLabel('start');
+      spacer.appendChild(m);
+    }
     spacer.appendChild(inner);
+    if (showEndMark()) {
+      const m = document.createElement('div');
+      m.className = 'vmark end';
+      m.style.top = (topOffset() + rowsHeight()) + 'px';
+      m.textContent = markLabel('end');
+      spacer.appendChild(m);
+    }
     if (state.wrapOn) {
       let changed = false;
       for (const row of inner.children) { const idx = Number(row.dataset.idx); if (!Number.isInteger(idx) || !view[idx]) continue; const height = Math.max(ROW_H, row.offsetHeight); if (heights[idx] !== height) { heights[idx] = height; changed = true; } }
@@ -1703,7 +1741,7 @@
     } else {
       y = idx * ROW_H;
     }
-    v.scrollTop = Math.max(0, y - v.clientHeight / 2);
+    v.scrollTop = Math.max(0, topOffset() + y - v.clientHeight / 2);
     selection.click(idx);
     renderRows(); updateStatus();
     if (view[idx]) showDrawer(view[idx]);

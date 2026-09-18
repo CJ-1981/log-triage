@@ -124,6 +124,10 @@ body.zen #zen-fab { display: inline-block; }
 #viewer { position: absolute; inset: 0; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
 #vspacer { position: relative; width: 100%; min-width: 0; }
 #viewer.nowrap #vspacer { width: max-content; min-width: 100%; }
+/* start/end-of-log marker bands (pagination orientation aids) */
+.vmark { position: absolute; left: 0; right: 0; height: 26px; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; background: var(--surface); }
+.vmark.start { top: 0; border-bottom: 1px dashed var(--border); }
+.vmark.end { border-top: 1px dashed var(--border); }
 .vrow { display: flex; white-space: pre; height: var(--row-h); line-height: var(--row-h); cursor: text; }
 .vrow.wrap { white-space: pre-wrap; word-break: break-word; height: auto; min-height: var(--row-h); }
 .vrow.wrap .vcell.txt { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; word-break: break-word; }
