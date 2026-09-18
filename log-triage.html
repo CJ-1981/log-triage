@@ -393,9 +393,9 @@ table.rules { min-width: 620px; }
           <select id="rg-mode" title="Result mode: matches = list matching lines, -c = match count per file, -l = only names of files with matches">
             <option value="rows">matches</option><option value="count">-c count</option><option value="files">-l files</option></select>
           <label title="Context before (-B): deep scan also shows this many lines BEFORE each match — 1 line = 0">
-            -B<input type="text" id="rg-before" value="0" style="width:36px"></label>
+            -B<input type="text" id="rg-before" value="0" style="width:64px;text-align:center;margin-left:4px"></label>
           <label title="Context after (-A): deep scan also shows this many lines AFTER each match — 1 line = 0">
-            -A<input type="text" id="rg-after" value="0" style="width:36px"></label>
+            -A<input type="text" id="rg-after" value="0" style="width:64px;text-align:center;margin-left:4px"></label>
           <button id="btn-sr-wrap" title="Wrap long matched lines within the panel (OFF: one scrollable line per match)">Wrap: ON</button>
           <button id="btn-deepscan" class="primary" title="Scan the complete indexed files from disk with context">Deep scan files</button>
           <button id="btn-deep-cancel" class="hidden" title="stop the running deep scan">✕ Cancel</button>
