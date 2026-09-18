@@ -180,6 +180,7 @@ Status: collapse implemented (v1.3.0); filter and sort implemented (v1.35.0).
 - AC-3: Clicking a file in the list switches the viewer to that file.
 - AC-4: A text box filters the list by file name — live files and cached entries, case-insensitive substring; an unmatched filter shows a "no files match the filter" hint, and Clear-all resets it.
 - AC-5: A dropdown sorts the list by load order (default), name A→Z / Z→A, size ↑/↓, or line count ↑/↓ (using per-file totals); sorting reorders only the rendered list, not the underlying load order.
+- AC-6: The list mirrors the viewer scope: in merged-timeline mode every loaded file entry is highlighted; in per-file mode only the displayed file is. Switching modes keeps the invariant (per-file always has exactly one displayed file; loading a file while in per-file mode makes it the displayed one), and cached-not-loaded entries are never highlighted.
 
 ### FR-20 — File cache / session restore
 
