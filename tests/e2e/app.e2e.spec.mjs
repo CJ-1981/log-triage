@@ -1060,6 +1060,32 @@ test('file cache: previous session is listed after reload, cached file reloads, 
   }
 });
 
+test('reload-all button restores every cached file in one click', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'demo.log'),
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+  ]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
+  // no pending cache while everything is loaded
+  assert.ok(await page.evaluate(() => document.getElementById('reload-cached').classList.contains('hidden')),
+    'reload hidden while all cached files are loaded');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelectorAll('.file-item.cached').length === 2, null, { timeout: 8000 });
+  assert.ok(await page.evaluate(() => !document.getElementById('reload-cached').classList.contains('hidden')),
+    'reload appears when cached files are pending');
+  await page.click('#reload-cached');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 20000 });
+  const after = await page.evaluate(() => ({
+    cachedLeft: document.querySelectorAll('.file-item.cached').length,
+    hidden: document.getElementById('reload-cached').classList.contains('hidden'),
+    names: Array.from(document.querySelectorAll('.file-item .fname')).map((e) => e.textContent).sort(),
+  }));
+  assert.strictEqual(after.cachedLeft, 0, 'no cached entries left after reload-all');
+  assert.ok(after.hidden, 'reload hides again once nothing is pending');
+  assert.deepStrictEqual(after.names, ['demo.log', 'syslog.log'], 'both files restored');
+});
+
 test('analysis file selector scopes every section to one file', async () => {
   await fresh();
   await page.setInputFiles('#file-input', [

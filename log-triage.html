@@ -317,7 +317,7 @@ table.rules { min-width: 620px; }
   <div id="main">
     <aside id="sidebar">
       <div id="files-section" class="side-section">
-        <div class="side-head">Files <button id="clear-files" title="remove all files">Clear</button></div>
+        <div class="side-head">Files <span style="display:flex;gap:4px"><button id="reload-cached" class="hidden" title="reload all cached files from the previous session">Reload</button><button id="clear-files" title="remove all files">Clear</button></span></div>
         <div class="file-tools">
           <input type="search" id="file-filter" placeholder="filter by name…" title="show only files whose name contains this text">
           <select id="file-sort" title="sort the file list">
@@ -4016,6 +4016,8 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   function renderFiles() {
     const el = $('file-list');
     el.innerHTML = '';
+    // the Reload button appears only while restorable cached files exist
+    $('reload-cached').classList.toggle('hidden', pendingCachedEntries().length === 0);
     const q = fileFilterText.trim().toLowerCase();
     const matchQ = (name) => !q || String(name).toLowerCase().includes(q);
     const stats = store.stats().files;
@@ -4091,6 +4093,17 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   async function loadCachedFile(c) {
     if (!c.data) { flash('file not found: ' + c.name); return; }
     await loadFiles([new File([c.data], c.name, { type: 'text/plain' })]);
+  }
+
+  /** Cached entries from previous sessions that are not loaded right now. */
+  function pendingCachedEntries() {
+    return cacheEntries.filter((c) => c.data && !files.some((f) => f.name === c.name && f.size === c.size));
+  }
+  /** One click restores every cached file instead of clicking each entry. */
+  async function reloadAllCached() {
+    const pending = pendingCachedEntries();
+    if (!pending.length) return;
+    await loadFiles(pending.map((c) => new File([c.data], c.name, { type: 'text/plain' })));
   }
 
   function removeFileById(id) {
@@ -5840,6 +5853,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     };
     $('file-filter').oninput = (e) => { fileFilterText = e.target.value; renderFiles(); };
     $('file-sort').onchange = (e) => { fileSortMode = e.target.value; renderFiles(); };
+    $('reload-cached').onclick = () => reloadAllCached();
     $('clear-files').onclick = async () => {
       ++viewToken; ++pageToken; ingestAbort = true;
       fileFilterText = ''; $('file-filter').value = '';
