@@ -26,11 +26,11 @@ Each file's log format is detected automatically and parsed into normalized reco
 - AC-3: All timestamps are normalized to the year-less `MM-DD HH:MM:SS.mmm` form so records from different files sort consistently.
 - AC-4: Lines that cannot be parsed are retained with level "—" rather than dropped.
 
-### FR-3 — Instant search over kept lines
+### FR-3 — Instant search over the analysis sample
 
-Status: implemented (v1.0.0).
+Status: implemented (v1.0.0); scope redefined by full-file paging (v1.32.0).
 
-- AC-1: Typing a query filters the kept lines immediately, without touching disk.
+- AC-1: Typing a query filters the analysis-sample lines immediately, without touching disk; the status discloses the sample scope and notes that viewer filtering searches the complete indexed files.
 - AC-2: Smart-case is the default (case-insensitive unless the query contains uppercase); an explicit sensitive/insensitive toggle (`-i`) is available.
 - AC-3: Results are capped (default 10,000) and the cap is communicated when hit.
 
@@ -38,7 +38,7 @@ Status: implemented (v1.0.0).
 
 Status: implemented (v1.0.0).
 
-- AC-1: Deep scan re-streams the original files from disk via retained `File` handles, finding matches in lines that were dropped from the kept-line store.
+- AC-1: Deep scan re-streams the original files from disk via retained `File` handles, finding matches across every indexed line — independent of the analysis sample.
 - AC-2: Flags are supported: `-F` fixed strings, smart-case default with explicit `-i`/sensitive modes, `-w` whole word, `-v` invert, `-B`/`-A` context lines.
 - AC-3: Modes are supported: normal output, `-c` (count per file), `-l` (files with matches).
 - AC-4: Results are grouped by file as `file:lineNo:` entries, capped (default 10,000), and exportable as rg-style text or JSON.
@@ -95,7 +95,7 @@ Status: implemented (v1.0.0).
 
 Status: implemented (v1.0.0).
 
-- AC-1: Rendering is virtualized and stays smooth at 100k+ rows.
+- AC-1: Rendering is virtualized over the complete index and stays smooth at any size — the viewer renders bounded 500-row windows (start/end-of-log bands mark the edges) rather than materializing all rows.
 - AC-2: Both merged-timeline view (sorted by timestamp, file order as tiebreak) and per-file views are available.
 - AC-3: A wrap toggle switches between pre-wrapped (variable row heights with a measured-height cache) and single-line modes; severity badges and W/E/F row tint are always visible.
 - AC-4: Six themes switch via `body[data-theme]` CSS variables: Midnight (default), Paper, Solarized Dark, Solarized Light, Monokai, High Contrast. The header exposes them through a compact icon button that opens the theme dropdown (replacing the former inline `<select>`, so the mobile header stays on one line); the choice persists.
@@ -271,6 +271,7 @@ Status: implemented (v1.0.0).
 - 100% client-side processing; no server, no uploads; files never leave the machine.
 - No CDN resources, no external fonts, no telemetry.
 - External PII providers are opt-in and off by default; the local regex engine is the default and performs no network calls; remote backends warn that data would leave the machine (ADR-0003, FR-25).
+- Persisted local state (themes, presets, bookmarks, and the per-field search-term history per ADR-0012) stays on-device; clearing site data removes it — nothing is synced or transmitted.
 
 ### NFR-3 — Offline single-file deliverable
 
