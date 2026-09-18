@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.40.1 (2026-09-18)
+- Merge pull request #27 from CJ-1981/fix/export-privacy-streaming
+- fix: mask CSV/JSON message column; stream exports page by page
+- Merge pull request #26 from CJ-1981/test/cache-test-timeout
+- test: raise cache-restore wait to 20s to absorb slow CI boots
+- Merge pull request #25 from CJ-1981/fix/goto-flake-viewport
+- test: assert the jumped line is visible in the viewport, not scrollTop
+- Merge pull request #24 from CJ-1981/docs/sync-paging-model
+- docs: purge stale kept-lines wording; cover analysis-sample scope and new UI features
+
 ## 1.40.0 (2026-09-18)
 - Merge pull request #23 from CJ-1981/feat/reload-all-cached
 - feat: Reload button restores all cached files in one click
