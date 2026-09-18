@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.37.1 (2026-09-18)
+- Merge pull request #17 from CJ-1981/fix/ba-input-width
+- test: accept line-at-top-of-page as a valid go-to-line jump
+- fix: give -B/-A context fields room for their value and clear button
+
 ## 1.37.0 (2026-09-17)
 - Merge pull request #16 from CJ-1981/feat/zen-mode
 - feat: zen mode — viewer-only focus view with Esc and floating exit
