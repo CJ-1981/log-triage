@@ -3797,24 +3797,42 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   }
 
   const EXPORT_BATCH = 2000;
-  /** Every matching line in current view order: selection rows when
-   * selection-only export is on, else the worker's full filtered order walked
-   * page by page. The in-memory analysis sample is NOT the export scope —
-   * exports cover the whole (multi-GB) filtered view like Deep scan does. */
-  async function exportRows(selectionOnly) {
-    if (selectionOnly && selection.count) return selection.indices().map((i) => view[i]);
+  /** Yields MASKED page batches covering every matching line of the current
+   * view (selection-only yields exactly one batch). Consumers convert each
+   * batch immediately and drop the rows — the full dataset is never held in
+   * memory, matching the multi-GB export target. */
+  async function* iterExportBatches(selectionOnly) {
+    const eng = new LT.MaskEngine();
+    for (const id of LT.builtinRuleIds()) eng.setEnabled(id, state.maskEnabled[id] !== false);
+    eng.custom = [];
+    for (const c of state.customMasks) eng.addCustom(c);
+    const maskRec = (r) => Object.assign({}, r, {
+      raw: state.maskOn ? eng.maskLine(r.raw) : r.raw,
+      // msg is the parsed message column CSV/JSON export; mask it too or the
+      // original text leaks even with masking on
+      msg: r.msg != null ? (state.maskOn ? eng.maskLine(r.msg) : r.msg) : null,
+    });
+    if (selectionOnly && selection.count) {
+      yield selection.indices().map((i) => maskRec(view[i]));
+      return;
+    }
     const bt = busy('Preparing export…');
-    const recs = [];
     try {
       for (let start = 0; ; start += EXPORT_BATCH) {
         const part = await paging.request('page', { start, size: EXPORT_BATCH });
         if (!part.rows.length) break;
-        recs.push(...part.rows);
-        busyMessage(bt, 'Preparing export… ' + Math.min(100, Math.round(recs.length / Math.max(1, part.total) * 100)) + '%');
-        if (recs.length >= part.total) break;
+        busyMessage(bt, 'Preparing export… ' + Math.min(100, Math.round(((start + part.rows.length) / Math.max(1, part.total)) * 100)) + '%');
+        yield part.rows.map(maskRec);
+        if (start + part.rows.length >= part.total) break;
       }
     } finally { doneBusy(bt); }
-    return recs;
+  }
+  function makeExportMasker() {
+    const eng = new LT.MaskEngine();
+    for (const id of LT.builtinRuleIds()) eng.setEnabled(id, state.maskEnabled[id] !== false);
+    eng.custom = [];
+    for (const c of state.customMasks) eng.addCustom(c);
+    return eng;
   }
 
   async function* chunkIter(file) {
@@ -4732,16 +4750,16 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     for (const r of res.rows.slice(0, 10000)) {
       const rec = store.kept[r.idx];
       const name = nameOf(rec.fileId);
-      (byFile[name] = byFile[name] || []).push({ lineNo: rec.lineNo, ts: rec.ts, text: displayText(rec) });
+      (byFile[name] = byFile[name] || []).push({ fileId: rec.fileId, lineNo: rec.lineNo, ts: rec.ts, text: displayText(rec) });
     }
     out.innerHTML = srInner(Object.keys(byFile).map((f) =>
-      groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true)).join(''), byFile[f].length)).join('')) ||
+      groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true, r.fileId)).join(''), byFile[f].length)).join('')) ||
       '<div class="muted" style="padding:20px">no matches</div>';
   }
 
-  function srRow(file, lineNo, ts, text, isMatch) {
+  function srRow(file, lineNo, ts, text, isMatch, fid) {
     const cls = isMatch ? 'hit' : 'ctx';
-    return '<div class="sr-row ' + cls + '" data-file="' + esc(file) + '" data-ln="' + lineNo + '">' +
+    return '<div class="sr-row ' + cls + '" data-file="' + esc(file) + '" data-fid="' + esc(fid || '') + '" data-ln="' + lineNo + '">' +
       '<span class="srf" title="' + esc(file) + '">' + esc(file) + '</span>' +
       '<span class="srl">' + lineNo + '</span>' +
       '<span class="srt">' + esc(ts || '—') + '</span>' +
@@ -4779,12 +4797,12 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
           scanned++;
           const masked = state.maskOn ? engine.maskLine(line) : line;
           if (LT.matchLine(s, line)) {
-            for (const r of ring) results.push({ file: entry.name, lineNo: r.lineNo, ts: LT.detectTs(r.text), text: state.maskOn ? engine.maskLine(r.text) : r.text, isMatch: false });
+            for (const r of ring) results.push({ file: entry.name, id: entry.id, lineNo: r.lineNo, ts: LT.detectTs(r.text), text: state.maskOn ? engine.maskLine(r.text) : r.text, isMatch: false });
             ring.length = 0;
-            results.push({ file: entry.name, lineNo, ts: LT.detectTs(line), text: masked, isMatch: true });
+            results.push({ file: entry.name, id: entry.id, lineNo, ts: LT.detectTs(line), text: masked, isMatch: true });
             afterLeft = after;
           } else if (afterLeft > 0) {
-            results.push({ file: entry.name, lineNo, ts: LT.detectTs(line), text: masked, isMatch: false });
+            results.push({ file: entry.name, id: entry.id, lineNo, ts: LT.detectTs(line), text: masked, isMatch: false });
             afterLeft--;
           } else {
             ring.push({ lineNo, text: line });
@@ -4815,7 +4833,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     }
     out.innerHTML = srInner(Object.keys(byFile).map((f) => {
       const matches = byFile[f].filter((r) => r.isMatch).length;
-      return groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch)).join(''), matches);
+      return groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch, r.id)).join(''), matches);
     }).join('')) || '<div class="muted" style="padding:20px">no matches</div>';
   }
 
@@ -5281,26 +5299,33 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
 
 
   /* ---------------- export ---------------- */
-  function exportRecords(kind) {
+  async function exportRecords(kind) {
     const prefix = $('exp-prefix').value;
     const selectionOnly = $('exp-selection').checked;
-    const recs = exportRows(selectionOnly);
-    return recs.then((rows) => {
-    const eng = new LT.MaskEngine();
-    for (const id of LT.builtinRuleIds()) eng.setEnabled(id, state.maskEnabled[id] !== false);
-    eng.custom = [];
-    for (const c of state.customMasks) eng.addCustom(c);
-    const masked = rows.map((r) => Object.assign({}, r, { raw: state.maskOn ? eng.maskLine(r.raw) : r.raw }));
-    const note = $('exp-note');
-    note.textContent = masked.length + ' line(s) exported' + (selectionOnly ? ' (selection only)' : '') + '.';
     const name = (base, ext) => LT.timestampedName(new Date(), base, ext);
-    let blob, fname;
-    if (kind === 'txt') { blob = new Blob([LT.toText(masked, { prefix })], { type: 'text/plain' }); fname = name('log-triage-extract', 'log'); }
-    else if (kind === 'csv') { blob = new Blob([LT.toCsv(masked)], { type: 'text/csv' }); fname = name('log-triage-extract', 'csv'); }
-    else if (kind === 'json') { blob = new Blob([LT.toJson(masked)], { type: 'application/json' }); fname = name('log-triage-extract', 'json'); }
-    else if (kind === 'bookmarks') { blob = new Blob([LT.bookmarksToJson(bookmarksStore)], { type: 'application/json' }); fname = name('log-triage-bookmarks', 'json'); }
-    if (blob) download(blob, fname);
-    });
+    let blob, fname, count = 0;
+    try {
+      if (kind === 'bookmarks') {
+        blob = new Blob([LT.bookmarksToJson(bookmarksStore)], { type: 'application/json' });
+        fname = name('log-triage-bookmarks', 'json');
+      } else {
+        const txtParts = [], csvParts = [], jsonParts = [];
+        for await (const batch of iterExportBatches(selectionOnly)) {
+          if (kind === 'txt') txtParts.push(LT.toText(batch, { prefix }));
+          else if (kind === 'csv') { const c = LT.toCsv(batch); csvParts.push(count === 0 ? c : c.slice(c.indexOf('\n') + 1)); }
+          else if (kind === 'json') jsonParts.push(JSON.stringify(batch, null, 2).slice(2, -2));
+          count += batch.length;
+        }
+        if (kind === 'txt') { blob = new Blob([txtParts.join('\n')], { type: 'text/plain' }); fname = name('log-triage-extract', 'log'); }
+        else if (kind === 'csv') { blob = new Blob([csvParts.join('\n')], { type: 'text/csv' }); fname = name('log-triage-extract', 'csv'); }
+        else if (kind === 'json') { blob = new Blob(['[\n' + jsonParts.join(',\n') + '\n]'], { type: 'application/json' }); fname = name('log-triage-extract', 'json'); }
+      }
+      if (blob) download(blob, fname);
+    } catch (err) {
+      flash('export failed: ' + err.message);
+    }
+    const note = $('exp-note');
+    note.textContent = count.toLocaleString() + ' line(s) exported' + (selectionOnly ? ' (selection only)' : '') + '.';
   }
 
   /* Archive export: group the masked kept lines by source file and re-pack
@@ -5309,24 +5334,26 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     const format = $('exp-archive-format').value;
     const note = $('exp-archive-note');
     const selectionOnly = $('exp-selection').checked;
-    const recs = await exportRows(selectionOnly);
-    if (!recs.length) { note.textContent = 'nothing to export.'; return; }
-    const eng = new LT.MaskEngine();
-    for (const id of LT.builtinRuleIds()) eng.setEnabled(id, state.maskEnabled[id] !== false);
-    eng.custom = [];
-    for (const c of state.customMasks) eng.addCustom(c);
+    const eng = makeExportMasker();
     const fileById = {};
     for (const f of files) fileById[f.id] = f;
     const groups = new Map();
-    for (const r of recs) {
-      const key = r.fileId;
-      if (!groups.has(key)) groups.set(key, { name: (fileById[key] && fileById[key].name) || key + '.log', text: [] });
-      groups.get(key).text.push(state.maskOn ? eng.maskLine(r.raw) : r.raw);
-    }
+    let total = 0;
+    try {
+      for await (const batch of iterExportBatches(selectionOnly)) {
+        for (const r of batch) {
+          const key = r.fileId;
+          if (!groups.has(key)) groups.set(key, { name: (fileById[key] && fileById[key].name) || key + '.log', text: [] });
+          groups.get(key).text.push(state.maskOn ? eng.maskLine(r.raw) : r.raw);
+          total++;
+        }
+      }
+    } catch (err) { note.textContent = 'archive export failed: ' + err.message; return; }
     const entries = [...groups.values()]
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((g) => ({ name: g.name, data: new TextEncoder().encode(g.text.join('\n') + '\n') }));
-    note.textContent = 'packing ' + entries.length + ' file(s), ' + recs.length + ' line(s) as .' + format + '…';
+    if (!entries.length) { note.textContent = 'nothing to export.'; return; }
+    note.textContent = 'packing ' + entries.length + ' file(s), ' + total.toLocaleString() + ' line(s) as .' + format + '…';
     try {
       const blob = new Blob([await LT.buildArchive(entries, format)], { type: 'application/octet-stream' });
       download(blob, LT.timestampedName(new Date(), 'log-triage-extract', format));
@@ -5480,7 +5507,9 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   }
 
   async function jumpFromSearch(row) {
-    const f = files.find((f) => f.name === row.dataset.file || f.id === row.dataset.file);
+    // prefer the row's file id (stable across same-named files), fall back to name
+    const f = files.find((f) => f.id === row.dataset.fid)
+      || files.find((f) => f.name === row.dataset.file);
     if (!f) return;
     await jumpToRecord({ fileId: f.id, lineNo: Number(row.dataset.ln) });
   }
