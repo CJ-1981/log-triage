@@ -22,6 +22,7 @@ const MODULE_ORDER = [
   'selection.js',
   'bookmarks.js',
   'exporter.js',
+  'export-stream.js',
   'themes.js',
   'issues.js',
   'lzma.js',
@@ -29,6 +30,7 @@ const MODULE_ORDER = [
   'archive.js',
   'app-filecache.js',
   'app-paging.js',
+  'app-export.js',
   'droptree.js',
   'app.js',
 ];

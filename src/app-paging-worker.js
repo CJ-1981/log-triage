@@ -4,6 +4,7 @@ const sources = [];
 let nextBase = 0, queryToken = 0, searchToken = 0, indexToken = 0;
 let order = new Float64Array(), searchOrder = new Float64Array();
 let allOrder = null, version = 0;
+let orderRevision = 1; // bumped whenever the visible result set changes
 const emit = (id, value) => self.postMessage(Object.assign({ id }, value));
 const sourceOf = (id) => {
   let lo = 0, hi = sources.length;
@@ -59,8 +60,9 @@ async function query(id, spec, search) {
     for (let i = 0; i < sorted.length; i++) { const value = sorted[i], s = sourceOf(value); if (flags.get(s.id)?.[value - s.base]) result[p++] = value; if ((i & 65535) === 0) { await new Promise((r) => setTimeout(r, 0)); if (cancelled()) { emit(id, { cancelled: true }); return; } } }
   } else { result = new Float64Array(matches.length); for (let i = 0; i < matches.length; i++) result[i] = matches.get(i); }
   if (cancelled()) { emit(id, { cancelled: true }); return; }
-  if (search) searchOrder = result; else order = result;
-  emit(id, { total: result.length, errors: searcher && !searcher.ok ? [{ error: searcher.error }] : filter.errors() });
+  if (search) searchOrder = result;
+  else { order = result; orderRevision++; }
+  emit(id, { total: result.length, revision: orderRevision, errors: searcher && !searcher.ok ? [{ error: searcher.error }] : filter.errors() });
 }
 self.onmessage = async ({ data: m }) => {
   const { id, type } = m;
@@ -70,13 +72,22 @@ self.onmessage = async ({ data: m }) => {
       const s = new LT.PagedLog(m.file, m.fileId, nextBase);
       let last = 0;
       const sample = await s.index((bytes) => { if (performance.now() - last > 60) { emit(id, { progress: 'Indexing… ' + Math.floor(bytes / Math.max(1, m.file.size) * 100) + '%', bytes }); last = performance.now(); } }, () => token !== indexToken, m.sampleLimit);
-      nextBase += s.count; sources.push(s); allOrder = null; version++;
+      nextBase += s.count; sources.push(s); allOrder = null; version++; orderRevision++;
       emit(id, { count: s.count, counts: s.counts, format: s.format, firstLine: s.firstLine, maxLength: s.maxLength, sample });
     } else if (type === 'query' || type === 'search') await query(id, m.spec, type === 'search');
-    else if (type === 'page') { const ids = m.search ? searchOrder : order; const start = Math.max(0, Math.min(m.start, Math.max(0, Math.floor((ids.length - 1) / m.size) * m.size))); const rows = await records(ids, start, m.size); emit(id, { rows, start, total: ids.length }); }
+    else if (type === 'page') {
+      // export callers pin the result set: reject if the scope changed since
+      // the revision was captured (both before and after the record reads)
+      if (m.expectedRevision != null && m.expectedRevision !== orderRevision) { emit(id, { stale: true, total: 0, rows: [], start: m.start }); return; }
+      const ids = m.search ? searchOrder : order;
+      const start = Math.max(0, Math.min(m.start, Math.max(0, Math.floor((ids.length - 1) / m.size) * m.size)));
+      const rows = await records(ids, start, m.size);
+      if (m.expectedRevision != null && m.expectedRevision !== orderRevision) { emit(id, { stale: true, total: 0, rows: [], start: m.start }); return; }
+      emit(id, { rows, start, total: ids.length });
+    }
     else if (type === 'record') { const s = sources.find((s) => s.id === m.fileId && !s.removed); emit(id, { record: s ? await s.get(m.lineNo - 1) : null }); }
     else if (type === 'locate') { let at = -1; const s = sources.find((s) => s.id === m.fileId && !s.removed); if (s) { const value = s.base + m.lineNo - 1; for (let i = 0; i < order.length; i++) { if (order[i] === value) { at = i; break; } if ((i & 65535) === 0) await new Promise((r) => setTimeout(r, 0)); } } emit(id, { at }); }
-    else if (type === 'remove') { queryToken++; searchToken++; indexToken++; const s = sources.find((s) => s.id === m.fileId); if (s) { s.removed = true; s.cache.clear(); s.offsets = s.times = s.levels = null; } allOrder = null; version++; emit(id, {}); }
+    else if (type === 'remove') { queryToken++; searchToken++; indexToken++; orderRevision++; const s = sources.find((s) => s.id === m.fileId); if (s) { s.removed = true; s.cache.clear(); s.offsets = s.times = s.levels = null; } allOrder = null; version++; emit(id, {}); }
     else if (type === 'cancel') { queryToken++; searchToken++; indexToken++; emit(id, {}); }
   } catch (error) { emit(id, { error: error.message }); }
 };
