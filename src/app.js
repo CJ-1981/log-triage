@@ -10,7 +10,7 @@
   const STATE_KEY = 'log_triage_state_v1';
   const defaults = () => ({
     theme: LT.DEFAULT_THEME || 'midnight',
-    maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null,
+    maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null, drawerOn: true,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
     timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200, issueGroups: null,
     cap: 100000,
@@ -888,7 +888,7 @@
       lastHoverIdx = idx;
       if (e.shiftKey) selection.shiftClick(idx);
       else if (e.ctrlKey || e.metaKey) selection.ctrlClick(idx);
-      else { selection.click(idx); showDrawer(view[idx]); }
+      else { selection.click(idx); if (state.drawerOn) showDrawer(view[idx]); }
       renderRows(); updateStatus();
       e.preventDefault();
     });
@@ -910,7 +910,7 @@
     $('viewer').addEventListener('mouseleave', endDrag);
     v.addEventListener('dblclick', (e) => {
       const row = e.target.closest('.vrow');
-      if (row) showDrawer(view[Number(row.dataset.idx)]);
+      if (row && state.drawerOn) showDrawer(view[Number(row.dataset.idx)]);
     });
   }
 
@@ -1863,7 +1863,7 @@
     v.scrollTop = Math.max(0, topOffset() + y - v.clientHeight / 2);
     selection.click(idx);
     renderRows(); updateStatus();
-    if (view[idx]) showDrawer(view[idx]);
+    if (view[idx] && state.drawerOn) showDrawer(view[idx]);
   }
 
   /** Jump from a search-result row to the line in the viewer. */
@@ -1958,6 +1958,15 @@
     }
     invalidateHeights();
     renderRows();
+  }
+  function setDrawer(on) {
+    // line-click detail drawer: ON by default; OFF keeps clicks selection-only
+    // so highlighted text can be copied without the drawer covering it
+    state.drawerOn = on;
+    const btn = $('btn-drawer');
+    if (btn) { btn.textContent = 'Drawer: ' + (on ? 'ON' : 'OFF'); btn.classList.toggle('on', on); }
+    if (!on && $('drawer').classList.contains('open')) $('drawer').className = '';
+    saveState();
   }
   function setFollow(on) {
     state.follow = on;
@@ -2308,6 +2317,7 @@
     $('btn-sr-wrap').onclick = () => setSearchWrap(!state.srWrapOn);
     $('btn-zen').onclick = () => setZen(!state.zenOn);
     $('zen-fab').onclick = () => setZen(false);
+    $('btn-drawer').onclick = () => setDrawer(!state.drawerOn);
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
@@ -2460,6 +2470,7 @@
     setWrap(state.wrapOn);
     setFollow(state.follow);
     setSearchWrap(state.srWrapOn !== false);
+    setDrawer(state.drawerOn !== false);
     syncMasksFromState(); syncRgFromState();
     renderChips(); renderRules(); renderPresets(); renderFiles(); renderBookmarks(); updateStatus();
     bindViewer();

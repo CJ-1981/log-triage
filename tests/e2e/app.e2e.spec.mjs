@@ -362,6 +362,30 @@ test('selection-only export exports exactly the selected rows and guards empty s
   fs.rmSync(big, { force: true });
 });
 
+test('drawer toggle gates the line-click detail drawer', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  const clickLine = () => page.evaluate(() => {
+    document.querySelector('.vrow .txt').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+  // default ON: clicking a line opens the drawer
+  await clickLine();
+  await page.waitForFunction(() => document.getElementById('drawer').classList.contains('open'), null, { timeout: 5000 });
+  // toggle OFF: drawer closes and stays closed on further line clicks
+  await page.click('#btn-drawer');
+  await page.waitForFunction(() => !document.getElementById('drawer').classList.contains('open'), null, { timeout: 5000 });
+  await clickLine();
+  await page.waitForTimeout(300);
+  assert.ok(!(await page.evaluate(() => document.getElementById('drawer').classList.contains('open'))),
+    'drawer stays closed while the drawer toggle is off');
+  assert.strictEqual(await page.textContent('#btn-drawer'), 'Drawer: OFF', 'toggle label synced');
+  // toggle back ON: drawer opens again on line click
+  await page.click('#btn-drawer');
+  await clickLine();
+  await page.waitForFunction(() => document.getElementById('drawer').classList.contains('open'), null, { timeout: 5000 });
+});
+
 test('bookmark export is sanitized (privacy)', async () => {
   await fresh();
   await click('btn-demo');
