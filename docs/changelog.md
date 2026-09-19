@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.42.0 (2026-09-19)
+- Merge pull request #31 from CJ-1981/feat/drawer-masked-raw
+- feat: drawer auto-labels masked/raw with chevron-gated raw text
+- test: specify drawer pid/tid line, masked/raw label, chevron-gated raw
+
 ## 1.41.0 (2026-09-19)
 - Merge pull request #30 from CJ-1981/feat/drawer-toggle
 - feat: drawer toggle gates the line-click detail drawer
