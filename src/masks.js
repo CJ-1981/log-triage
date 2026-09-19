@@ -181,5 +181,47 @@
   function maskLine(line) { return new MaskEngine().maskLine(line); }
   function builtinRuleIds() { return buildBuiltinMaskRules().map((r) => r.id); }
 
-  return { buildBuiltinMaskRules, MaskEngine, maskLine, builtinRuleIds };
+  /** Pure PII census over an analysis sample. Counts EVERY match (a line with
+   * two emails counts twice) while keeping at most maxSamplesPerType example
+   * lines per rule; each sample carries the caller-masked preview, so the
+   * text never leaks regardless of the viewer's mask toggle. Rules without a
+   * compiled regex (broken custom rules) are skipped; zero-count rules are
+   * omitted; rule order is preserved. */
+  function collectPiiCensus(records, rules, { maxSamplesPerType = 25, maskText } = {}) {
+    const mask = maskText || ((s) => s);
+    const groups = new Map();
+    for (const rule of rules) {
+      groups.set(rule.id, {
+        type: rule.id,
+        label: rule.label || rule.name || rule.id,
+        count: 0,
+        samples: [],
+      });
+    }
+    for (const record of records) {
+      for (const rule of rules) {
+        if (!rule.re) continue;
+        const group = groups.get(rule.id);
+        const re = new RegExp(rule.re.source, rule.re.flags);
+        let match;
+        let matchedLine = false;
+        while ((match = re.exec(record.raw)) !== null) {
+          group.count++;
+          matchedLine = true;
+          if (match.index === re.lastIndex) re.lastIndex++; // zero-length guard
+        }
+        if (matchedLine && group.samples.length < maxSamplesPerType) {
+          group.samples.push({
+            fileId: record.fileId,
+            file: record.file,
+            lineNo: record.lineNo,
+            maskedText: mask(record.raw),
+          });
+        }
+      }
+    }
+    return [...groups.values()].filter((g) => g.count > 0);
+  }
+
+  return { buildBuiltinMaskRules, MaskEngine, maskLine, builtinRuleIds, collectPiiCensus };
 }));
