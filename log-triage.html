@@ -923,8 +923,10 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         repl: () => 'IPv6-masked',
       },
       {
-        id: 'gnss', label: 'GNSS coordinates', hint: 'decimal pairs >= 3 decimals -> [coords]',
-        re: /(?<![\d.])-?(?:[0-8]?\d|90)\.\d{3,7}\s*\u00b0?\s*[NS]?\s*,?\s*-?(?:1?[0-7]?\d|180)\.\d{3,7}(?![\d.])/g,
+        id: 'gnss', label: 'GNSS coordinates', hint: 'decimal pairs >= 3 decimals (incl. lat=/lon: forms) -> [coords]',
+        // pair separator: whitespace/°/N-S/comma plus an optional lat/lon key
+        // token (lat=… lon:…), keeping unrelated decimal pairs safe
+        re: /(?<![\d.])-?(?:[0-8]?\d|90)\.\d{3,7}\s*\u00b0?\s*[NS]?\s*,?\s*(?:(?:lon[g]?(?:itude)?|lat(?:itude)?)\s*[=: ]\s*)?-?(?:1?[0-7]?\d|180)\.\d{3,7}(?![\d.])/g,
         repl: () => '[coords]',
       },
       {
@@ -6866,6 +6868,16 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     eq(SRC.maskLine('fix 48.858412°N, 2.294511°E ok'), 'fix [coords]°E ok');
     eq(SRC.maskLine('single 1.2345 stays'), 'single 1.2345 stays');
     eq(SRC.maskLine('two decimals 12.12, 13.12 stay'), 'two decimals 12.12, 13.12 stay', 'needs >= 3 decimals');
+  });
+
+  T('mask', 'GNSS key-value forms mask the pair (lat/lon tokens between numbers)', () => {
+    eq(SRC.maskLine('lat=48.858400 lon=2.294500'), 'lat=[coords]');
+    eq(SRC.maskLine('lat: 48.858400 lon: 2.294500'), 'lat: [coords]');
+    eq(SRC.maskLine('lat 48.858400, lon 2.294500'), 'lat [coords]');
+    eq(SRC.maskLine('position latitude=48.858400 longitude=2.294500 locked'), 'position latitude=[coords] locked');
+    eq(SRC.maskLine('lon=2.294500 lat=48.858400 end'), 'lon=[coords] end', 'lon-first order masks too');
+    eq(SRC.maskLine('speed 1.2345 tolon 6.7890 kmh'), 'speed 1.2345 tolon 6.7890 kmh', "non-coordinate words keep FP safety");
+    eq(SRC.maskLine('value 1.2345 and 6.7890 unrelated'), 'value 1.2345 and 6.7890 unrelated', 'plain word separator still safe');
   });
 
   T('mask', 'subscriberId and hotspot SSID', () => {

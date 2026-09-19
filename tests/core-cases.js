@@ -382,6 +382,16 @@
     eq(SRC.maskLine('two decimals 12.12, 13.12 stay'), 'two decimals 12.12, 13.12 stay', 'needs >= 3 decimals');
   });
 
+  T('mask', 'GNSS key-value forms mask the pair (lat/lon tokens between numbers)', () => {
+    eq(SRC.maskLine('lat=48.858400 lon=2.294500'), 'lat=[coords]');
+    eq(SRC.maskLine('lat: 48.858400 lon: 2.294500'), 'lat: [coords]');
+    eq(SRC.maskLine('lat 48.858400, lon 2.294500'), 'lat [coords]');
+    eq(SRC.maskLine('position latitude=48.858400 longitude=2.294500 locked'), 'position latitude=[coords] locked');
+    eq(SRC.maskLine('lon=2.294500 lat=48.858400 end'), 'lon=[coords] end', 'lon-first order masks too');
+    eq(SRC.maskLine('speed 1.2345 tolon 6.7890 kmh'), 'speed 1.2345 tolon 6.7890 kmh', "non-coordinate words keep FP safety");
+    eq(SRC.maskLine('value 1.2345 and 6.7890 unrelated'), 'value 1.2345 and 6.7890 unrelated', 'plain word separator still safe');
+  });
+
   T('mask', 'subscriberId and hotspot SSID', () => {
     eq(SRC.maskLine('subscriberId=41011223344 not provisioned'), 'subscriberId=*** not provisioned');
     eq(SRC.maskLine('ssid=AndroidShare_4821'), 'ssid=AndroidShare_****');
