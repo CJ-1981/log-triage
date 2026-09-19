@@ -926,7 +926,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         id: 'gnss', label: 'GNSS coordinates', hint: 'decimal pairs >= 3 decimals (incl. lat=/lon: forms) -> [coords]',
         // pair separator: whitespace/°/N-S/comma plus an optional lat/lon key
         // token (lat=… lon:…), keeping unrelated decimal pairs safe
-        re: /(?<![\d.])-?(?:[0-8]?\d|90)\.\d{3,7}\s*\u00b0?\s*[NS]?\s*,?\s*(?:(?:lon[g]?(?:itude)?|lat(?:itude)?)\s*[=: ]\s*)?-?(?:1?[0-7]?\d|180)\.\d{3,7}(?![\d.])/g,
+        re: /(?<![\d.:])-?(?:[0-8]?\d|90)\.\d{3,7}\s*\u00b0?\s*[NS]?\s*,?\s*(?:(?:lon[g]?(?:itude)?|lat(?:itude)?)\s*[=: ]\s*)?-?(?:1?[0-7]?\d|180)\.\d{3,7}(?![\d.])/g,
         repl: () => '[coords]',
       },
       {
@@ -6878,6 +6878,15 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     eq(SRC.maskLine('lon=2.294500 lat=48.858400 end'), 'lon=[coords] end', 'lon-first order masks too');
     eq(SRC.maskLine('speed 1.2345 tolon 6.7890 kmh'), 'speed 1.2345 tolon 6.7890 kmh', "non-coordinate words keep FP safety");
     eq(SRC.maskLine('value 1.2345 and 6.7890 unrelated'), 'value 1.2345 and 6.7890 unrelated', 'plain word separator still safe');
+  });
+
+  T('mask', 'DLT-style time columns never mask as coordinates (colon guard)', () => {
+    const dlt = '6 2026/09/03 08:43:20.036283 46.9799 6 ECU1 ARBI ARBI 2136 log info verbose 1 thread created';
+    eq(SRC.maskLine(dlt), dlt, 'HH:MM:SS.micros + DLT relative-ts column is not a coordinate pair');
+    const gptp = '0 2026/09/03 08:43:46.336965 73.2811 0 ECU1 GPTP GNRL 3634 log info verbose 1 gPTP starting';
+    eq(SRC.maskLine(gptp), gptp, 'same guard for other DLT column shapes');
+    eq(SRC.maskLine('fix 48.858400 2.294500 ok'), 'fix [coords] ok', 'bare space pair outside a time context still masks');
+    eq(SRC.maskLine('pos: 48.858400, 2.294500 ok'), 'pos: [coords] ok', 'colon then space still masks');
   });
 
   T('mask', 'subscriberId and hotspot SSID', () => {

@@ -392,6 +392,15 @@
     eq(SRC.maskLine('value 1.2345 and 6.7890 unrelated'), 'value 1.2345 and 6.7890 unrelated', 'plain word separator still safe');
   });
 
+  T('mask', 'DLT-style time columns never mask as coordinates (colon guard)', () => {
+    const dlt = '6 2026/09/03 08:43:20.036283 46.9799 6 ECU1 ARBI ARBI 2136 log info verbose 1 thread created';
+    eq(SRC.maskLine(dlt), dlt, 'HH:MM:SS.micros + DLT relative-ts column is not a coordinate pair');
+    const gptp = '0 2026/09/03 08:43:46.336965 73.2811 0 ECU1 GPTP GNRL 3634 log info verbose 1 gPTP starting';
+    eq(SRC.maskLine(gptp), gptp, 'same guard for other DLT column shapes');
+    eq(SRC.maskLine('fix 48.858400 2.294500 ok'), 'fix [coords] ok', 'bare space pair outside a time context still masks');
+    eq(SRC.maskLine('pos: 48.858400, 2.294500 ok'), 'pos: [coords] ok', 'colon then space still masks');
+  });
+
   T('mask', 'subscriberId and hotspot SSID', () => {
     eq(SRC.maskLine('subscriberId=41011223344 not provisioned'), 'subscriberId=*** not provisioned');
     eq(SRC.maskLine('ssid=AndroidShare_4821'), 'ssid=AndroidShare_****');
