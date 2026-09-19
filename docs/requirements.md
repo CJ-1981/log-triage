@@ -109,7 +109,7 @@ Status: implemented (v1.0.0; bookmarks Clear button in v1.20.0).
 - AC-1: Multiline selection supports click anchor, shift-click range, ctrl-click toggle, and ctrl+A; copying offers optional `file:lineNo:` prefixes and respects the current mask state.
 - AC-2: Bookmarks are set on the gutter (with the `B` key), listed in a panel, and support notes.
 - AC-3: Bookmarks persist by file identity (name + size + first-line hash) and can be exported and imported.
-- AC-4: A detail drawer shows the full raw line and its metadata.
+- AC-4: A detail drawer — gated by a viewer-toolbar toggle that is on by default (v1.41.0) — shows the clicked line's metadata: timestamp, level, tag, and `pid / tid` on one shared line. When masking actually changed the line, the body shows the masked text labeled "masked" plus a ▸/▾ chevron that lazily expands the raw line (collapsed by default, and its text leaves the DOM when collapsed); otherwise the body shows the raw line labeled "raw" with no chevron.
 - AC-5: The bookmarks panel has a Clear button that removes every bookmark in one click — including bookmarks of currently loaded files (v1.22.0 behavior; it originally only pruned entries of unloaded files). The status line reports the removal ("cleared N bookmark(s)"), the count pill and status-bar counter reset, the ★ only-bookmarked chip disappears when no bookmarks remain, and the ★ only-bookmarked view re-filters if active.
 
 ### FR-12 — Sanitized export
