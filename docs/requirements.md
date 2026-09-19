@@ -47,7 +47,7 @@ Status: implemented (v1.0.0).
 
 Status: implemented (v1.0.0).
 
-- AC-1: The 16 built-in rules (VIN, IBAN, credit card, SSN, international phone, US phone, IMEI, email, device serial `SN-`, MAC keeping OUI, private IPv4, public IPv4, IPv6 link-local/ULA, GNSS decimal pairs ≥ 3 decimals, subscriberId, hotspot SSID `AndroidShare_`) are each individually toggleable and applied in a fixed, documented order.
+- AC-1: The 16 built-in rules (VIN, IBAN, credit card, SSN, international phone, US phone, IMEI, email, device serial `SN-`, MAC keeping OUI, private IPv4, public IPv4, IPv6 link-local/ULA, GNSS decimal pairs ≥ 3 decimals (v1.44.2: the pair separator also accepts lat/lon key tokens, so `lat=48.858400 lon=2.294500` masks to `lat=[coords]`), subscriberId, hotspot SSID `AndroidShare_`) are each individually toggleable and applied in a fixed, documented order.
 - AC-2: Custom rules map a user-supplied regex to a replacement template and compose with built-in rules.
 - AC-3: Masking is lazy — raw text is stored and masking is applied at render, copy, and export time; the viewer toggles masking with the `M` key, and copied/exported text respects the current mask state.
 
