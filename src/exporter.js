@@ -53,5 +53,19 @@
     return JSON.stringify(bookmarkStore.toJSON(), null, 2);
   }
 
-  return { toText, toCsv, toJson, toRgText, searchToJson, bookmarksToJson, csvField };
+  /** Cloned, sanitized bookmark JSON for export: snippets and user notes are
+   * masked via the supplied function; stored bookmarks are never mutated and
+   * identity keys/line numbers stay intact for reimport (ADR: filenames and
+   * identity metadata are not anonymized). */
+  function sanitizeBookmarkPayload(payload, maskText) {
+    const clean = (v) => (v ? maskText(String(v)) : v);
+    return Object.fromEntries(Object.entries(payload || {}).map(([key, entries]) => [key,
+      (entries || []).map((entry) => Object.assign({}, entry, {
+        meta: Object.assign({}, entry.meta, { snippet: clean(entry.meta && entry.meta.snippet) }),
+        note: clean(entry.note),
+      })),
+    ]));
+  }
+
+  return { toText, toCsv, toJson, toRgText, searchToJson, bookmarksToJson, sanitizeBookmarkPayload, csvField };
 }));
