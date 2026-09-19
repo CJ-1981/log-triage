@@ -1888,32 +1888,50 @@ test('analysis tab shows an analyzing placeholder; deep scan has a cancel contro
   });
   assert.ok(cancel.exists && cancel.hidden, 'cancel button present but hidden while idle');
 });
-test('drawer shows TID next to PID and copy buttons for the line', async () => {
+test('drawer: pid/tid on one line, masked label with chevron-gated raw', async () => {
   await fresh();
-  await page.context().grantPermissions(['clipboard-read', 'clipboard-write']);
   await click('btn-demo');
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
-  // open the drawer on row 2 (the VIN line): masked and raw differ there.
+  // row 2 is the VIN line: masked and raw differ there.
   // the viewer opens the drawer on mousedown (delegated at #vspacer)
   await page.evaluate(() => {
     document.querySelectorAll('.vrow')[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
   });
-  await page.waitForTimeout(200);
-  const drawer = await page.evaluate(() => document.getElementById('drawer').textContent);
-  assert.ok(drawer.includes('tid'), 'drawer lists tid');
-  assert.ok(drawer.includes('5678'), 'tid value 5678 shown');
-  assert.ok(drawer.includes('1234'), 'pid value 1234 shown');
-  // raw copy: contains the raw VIN
-  await page.evaluate(() => document.querySelector('#drawer .drawer-cp[data-what=raw]').click());
+  await page.waitForFunction(() => {
+    const d = document.getElementById('drawer');
+    return d.classList.contains('open') && d.querySelector('.chev-toggle');
+  }, null, { timeout: 5000 });
+  const html = await page.evaluate(() => document.getElementById('drawer').innerHTML);
+  assert.ok(html.includes('pid / tid'), 'pid and tid share one line');
+  assert.ok(html.includes('>masked<'), 'label says masked when masking changed the line');
+  assert.ok(html.includes('1234') && html.includes('5678'), 'pid/tid values shown');
+  // default collapsed: the raw VIN is not in the drawer DOM at all
+  let text = await page.evaluate(() => document.getElementById('drawer').textContent);
+  assert.ok(!text.includes('YV4AB9CD12EF34567'), 'raw collapsed by default: raw VIN not shown');
+  assert.ok(text.includes('YV4**********4567'), 'masked text is the default body');
+  // chevron expands: raw line appears
+  await page.evaluate(() => document.querySelector('#drawer .chev-toggle').click());
   await page.waitForTimeout(150);
-  const raw = await page.evaluate(() => navigator.clipboard.readText());
-  assert.ok(raw.includes('YV4AB9CD12EF34567'), 'raw copy carries the raw VIN');
-  // masked copy: carries the masked token, never the raw VIN
-  await page.evaluate(() => document.querySelector('#drawer .drawer-cp[data-what=masked]').click());
+  text = await page.evaluate(() => document.getElementById('drawer').textContent);
+  assert.ok(text.includes('YV4AB9CD12EF34567'), 'raw VIN visible after expand');
+  // chevron collapses again: raw line leaves the DOM
+  await page.evaluate(() => document.querySelector('#drawer .chev-toggle').click());
   await page.waitForTimeout(150);
-  const masked = await page.evaluate(() => navigator.clipboard.readText());
-  assert.ok(masked.includes('YV4**********4567'), 'masked copy carries the masked VIN: ' + masked);
-  assert.ok(!masked.includes('YV4AB9CD12EF34567'), 'masked copy leaks no raw VIN');
+  text = await page.evaluate(() => document.getElementById('drawer').textContent);
+  assert.ok(!text.includes('YV4AB9CD12EF34567'), 'raw VIN hidden again after collapse');
+  // PII-free line: label flips to raw, no chevron
+  await page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('.vrow'));
+    const target = rows.find((r) => r.textContent.includes('ActivityManager'));
+    if (target) target.querySelector('.txt').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+  await page.waitForFunction(() => {
+    const d = document.getElementById('drawer');
+    return d.classList.contains('open') && !d.querySelector('.chev-toggle');
+  }, null, { timeout: 5000 });
+  const html2 = await page.evaluate(() => document.getElementById('drawer').innerHTML);
+  assert.ok(!html2.includes('masked'), 'no masked label when masking changed nothing');
+  assert.ok(html2.includes('>raw<'), 'label says raw when masking changed nothing');
 });
 
 test('text inputs get an inline ✕ clear button that empties and re-fires', async () => {
