@@ -347,7 +347,22 @@
   T('mask', 'IMEI exact 15 digits; epoch ms survives', () => {
     eq(SRC.maskLine('IMEI reported 350774129305118 ok'), 'IMEI reported [IMEI] ok');
     eq(SRC.maskLine('ts 1787611054935 ok'), 'ts 1787611054935 ok');
-    eq(SRC.maskLine('16 digits 1234567890123456 stay-not-imei'), '16 digits [card] stay-not-imei');
+    eq(SRC.maskLine('16 digits 5234567890123456 stay-not-imei'), '16 digits [card] stay-not-imei');
+  });
+
+  T('mask', 'rule guards: config quads, digit-only VINs, constant IMEIs stay intact', () => {
+    // card: implausible IIN first digit (ECUC config bitmaps) never masks
+    eq(SRC.maskLine('bitmap {0300-4B00-0100-0000-0000-0000} ok'), 'bitmap {0300-4B00-0100-0000-0000-0000} ok');
+    eq(SRC.maskLine('mask 0007-0006-0006-0007-0003-0007 set'), 'mask 0007-0006-0006-0007-0003-0007 set');
+    // card: Mastercard 2-series IIN still masks
+    eq(SRC.maskLine('card 2224 8888 7777 6666 declined'), 'card [card] declined');
+    // vin: digit-only 17-char storage timestamps stay intact
+    eq(SRC.maskLine('[OTA]storage time[2026090306444571Z]'), '[OTA]storage time[2026090306444571Z]');
+    // vin: digit-led real VIN still masks (letter within the first 8 chars)
+    eq(SRC.maskLine('vin 1FTFW1ET5DFC10324 ok'), 'vin 1FT**********0324 ok');
+    // imei: constant-digit config values stay intact
+    eq(SRC.maskLine('const 000000000000000 set'), 'const 000000000000000 set');
+    eq(SRC.maskLine('const 111111111111111 set'), 'const 111111111111111 set');
   });
 
   T('mask', 'email keeps first local char and TLD', () => {
