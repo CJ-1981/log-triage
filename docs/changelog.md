@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## 1.44.0 (2026-09-19)
+- Merge pull request #34 from CJ-1981/feat/pii-census-samples
+- docs: interactive PII census (FR-9 AC-4a, test-plan 41, README)
+- feat: clickable PII census cards with masked inline sample panels
+- feat: collectPiiCensus pure census with masked per-type samples
+- test: specify interactive PII census model (counts, caps, customs, masking)
+- Merge pull request #33 from CJ-1981/docs/dlt-real-validation
+- docs: pin real dlt-viewer export validation (31 files, 2.06M lines, 100 percent parsed)
+
 ## 1.43.0 (2026-09-19)
 - Merge pull request #32 from CJ-1981/feat/dlt-text
 - docs: FR-27 text-converted DLT support, ADR-0014 defers binary and FIBEX
