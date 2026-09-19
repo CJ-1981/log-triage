@@ -2042,3 +2042,39 @@ test('archive export re-packs the extract (.7z stored) as a download', { skip: !
   const note = await page.evaluate(() => document.getElementById('exp-archive-note').textContent);
   assert.match(note, /exported/);
 });
+
+test('dlt-viewer text export: badge, chips, drawer fields, masking, quick filter, masked export', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'dlt-viewer-sample.txt')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '42', null, { timeout: 8000 });
+  const st = await status();
+  assert.strictEqual(st.fmt, 'dlt', 'format badge is dlt');
+  const chipText = st.chips.join(' ');
+  assert.match(chipText, /F1/, 'fatal chip counted: ' + chipText);
+  assert.match(chipText, /V4/, 'verbose chip counted: ' + chipText);
+  // drawer on the VIN line (masked in the viewer): tag is appid:ctid, pid is sessionid
+  await page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('.vrow'));
+    const target = rows.find((r) => r.textContent.includes('VIN read'));
+    if (target) target.querySelector('.txt').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+  await page.waitForFunction(() => document.getElementById('drawer').classList.contains('open'), null, { timeout: 5000 });
+  const drawerText = await page.evaluate(() => document.getElementById('drawer').textContent);
+  assert.ok(drawerText.includes('YV4**********4567'), 'masked VIN shown in drawer');
+  assert.ok(drawerText.includes('HMI:CAN'), 'tag is appid:ctid');
+  assert.ok(drawerText.includes('310'), 'pid holds the session id');
+  // sanitized .log export
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  const downloadPromise = page.waitForEvent('download', { timeout: 8000 });
+  await click('exp-txt');
+  const download = await downloadPromise;
+  const fsmod = await import('node:fs');
+  const content = fsmod.readFileSync(await download.path(), 'utf8');
+  assert.ok(content.includes('YV4**********4567'), 'export carries masked VIN');
+  assert.ok(!content.includes('YV4AB9CD12EF34567'), 'export leaks no raw VIN');
+  // quick filter narrows to the bridge11 lines
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.fill('#quick', 'bridge11');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '2', null, { timeout: 5000 });
+  await page.fill('#quick', '');
+});
