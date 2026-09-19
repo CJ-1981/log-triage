@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.40.2 (2026-09-19)
+- Merge pull request #28 from CJ-1981/fix/selection-scope-bookmark-privacy
+- fix: enforce selection-only export scope; sanitize bookmark export
+
 ## 1.40.1 (2026-09-18)
 - Merge pull request #27 from CJ-1981/fix/export-privacy-streaming
 - fix: mask CSV/JSON message column; stream exports page by page
