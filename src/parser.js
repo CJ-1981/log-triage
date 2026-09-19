@@ -18,6 +18,21 @@
   const RE_SYSLOG_LINE = /^(?:<(\d{1,3})>)?\s*([A-Za-z]{3})\s+(\d{1,2})\s+([01]\d|2[0-3]):([0-5]\d):([0-5]\d)\s+(\S+)\s+([^:\s\[]+)(?:\[(\d+)\])?:?\s?(.*)$/;
   const RE_CLF_LINE = /^\S+\s+\S+\s+\S+\s+\[(0?[1-9]|[12]\d|3[01])\/([A-Za-z]{3})\/\d{4}:([01]\d|2[0-3]):([0-5]\d):([0-5]\d)\s+[+-]\d{4}\]\s+"(\S+)\s+(\S+)(?:\s+([^"]*))?"\s+(\d{3})\s+(\S+)/;
 
+  /* dlt-viewer ASCII export (qdltexporter.cpp): `[index] yyyy/mm/dd hh:mm:ss.µµ
+   * [dlt-ts s.mmmm] counter ecuid appid ctid sessionid type subtype <mode args> payload`.
+   * The viewer always writes the mode and arg-count columns, so when the mode
+   * word is present the next number is the arg count — never payload text. */
+  const RE_DLT_LINE = /^(?:(\d+)\s+)?(\d{4})\/(\d{2})\/(\d{2})\s+([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.(\d{1,6}))?\s+(?:(\d+)\.(\d{1,4})\s+)?(\d+)\s+(\S{1,10})\s+(\S{1,10})\s+(\S{1,10})\s+(\d+)\s+(log|app_trace|nw_trace|control|extension|junction)\s+(\S+)(.*)$/;
+  const RE_DLT_TS = /(\d{4})\/(\d{2})\/(\d{2})\s+([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.(\d{1,6}))?/;
+
+  /* DLT_LOG_* subtype word -> level letter; DLT_LOG_DEFAULT (and unknown) -> null. */
+  const DLT_LOG_LEVELS = {
+    fatal: 'F', error: 'E', warn: 'W', warning: 'W', info: 'I', debug: 'D', verbose: 'V', trace: 'V',
+  };
+  /* Non-log message types carry no log level; traces are debug-ish, control is informational. */
+  const DLT_TYPE_LEVELS = { app_trace: 'D', nw_trace: 'D', control: 'I' };
+  const RE_DLT_MODE = /^ (verbose|nonverbose|non-verbose|non_verbose|invalid)(?=[ ]|$)/;
+
   // RFC3164 severity (PRI % 8) -> logcat-style ladder
   const SEVERITY_LADDER = ['F', 'E', 'E', 'E', 'W', 'I', 'I', 'D'];
 
@@ -46,6 +61,8 @@
       const mon = MONTHS[m[2].toLowerCase()];
       if (mon) return mon + '-' + p2(m[1]) + ' ' + p2(m[3]) + ':' + m[4] + ':' + m[5] + '.000';
     }
+    m = RE_DLT_TS.exec(line);
+    if (m) return m[2] + '-' + m[3] + ' ' + m[4] + ':' + m[5] + ':' + m[6] + '.' + padMs(m[7]);
     m = RE_MMDD.exec(line);
     if (m) return m[1] + '-' + m[2] + ' ' + m[3] + ':' + m[4] + ':' + m[5] + '.' + padMs(m[6]);
     return null;
@@ -102,6 +119,23 @@
     return record(null, levelFromTokens(line), null, null, line);
   }
 
+  function parseDlt(line) {
+    const m = RE_DLT_LINE.exec(line);
+    if (!m) return parseFallback(line);
+    const ts = m[3] + '-' + m[4] + ' ' + m[5] + ':' + m[6] + ':' + m[7] + '.' + padMs(m[8]);
+    const type = m[16];
+    const subtype = m[17].toLowerCase();
+    const level = type === 'log' ? (DLT_LOG_LEVELS[subtype] || null) : (DLT_TYPE_LEVELS[type] || null);
+    let rest = m[18];
+    const mode = RE_DLT_MODE.exec(rest);
+    if (mode) {
+      rest = rest.slice(1 + mode[1].length);
+      const args = /^ (\d+)(?: (.*))?$/.exec(rest);
+      if (args) rest = args[2] != null ? args[2] : '';
+    }
+    return record(ts, level, m[13] + ':' + m[14], m[15], rest);
+  }
+
   /** parseLine(line, format) -> { ts, level, tag, pid, tid, msg } (tid only for logcat threadtime) */
   function parseLine(line, format) {
     switch (format) {
@@ -110,12 +144,13 @@
       case 'clf': return parseClf(line);
       case 'iso8601': return parseWithTs(line);
       case 'mmdd': return parseWithTs(line);
+      case 'dlt': return parseDlt(line);
       default: return parseFallback(line);
     }
   }
 
   return {
     MONTHS, detectTs, levelFromTokens, parseLine,
-    RE_LOGCAT, RE_ISO, RE_SYSLOG_TS, RE_CLF_TS, RE_MMDD,
+    RE_LOGCAT, RE_ISO, RE_SYSLOG_TS, RE_CLF_TS, RE_MMDD, RE_DLT_TS,
   };
 }));

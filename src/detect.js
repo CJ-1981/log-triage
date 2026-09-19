@@ -10,12 +10,19 @@
   const RE_ISO = /\b(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])[T ]([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.(\d{1,3}))?/i;
   const RE_MMDD = /\b(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])\s+([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.(\d{1,3}))?\b/;
 
+  /* dlt-viewer ASCII export (qdltexporter.cpp): one message per line —
+   * `[index] yyyy/mm/dd hh:mm:ss.µµ [dlt-ts s.mmmm] counter ecuid appid ctid
+   * sessionid type subtype mode args payload`. The slash date + closed set of
+   * type words keep this disjoint from logcat/syslog/ISO/CLF/MM-DD shapes. */
+  const RE_DLT = /^(?:\d+\s+)?\d{4}\/\d{2}\/\d{2}\s+([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{1,6})?\s+(?:\d+\.\d{1,4}\s+)?\d+\s+\S{1,10}\s+\S{1,10}\s+\S{1,10}\s+\d+\s+(?:log|app_trace|nw_trace|control|extension|junction)\s+\S+\s/;
+
   const FORMATS = [
     ['logcat', RE_LOGCAT],
     ['syslog', RE_SYSLOG],
     ['clf', RE_CLF],
     ['iso8601', RE_ISO],
     ['mmdd', RE_MMDD],
+    ['dlt', RE_DLT],
   ];
 
   /** detectFormat(lines[]) -> { format, confidence, hits: {fmt: n}, samples: n } */
