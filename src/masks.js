@@ -12,7 +12,9 @@
     return [
       {
         id: 'vin', label: 'VIN', hint: 'keeps first 3 + last 4 (e.g. YV4**********4567)',
-        re: new RegExp('(?<![A-Za-z0-9])([' + VIN_CH + ']{3})([' + VIN_CH + ']{10})([' + VIN_CH + ']{4})(?![A-Za-z0-9])', 'g'),
+        // lookahead: at least one letter within the first 8 chars — digit-only
+        // 17-char runs (YYYYMMDDHHMMSSmmZ storage timestamps) are not VINs
+        re: new RegExp('(?<![A-Za-z0-9])(?=[0-9]{0,7}[A-HJ-NPR-Z])([' + VIN_CH + ']{3})([' + VIN_CH + ']{10})([' + VIN_CH + ']{4})(?![A-Za-z0-9])', 'g'),
         repl: (m, g1, g2, g3) => g1 + '**********' + g3,
       },
       {
@@ -22,7 +24,7 @@
       },
       {
         id: 'card', label: 'Credit card', hint: 'replaced with [card]',
-        re: /\b\d{4}(?:[ -]?\d{4}){3}\b/g,
+        re: /\b[2-6]\d{3}(?:[ -]?\d{4}){3}\b/g,
         repl: () => '[card]',
       },
       {
@@ -42,7 +44,7 @@
       },
       {
         id: 'imei', label: 'IMEI', hint: 'exactly 15 digits -> [IMEI]',
-        re: /(?<!\d)\d{15}(?!\d)/g,
+        re: /(?<!\d)(?!(\d)\1{14})\d{15}(?!\d)/g,
         repl: () => '[IMEI]',
       },
       {
