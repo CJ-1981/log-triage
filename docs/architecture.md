@@ -7,7 +7,7 @@ flowchart TD
     IN["Input — N local files<br>multi drag & drop · picker · paste · demo"]
     subgraph S1["1 · Streaming ingestion — sequential per file"]
         A1["file.stream() → chunk buffer → newline splitter (8 MB valve)"]
-        A2["format autodetect per file: logcat · syslog · ISO-8601 · CLF · plain"]
+        A2["format autodetect per file: logcat · syslog · ISO-8601 · CLF · MM-DD · dlt-viewer text · plain"]
         A3["parser → record (file · lineNo · ts · level · tag · pid · msg)"]
         A1 --> A2 --> A3
     end
@@ -70,7 +70,7 @@ Implemented (G0–G1):
 | Module | Responsibility |
 | --- | --- |
 | `src/util.js` | Shared helpers (hashing, formatting, small utilities reused by all modules). |
-| `src/detect.js` | Format autodetection: logcat threadtime, syslog RFC 3164, Apache CLF, ISO-8601, bare MM-DD, plain. |
+| `src/detect.js` | Format autodetection: logcat threadtime, syslog RFC 3164, Apache CLF, ISO-8601, bare MM-DD, dlt-viewer text exports, plain. |
 | `src/parser.js` | Parsers for the six formats; normalized records (`file · lineNo · ts · level · tag · pid · msg`) with year-less `MM-DD HH:MM:SS.mmm` timestamps. |
 | `src/_src.js` | Node aggregator that exports all modules for tests and the coverage gate. |
 
