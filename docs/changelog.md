@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.43.0 (2026-09-19)
+- Merge pull request #32 from CJ-1981/feat/dlt-text
+- docs: FR-27 text-converted DLT support, ADR-0014 defers binary and FIBEX
+- test: e2e coverage for dlt-viewer text export ingestion
+- feat: detect and parse dlt-viewer text exports (format 'dlt')
+- test: specify text-converted DLT detection and record parsing
+
 ## 1.42.0 (2026-09-19)
 - Merge pull request #31 from CJ-1981/feat/drawer-masked-raw
 - feat: drawer auto-labels masked/raw with chevron-gated raw text
