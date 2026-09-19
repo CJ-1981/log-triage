@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.44.3 (2026-09-19)
+- Merge pull request #37 from CJ-1981/fix/gnss-time-colon-guard
+- fix: GNSS rule never starts a pair after a clock colon (DLT time columns)
+
 ## 1.44.2 (2026-09-19)
 - Merge pull request #36 from CJ-1981/fix/gnss-keyvalue-pairs
 - fix: GNSS rule masks lat=/lon: key-value coordinate pairs
