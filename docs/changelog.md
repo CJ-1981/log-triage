@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.44.4 (2026-09-19)
+- Merge pull request #38 from CJ-1981/fix/mask-rule-guards
+- fix: mask rule guards for card IIN, VIN letters, constant IMEIs
+
 ## 1.44.3 (2026-09-19)
 - Merge pull request #37 from CJ-1981/fix/gnss-time-colon-guard
 - fix: GNSS rule never starts a pair after a clock colon (DLT time columns)

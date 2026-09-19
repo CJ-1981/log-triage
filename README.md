@@ -1,4 +1,4 @@
-<!-- version: 1.44.3 -->
+<!-- version: 1.44.4 -->
 
 # Log Triage
 
@@ -6,7 +6,7 @@
 
 **Log Triage** is a privacy-first log triage tool that runs entirely in your browser. Drop one or more log files onto a single self-contained HTML page and get instant format detection, parsing, filtering, ripgrep-style search, PII masking, analysis, and sanitized export — with no server, no uploads, and no telemetry. Your files never leave your machine.
 
-Current release: v1.44.3
+Current release: v1.44.4
 
 ## Screenshots
 
