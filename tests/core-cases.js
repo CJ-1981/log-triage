@@ -68,6 +68,42 @@
     eq(r.format, 'iso8601');
   });
 
+  T('detect', 'dlt-viewer ASCII export majority', () => {
+    const r = SRC.detectFormat([
+      '1 2026/09/03 14:06:03.123456 1788444.3630 10872 ECU1 APP1 CTX1 1234 log info verbose 1 LTE attached',
+      '2 2026/09/03 14:06:19.654321 1788444.3790 10873 ECU1 APP1 CTX1 1234 log error verbose 1 attach failed',
+      '3 2026/09/03 14:06:20.000000 1788444.3800 10874 ECU1 HMI CAN1 777 log warn verbose 1 retry 3 of 5',
+    ]);
+    eq(r.format, 'dlt');
+    ok(r.confidence >= 0.5);
+  });
+
+  T('detect', 'dlt lines are not claimed by other formats and vice versa', () => {
+    const dlt = '1 2026/09/03 14:06:03.123456 1788444.3630 10872 ECU1 APP1 CTX1 1234 log info verbose 1 LTE attached';
+    const hits = SRC.detectFormat([dlt, dlt, dlt]).hits;
+    eq(hits.logcat, 0, 'logcat must not match dlt lines');
+    eq(hits.iso8601, 0, 'iso8601 must not match dlt lines');
+    eq(hits.mmdd, 0, 'mmdd must not match dlt lines');
+    eq(hits.syslog, 0, 'syslog must not match dlt lines');
+    eq(hits.clf, 0, 'clf must not match dlt lines');
+    const r = SRC.detectFormat([
+      '08-24 15:37:01.123  1234  5678 I ActivityManager: Start proc',
+      '2026-08-24T15:37:01.123Z main INFO service started',
+      '<34>Aug 24 15:37:01 myhost sshd[1234]: Failed password for root',
+      '127.0.0.1 - - [24/Aug/2026:15:37:01 +0200] "GET /index.html HTTP/1.1" 200 1234',
+    ]);
+    eq(r.hits.dlt, 0, 'dlt must not match classic-format lines');
+  });
+
+  T('detect', 'dlt minority among logcat stays logcat', () => {
+    const r = SRC.detectFormat([
+      '08-24 15:37:01.123  1234  5678 I ActivityManager: a',
+      '08-24 15:37:02.123  1234  5678 I ActivityManager: b',
+      '1 2026/09/03 14:06:03.123456 1788444.3630 10872 ECU1 APP1 CTX1 1234 log info verbose 1 x',
+    ]);
+    eq(r.format, 'logcat');
+  });
+
   T('detect', 'falls back to plain for unstructured text', () => {
     const r = SRC.detectFormat(['just some text', 'more text without timestamps', 'and a third line']);
     eq(r.format, 'plain');
@@ -106,6 +142,12 @@
     eq(SRC.detectTs('08-24 15:37:01 something'), '08-24 15:37:01.000');
   });
 
+  T('ts', 'dlt-viewer slash date with microseconds', () => {
+    eq(SRC.detectTs('1 2026/09/03 14:06:03.123456 1788444.3630 10872 ECU1 APP1 CTX1 1234 log info verbose 1 x'), '09-03 14:06:03.123');
+    eq(SRC.detectTs('2026/09/03 14:06:03 rest'), '09-03 14:06:03.000');
+    eq(SRC.detectTs('2026/09/03 14:06:03.5 rest'), '09-03 14:06:03.500');
+  });
+
   T('ts', 'false-positive guards return null', () => {
     eq(SRC.detectTs('version 2.41.3 released'), null);
     eq(SRC.detectTs('10.20.30.40 connected'), null);
@@ -138,6 +180,49 @@
     const r = SRC.parseLine('<3>[12345.678901] usb 1-1: reset', 'logcat');
     eq(r.level, null);
     eq(r.msg, '<3>[12345.678901] usb 1-1: reset');
+  });
+
+  T('parse', 'dlt-viewer ASCII full record maps header columns', () => {
+    const r = SRC.parseLine('1 2026/09/03 14:06:03.123456 1788444.3630 10872 ECU1 APP1 CTX1 1234 log info verbose 1 LTE attached', 'dlt');
+    deepEq(r, { ts: '09-03 14:06:03.123', level: 'I', tag: 'APP1:CTX1', pid: '1234', tid: null, msg: 'LTE attached' });
+  });
+
+  T('parse', 'dlt log subtypes map to level letters', () => {
+    const L = (subtype) => SRC.parseLine('1 2026/09/03 14:06:03.123456 1788444.3630 42 ECU1 A B 9 log ' + subtype + ' verbose 1 m', 'dlt').level;
+    eq(L('fatal'), 'F');
+    eq(L('error'), 'E');
+    eq(L('warn'), 'W');
+    eq(L('warning'), 'W');
+    eq(L('debug'), 'D');
+    eq(L('verbose'), 'V');
+    eq(L('default'), null, 'DLT_LOG_DEFAULT has no level');
+  });
+
+  T('parse', 'dlt non-log types map to trace/control levels', () => {
+    eq(SRC.parseLine('1 2026/09/03 14:06:03.123456 1788444.3630 42 ECU1 A B 9 app_trace variable verbose 2 wheel speed', 'dlt').level, 'D');
+    eq(SRC.parseLine('1 2026/09/03 14:06:03.123456 1788444.3630 42 ECU1 A B 9 nw_trace port verbose 1 eth0 up', 'dlt').level, 'D');
+    eq(SRC.parseLine('1 2026/09/03 14:06:03.123456 1788444.3630 42 ECU1 A B 9 control request verbose 1 ping', 'dlt').level, 'I');
+  });
+
+  T('parse', 'dlt without index and dlt-timestamp columns still parses', () => {
+    const r = SRC.parseLine('2026/09/03 14:06:03.123456 42 ECU1 APP1 CTX1 1234 log fatal verbose 1 boot failed', 'dlt');
+    eq(r.ts, '09-03 14:06:03.123');
+    eq(r.level, 'F');
+    eq(r.tag, 'APP1:CTX1');
+    eq(r.pid, '1234');
+    eq(r.msg, 'boot failed');
+  });
+
+  T('parse', 'dlt payload after the mode word may start with digits', () => {
+    const r = SRC.parseLine('1 2026/09/03 14:06:03.123456 1788444.3630 42 ECU1 APP1 CTX1 1234 log info verbose 123 4097 service id', 'dlt');
+    eq(r.msg, '4097 service id');
+  });
+
+  T('parse', 'dlt continuation line falls back like other formats', () => {
+    const r = SRC.parseLine('    wrapped payload fragment', 'dlt');
+    eq(r.ts, null);
+    eq(r.level, null);
+    eq(r.msg, '    wrapped payload fragment');
   });
 
   T('parse', 'syslog with PRI maps severity to ladder', () => {

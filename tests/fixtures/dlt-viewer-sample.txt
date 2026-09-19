@@ -1,0 +1,42 @@
+1 2026/09/03 14:06:00.100000 0.0000 1 ECU1 SYS BOOT 100 log info verbose 1 tcam service starting version 3.2.1
+2 2026/09/03 14:06:00.350000 0.2500 2 ECU1 SYS BOOT 100 log debug verbose 1 loading config /oemapp/etc/tcam.ini
+3 2026/09/03 14:06:00.512000 0.4020 3 ECU1 SYS BOOT 100 log info verbose 1 12 modules registered
+4 2026/09/03 14:06:01.020000 0.9100 4 ECU1 MGMT NET 200 log info verbose 1 LTE attach started
+5 2026/09/03 14:06:01.480000 1.3700 5 ECU1 NET FW CONN 220 log warning verbose 1 bridge11 has no carrier yet
+6 2026/09/03 14:06:02.100000 1.9900 6 ECU1 HMI CAN 310 log info verbose 1 VIN read: YV4AB9CD12EF34567 from gateway
+7 2026/09/03 14:06:02.750000 2.6400 7 ECU1 GNSS POS 410 log debug verbose 1 waiting for ephemeris data
+8 2026/09/03 14:06:03.300000 3.1900 8 ECU1 NET FW CONN 220 log info verbose 1 bridge11 up, gateway 192.168.10.24 reachable
+9 2026/09/03 14:06:04.000000 3.8900 9 ECU1 MGMT OTA 420 log info verbose 1 checking update manifest
+10 2026/09/03 14:06:04.600000 4.4900 10 ECU1 MGMT OTA 420 log warning verbose 1 fallback server support@lotus-tech.com unreachable, trying primary
+11 2026/09/03 14:06:05.250000 5.1400 11 ECU1 HMI BT 330 log info verbose 1 phone paired +46 70 123 45 67
+12 2026/09/03 14:06:06.000000 5.8900 12 ECU1 CAN GW 310 app_trace variable verbose 2 speed 42
+13 2026/09/03 14:06:06.500000 6.3900 13 ECU1 CAN GW 310 app_trace variable verbose 2 rpm 1850
+14 2026/09/03 14:06:07.100000 6.9900 14 ECU1 SYS BOOT 100 control response verbose 1 alive
+15 2026/09/03 14:06:08.000000 7.8900 15 ECU1 GNSS POS 410 log info verbose 1 first fix: lat 57.7089 lon 11.9745 alt 22m
+16 2026/09/03 14:06:09.300000 9.1900 16 ECU1 NET FW CONN 220 log error verbose 1 dns resolve failed for ntp.lotus-tech.com
+17 2026/09/03 14:06:10.100000 9.9900 17 ECU1 MGMT NET 200 log debug verbose 1 signal strength rssi=-71 dBm
+18 2026/09/03 14:06:11.000000 10.8900 18 ECU1 MGMT NET 200 log info verbose 1 LTE attached, apn internet.tele2.se
+19 2026/09/03 14:06:12.400000 12.2900 19 ECU1 HMI CAN 310 log debug verbose 1 CAN bus status ok, 500 kbit/s
+20 2026/09/03 14:06:13.200000 13.0900 20 ECU1 SYS BOOT 100 log verbose verbose 1 heartbeat seq=1 counters ok
+21 2026/09/03 14:06:14.000000 13.8900 21 ECU1 MGMT OTA 420 log info verbose 1 manifest downloaded, 1 update pending
+22 2026/09/03 14:06:15.100000 14.9900 22 ECU1 MGMT OTA 420 log error verbose 1 signature verification failed for update.bin
+23 2026/09/03 14:06:16.000000 15.8900 23 ECU1 NET FW CONN 220 log debug verbose 1 firewall rules reloaded
+24 2026/09/03 14:06:17.300000 17.1900 24 ECU1 GNSS POS 410 log verbose verbose 1 satellite count 11, hdop 0.8
+25 2026/09/03 14:06:18.000000 17.8900 25 ECU1 HMI BT 330 log debug verbose 1 a2dp stream established
+26 2026/09/03 14:06:19.500000 19.3900 26 ECU1 CAN GW 310 log info verbose 1 door status changed: all closed
+27 2026/09/03 14:06:20.000000 19.8900 27 ECU1 SYS BOOT 100 log verbose verbose 1 heartbeat seq=2 counters ok
+28 2026/09/03 14:06:21.200000 21.0900 28 ECU1 MGMT NET 200 log warning verbose 1 roaming detected, data paused
+29 2026/09/03 14:06:22.000000 21.8900 29 ECU1 NET FW CONN 220 log error verbose 1 ipsec tunnel to vpn.lotus-tech.com down
+30 2026/09/03 14:06:23.100000 22.9900 30 ECU1 SYS BOOT 100 control request verbose 1 4097 service acknowledged
+31 2026/09/03 14:06:24.000000 23.8900 31 ECU1 GNSS POS 410 log debug verbose 1 positioning mode: 3d fix
+32 2026/09/03 14:06:25.400000 25.2900 32 ECU1 HMI CAN 310 log debug verbose 1 HVAC panel refreshed
+33 2026/09/03 14:06:26.000000 25.8900 33 ECU1 MGMT OTA 420 log warn verbose 1 retry update download attempt 2 of 5
+34 2026/09/03 14:06:27.500000 27.3900 34 ECU1 NET FW CONN 220 log info verbose 1 ipsec tunnel re-established
+35 2026/09/03 14:06:28.000000 27.8900 35 ECU1 HMI BT 330 log error verbose 1 bluetooth stack watchdog missed 3 ticks
+36 2026/09/03 14:06:29.000000 28.8900 36 ECU1 CAN GW 310 app_trace event verbose 1 gear engaged D
+37 2026/09/03 14:06:30.200000 30.0900 37 ECU1 SYS BOOT 100 log verbose verbose 1 heartbeat seq=3 counters ok
+38 2026/09/03 14:06:31.000000 30.8900 38 ECU1 MGMT NET 200 log info verbose 1 roaming policy satisfied, data resumed
+39 2026/09/03 14:06:32.300000 32.1900 39 ECU1 GNSS POS 410 log debug verbose 1 dead reckoning active in tunnel
+40 2026/09/03 14:06:33.000000 32.8900 40 ECU1 HMI CAN 310 log warning verbose 1 cluster display brightness capped
+41 2026/09/03 14:06:34.100000 33.9900 41 ECU1 MGMT OTA 420 log error verbose 1 update aborted after 3 failed attempts
+42 2026/09/03 14:06:35.000000 34.8900 42 ECU1 SYS BOOT 100 log fatal verbose 1 watchdog expired, forcing reboot

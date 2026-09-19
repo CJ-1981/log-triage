@@ -253,6 +253,17 @@ Log files often arrive packed, so the ingestion pipeline transparently looks ins
 - AC-4a: `dumpstate_board.bin` (Android bugreport board ramdump, typically a 1.5 GB deflate entry) is converted to text instead of skipped: the entry is stream-inflated (the inflated blob is never materialized), text runs of ≥ 8 bytes with ≥ 80% printable content are extracted, the newest 64 MB of extracted text is kept as a virtual `<path>/dumpstate_board.bin.log` entry, and the entry's CRC32 is verified incrementally while streaming. A directly dropped `dumpstate_board.bin` file converts the same way.
 - AC-5: The export tab can re-pack the sanitized extract as an archive that mirrors the loaded structure: `.zip` (stored entries with CRCs), `.tar`, `.tar.gz`, and `.7z`. The `.7z` writer produces a valid container with Copy (stored) coders — structure fidelity without implementing LZMA encoding (ADR-0011); real 7-Zip opens the result (`7z t` passes).
 
+### FR-27 — Text-converted DLT (dlt-viewer ASCII export)
+
+Status: implemented (v1.43.0). Binary `.dlt` files and FIBEX/non-verbose payload decoding are explicitly deferred (ADR-0014).
+
+AUTOSAR DLT logs converted to text by the dlt-viewer ASCII exporter are a first-class format: they are auto-detected, parsed into the shared record model, and flow through the whole pipeline (paging, filters, masking, search, analysis, export) like any other text format. The export line shape is `<index> <yyyy/mm/dd hh:mm:ss>.<µs> <dlt-ts> <counter> <ecuid> <appid> <ctid> <sessionid> <type> <subtype> <mode> <args> <payload>` (authoritative source: dlt-viewer `qdlt/qdltexporter.cpp`).
+
+- AC-1: A file whose sampled lines are majority dlt-viewer export lines is detected as format `dlt` (badge `dlt`); the line shape is disjoint from logcat/syslog/ISO/CLF/MM-DD, and false positives are pinned in both directions by shared self-test cases.
+- AC-2: Records map as: timestamp `MM-DD HH:MM:SS.mmm` (year dropped, microseconds truncated to milliseconds), level from the log subtype word (`fatal`→F, `error`→E, `warn`/`warning`→W, `info`→I, `debug`→D, `verbose`→V; `default` and unknown → null), non-log types to trace/control levels (`app_trace`/`nw_trace`→D, `control`→I), tag = `appid:ctid`, pid = session id. The leading index and DLT relative-timestamp columns are optional; the payload is never corrupted by digit-leading text because the mode word fixes the arg-count column.
+- AC-3: Non-dlt lines inside a dlt file (wrapped fragments, header notes) fall back to continuation records that stay visible and bypass level filters, like every other format.
+- AC-4: Masking, quick filter, search, selection copy, and sanitized export apply to DLT payload text unchanged (VIN/email/IP payloads are masked in the viewer, the drawer, and exports).
+
 ## Non-functional requirements
 
 ### NFR-1 — Performance
