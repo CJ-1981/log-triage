@@ -1456,6 +1456,10 @@
       el.onclick = () => {
         censusOpenType = censusOpenType === el.dataset.census ? null : el.dataset.census;
         renderCensusPanel(p, census);
+        if (censusOpenType) {
+          const head = p.querySelector('#census-panel .census-head');
+          if (head) head.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
+        }
       };
     });
     renderCensusPanel(p, census);
