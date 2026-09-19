@@ -2106,6 +2106,20 @@ test('analysis PII census: card buttons open masked sample panels, one at a time
   assert.ok(!panel.includes('YV4AB9CD12EF34567'), 'preview masked while viewer mask is off');
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
   await page.click('#btn-mask'); // mask back ON
+  // opening a card scrolls the sample panel into view (cards sit low on the page;
+  // on a phone-sized viewport the panel would open below the fold)
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await page.evaluate(() => document.querySelector('#tab-analysis .census-card[data-census=email]').click());
+  await page.waitForFunction(() => {
+    const head = document.querySelector('#census-panel .census-head');
+    if (!head) return false;
+    const r = head.getBoundingClientRect();
+    return r.top >= 0 && r.top < window.innerHeight;
+  }, null, { timeout: 5000 });
+  // restore the pre-block state (vin open) for the following one-at-a-time section
+  await page.evaluate(() => document.querySelector('#tab-analysis .census-card[data-census=vin]').click());
+  await page.waitForTimeout(150);
+  await page.setViewportSize({ width: 1440, height: 900 });
   // one category at a time: opening email closes vin
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
   await page.waitForFunction(() => document.querySelector('#census-panel .census-head'), null, { timeout: 10000 });
