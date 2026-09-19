@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.44.1 (2026-09-19)
+- Merge pull request #35 from CJ-1981/fix/census-scroll-into-view
+- fix: open PII census card scrolls its sample panel into view
+
 ## 1.44.0 (2026-09-19)
 - Merge pull request #34 from CJ-1981/feat/pii-census-samples
 - docs: interactive PII census (FR-9 AC-4a, test-plan 41, README)
