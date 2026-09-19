@@ -126,8 +126,11 @@
       // original text leaks even with masking on
       msg: r.msg != null ? (state.maskOn ? eng.maskLine(r.msg) : r.msg) : null,
     });
-    if (selectionOnly && selection.count) {
-      yield selection.indices().map((i) => maskRec(view[i]));
+    if (selectionOnly) {
+      // selection-only means EXACTLY the selected rows - an empty selection
+      // yields no batches, never the whole view (review Task 1)
+      const selected = selection.indices().map((i) => view[i]).filter(Boolean).map(maskRec);
+      if (selected.length) yield selected;
       return;
     }
     const bt = busy('Preparing export…');
@@ -835,6 +838,7 @@
     $('st-kept').textContent = st.keptTotal;
     $('st-shown').textContent = filteredCount;
     $('st-sel').textContent = selection.count;
+    syncExportButtons();
     $('st-bm').textContent = bookmarksStore.all().length;
     const bmCount = $('bm-count');
     if (bmCount) bmCount.textContent = bookmarksStore.all().length;
@@ -1613,6 +1617,12 @@
 
 
   /* ---------------- export ---------------- */
+  function syncExportButtons() {
+    // selection-only with no rows selected must not export the whole view
+    const blocked = $('exp-selection').checked && selection.count === 0;
+    ['exp-txt', 'exp-csv', 'exp-json'].forEach((id) => { $(id).disabled = blocked; });
+  }
+
   async function exportRecords(kind) {
     const prefix = $('exp-prefix').value;
     const selectionOnly = $('exp-selection').checked;
@@ -1620,7 +1630,12 @@
     let blob, fname, count = 0;
     try {
       if (kind === 'bookmarks') {
-        blob = new Blob([LT.bookmarksToJson(bookmarksStore)], { type: 'application/json' });
+        // export a sanitized CLONE - stored snippets/notes are not mutated;
+        // file identity keys stay intact for reimport (identity metadata is
+        // deliberately not anonymized)
+        const eng = makeExportMasker();
+        const maskText = (t) => (state.maskOn ? eng.maskLine(String(t)) : String(t));
+        blob = new Blob([JSON.stringify(LT.sanitizeBookmarkPayload(bookmarksStore.toJSON(), maskText), null, 2)], { type: 'application/json' });
         fname = name('log-triage-bookmarks', 'json');
       } else {
         const txtParts = [], csvParts = [], jsonParts = [];
@@ -2380,6 +2395,7 @@
     $('exp-txt').onclick = () => exportRecords('txt');
     $('exp-csv').onclick = () => exportRecords('csv');
     $('exp-json').onclick = () => exportRecords('json');
+    $('exp-selection').onchange = syncExportButtons;
     $('exp-bookmarks').onclick = () => exportRecords('bookmarks');
     $('exp-archive').onclick = () => { exportArchive(); };
 

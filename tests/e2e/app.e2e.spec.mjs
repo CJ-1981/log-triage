@@ -319,6 +319,72 @@ test('export produces a downloadable txt with masked content', async () => {
   assert.ok(!content.includes('YV4AB9CD12EF34567'), 'exported text contains no raw VIN');
 });
 
+test('selection-only export exports exactly the selected rows and guards empty selection', async () => {
+  await fresh();
+  // multi-page load (3 pages of 500) so pagination is exercisable
+  const big = join(os.tmpdir(), 'lt-selonly-' + Date.now() + '.log');
+  const lines = [];
+  for (let i = 1; i <= 1200; i++) lines.push('09-11 22:14:01.' + String(i % 1000).padStart(3, '0') + '  1000  2000 I VHal: line ' + i);
+  fs.writeFileSync(big, lines.join('\n') + '\n');
+  await page.setInputFiles('#file-input', [big]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '1200', null, { timeout: 15000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  await page.check('#exp-selection');
+  // selection-only with zero rows: export entry points are disabled
+  await page.waitForFunction(() => document.getElementById('exp-txt').disabled, null, { timeout: 5000 });
+  // select two rows in the viewer (click anchor + shift-click extend)
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForSelector('.vrow .txt');
+  await page.evaluate(() => document.querySelector('.vrow .txt').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  await page.evaluate(() => {
+    const rows = document.querySelectorAll('.vrow');
+    rows[1].querySelector('.txt').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, shiftKey: true }));
+  });
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '2', null, { timeout: 5000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  await page.waitForFunction(() => !document.getElementById('exp-txt').disabled, null, { timeout: 5000 });
+  const downloadPromise = page.waitForEvent('download', { timeout: 8000 });
+  await click('exp-txt');
+  const download = await downloadPromise;
+  const fsmod = await import('node:fs');
+  const content = fsmod.readFileSync(await download.path(), 'utf8');
+  assert.strictEqual(content.trim().split('\n').length, 2, 'exactly the two selected rows exported');
+  // changing the page clears the selection -> selection-only export disabled again
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForSelector('#pager', { state: 'visible', timeout: 5000 });
+  await page.evaluate(() => document.getElementById('page-next').click());
+  await page.waitForFunction(() => document.getElementById('page-number').value === '2', null, { timeout: 5000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  await page.waitForFunction(() => document.getElementById('exp-txt').disabled, null, { timeout: 5000 });
+  fs.rmSync(big, { force: true });
+});
+
+test('bookmark export is sanitized (privacy)', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  // mask OFF, bookmark the raw VIN line so the snippet holds the raw VIN
+  await page.click('#btn-mask');
+  await page.evaluate(() => {
+    for (const row of document.querySelectorAll('.vrow')) {
+      if (row.textContent.includes('YV4AB9CD12EF34567')) { row.querySelector('.bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })); return; }
+    }
+  });
+  await page.waitForFunction(() => document.getElementById('bm-count').textContent === '1', null, { timeout: 5000 });
+  await page.click('#btn-mask'); // Mask back ON
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  const downloadPromise = page.waitForEvent('download', { timeout: 8000 });
+  await click('exp-bookmarks');
+  const download = await downloadPromise;
+  const fsmod = await import('node:fs');
+  const content = fsmod.readFileSync(await download.path(), 'utf8');
+  assert.ok(content.includes('YV4**********4567'), 'bookmark export has the masked VIN');
+  assert.ok(!content.includes('YV4AB9CD12EF34567'), 'bookmark export has no raw VIN');
+  // the stored bookmark is untouched: after reload it is still listed
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.getElementById('bm-count') && document.getElementById('bm-count').textContent === '1', null, { timeout: 8000 });
+});
+
 test('CSV and JSON exports honor masking too (privacy)', async () => {
   await fresh();
   await click('btn-demo');
