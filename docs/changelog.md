@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.44.5 (2026-09-19)
+- Merge pull request #39 from CJ-1981/fix/census-scroll-samples-visible
+- fix: census card click scrolls sample rows into view, not just the summary
+
 ## 1.44.4 (2026-09-19)
 - Merge pull request #38 from CJ-1981/fix/mask-rule-guards
 - fix: mask rule guards for card IIN, VIN letters, constant IMEIs
