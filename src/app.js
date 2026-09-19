@@ -1457,8 +1457,10 @@
         censusOpenType = censusOpenType === el.dataset.census ? null : el.dataset.census;
         renderCensusPanel(p, census);
         if (censusOpenType) {
-          const head = p.querySelector('#census-panel .census-head');
-          if (head) head.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'nearest' });
+          const panel = p.querySelector('#census-panel');
+          // align the panel top with the viewport so the sample rows below the
+          // summary line are visible — not just the summary itself
+          if (panel) panel.scrollIntoView({ behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
         }
       };
     });
