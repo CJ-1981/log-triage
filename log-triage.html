@@ -178,10 +178,13 @@ mark { background: var(--hl); color: var(--bg); border-radius: 2px; }
 #drawer { display: none; position: absolute; right: 12px; bottom: 12px; width: 560px; max-width: 92%; max-height: 72%; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; box-shadow: 0 8px 30px rgba(0,0,0,.35); font-family: var(--mono); font-size: 12px; z-index: 30; }
 #drawer.open { display: block; }
 #drawer h3 { font-size: 13px; margin-bottom: 8px; display:flex; justify-content: space-between; }
-#drawer dl div { display: flex; gap: 8px; padding: 2px 0; }
+#drawer dl div { display: flex; flex-wrap: wrap; gap: 8px; padding: 2px 0; }
 #drawer dt { color: var(--muted); min-width: 64px; }
 #drawer dd { word-break: break-all; white-space: pre-wrap; }
-#drawer .raw { color: var(--muted); }
+#drawer .chev-toggle { background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer; font: inherit; font-size: 11px; margin-left: 2px; padding: 0 5px; }
+#drawer .chev-toggle:hover { color: var(--fg); border-color: var(--muted); }
+#drawer dd.raw-extra { border-top: 1px dashed var(--border); color: var(--muted); flex-basis: 100%; margin-top: 4px; padding-top: 4px; }
+#drawer dd.raw-extra[hidden] { display: none; }
 
 /* ---------- panels ---------- */
 .panel { padding: 14px; overflow-y: auto; flex: 1; min-height: 0; }
@@ -4810,26 +4813,33 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     const d = $('drawer');
     d.className = 'open';
     const maskedLine = engine.maskLine(rec.raw);
-    const maskedVisual = LT.highlightText(maskedLine, compiledHighlights);
-    const maskedHtml = highlightedHtml(maskedLine, maskedVisual.spans) || esc(maskedLine);
+    const hasMaskDiff = state.maskOn && maskedLine !== rec.raw;
+    const mainLine = hasMaskDiff ? maskedLine : rec.raw;
+    const visual = LT.highlightText(mainLine, compiledHighlights);
+    const mainHtml = highlightedHtml(mainLine, visual.spans) || esc(mainLine);
     d.innerHTML = '<h3>Line ' + rec.lineNo + ' — ' + esc(fileDisplayName(rec.fileId)) +
       '<button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
       '<dl>' +
       dv('ts', rec.ts) + dv('level', rec.level) + dv('tag', rec.tag) +
-      dv('pid', rec.pid) + dv('tid', rec.tid) +
-      '<div><dt>masked <button type="button" class="drawer-cp" data-what="masked" title="copy masked line">copy</button></dt><dd>' + maskedHtml + '</dd></div>' +
-      '<div><dt>raw <button type="button" class="drawer-cp" data-what="raw" title="copy raw line">copy</button></dt><dd class="raw">' + esc(rec.raw) + '</dd></div>' +
+      dv('pid / tid', (rec.pid == null ? '—' : rec.pid) + ' / ' + (rec.tid == null ? '—' : rec.tid)) +
+      '<div><dt>' + (hasMaskDiff ? 'masked' : 'raw') +
+      (hasMaskDiff
+        ? '<button type="button" class="chev-toggle" aria-expanded="false" title="show raw line">▸ raw</button>'
+        : '') +
+      '</dt><dd>' + mainHtml + '</dd>' +
+      (hasMaskDiff ? '<dd class="raw-extra" hidden></dd>' : '') +
+      '</div>' +
       '</dl>';
-    for (const btn of d.querySelectorAll('.drawer-cp')) {
-      btn.onclick = async () => {
-        const text = btn.dataset.what === 'raw' ? rec.raw : maskedLine;
-        try {
-          await navigator.clipboard.writeText(text);
-          btn.textContent = 'copied ✓';
-        } catch (err) {
-          btn.textContent = 'copy failed';
-        }
-        setTimeout(() => { btn.textContent = 'copy'; }, 1500);
+    const chev = d.querySelector('.chev-toggle');
+    if (chev) {
+      const extra = d.querySelector('.raw-extra');
+      chev.onclick = () => {
+        // lazy: the raw text only enters the DOM while expanded
+        extra.textContent = extra.hidden ? rec.raw : '';
+        extra.hidden = !extra.hidden;
+        chev.textContent = extra.hidden ? '▸ raw' : '▾ raw';
+        chev.setAttribute('aria-expanded', String(!extra.hidden));
+        chev.title = extra.hidden ? 'show raw line' : 'hide raw line';
       };
     }
   }

@@ -974,26 +974,33 @@
     const d = $('drawer');
     d.className = 'open';
     const maskedLine = engine.maskLine(rec.raw);
-    const maskedVisual = LT.highlightText(maskedLine, compiledHighlights);
-    const maskedHtml = highlightedHtml(maskedLine, maskedVisual.spans) || esc(maskedLine);
+    const hasMaskDiff = state.maskOn && maskedLine !== rec.raw;
+    const mainLine = hasMaskDiff ? maskedLine : rec.raw;
+    const visual = LT.highlightText(mainLine, compiledHighlights);
+    const mainHtml = highlightedHtml(mainLine, visual.spans) || esc(mainLine);
     d.innerHTML = '<h3>Line ' + rec.lineNo + ' — ' + esc(fileDisplayName(rec.fileId)) +
       '<button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
       '<dl>' +
       dv('ts', rec.ts) + dv('level', rec.level) + dv('tag', rec.tag) +
-      dv('pid', rec.pid) + dv('tid', rec.tid) +
-      '<div><dt>masked <button type="button" class="drawer-cp" data-what="masked" title="copy masked line">copy</button></dt><dd>' + maskedHtml + '</dd></div>' +
-      '<div><dt>raw <button type="button" class="drawer-cp" data-what="raw" title="copy raw line">copy</button></dt><dd class="raw">' + esc(rec.raw) + '</dd></div>' +
+      dv('pid / tid', (rec.pid == null ? '—' : rec.pid) + ' / ' + (rec.tid == null ? '—' : rec.tid)) +
+      '<div><dt>' + (hasMaskDiff ? 'masked' : 'raw') +
+      (hasMaskDiff
+        ? '<button type="button" class="chev-toggle" aria-expanded="false" title="show raw line">▸ raw</button>'
+        : '') +
+      '</dt><dd>' + mainHtml + '</dd>' +
+      (hasMaskDiff ? '<dd class="raw-extra" hidden></dd>' : '') +
+      '</div>' +
       '</dl>';
-    for (const btn of d.querySelectorAll('.drawer-cp')) {
-      btn.onclick = async () => {
-        const text = btn.dataset.what === 'raw' ? rec.raw : maskedLine;
-        try {
-          await navigator.clipboard.writeText(text);
-          btn.textContent = 'copied ✓';
-        } catch (err) {
-          btn.textContent = 'copy failed';
-        }
-        setTimeout(() => { btn.textContent = 'copy'; }, 1500);
+    const chev = d.querySelector('.chev-toggle');
+    if (chev) {
+      const extra = d.querySelector('.raw-extra');
+      chev.onclick = () => {
+        // lazy: the raw text only enters the DOM while expanded
+        extra.textContent = extra.hidden ? rec.raw : '';
+        extra.hidden = !extra.hidden;
+        chev.textContent = extra.hidden ? '▸ raw' : '▾ raw';
+        chev.setAttribute('aria-expanded', String(!extra.hidden));
+        chev.title = extra.hidden ? 'show raw line' : 'hide raw line';
       };
     }
   }
