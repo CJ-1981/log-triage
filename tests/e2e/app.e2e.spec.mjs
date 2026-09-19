@@ -35,6 +35,9 @@ before(async () => {
   browser = await chromium.launch();
   const ctx = await browser.newContext();
   page = await ctx.newPage();
+  // force the bounded download-fallback sink in all tests; the picker path is
+  // exercised separately with a stub
+  await page.addInitScript(() => { window.showSaveFilePicker = undefined; });
   page.on('pageerror', (e) => { page.__pageErrors = (page.__pageErrors || []).concat(String(e)); });
 });
 

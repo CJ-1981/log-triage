@@ -115,7 +115,16 @@
    * view (selection-only yields exactly one batch). Consumers convert each
    * batch immediately and drop the rows — the full dataset is never held in
    * memory, matching the multi-GB export target. */
-  async function* iterExportBatches(selectionOnly) {
+  async function* iterExportBatches(selectionOnly, selectionIndices, opts) {
+    const o = opts || {};
+    const signal = o.signal || null;
+    const expectedRevision = o.expectedRevision;
+    const checkStale = () => {
+      if (expectedRevision != null && expectedRevision !== lastQueryRevision) {
+        const err = new Error('the export scope changed during export — retry');
+        err.stale = true; throw err;
+      }
+    };
     const eng = new LT.MaskEngine();
     for (const id of LT.builtinRuleIds()) eng.setEnabled(id, state.maskEnabled[id] !== false);
     eng.custom = [];
@@ -126,19 +135,21 @@
       // original text leaks even with masking on
       msg: r.msg != null ? (state.maskOn ? eng.maskLine(r.msg) : r.msg) : null,
     });
-    if (selectionOnly) {
-      // selection-only means EXACTLY the selected rows - an empty selection
-      // yields no batches, never the whole view (review Task 1)
-      const selected = selection.indices().map((i) => view[i]).filter(Boolean).map(maskRec);
-      if (selected.length) yield selected;
-      return;
-    }
     const bt = busy('Preparing export…');
     try {
+      if (selectionOnly) {
+        // selection-only means EXACTLY the selected rows - an empty selection
+        // yields no batches, never the whole view (review Task 1)
+        const selected = (selectionIndices || []).filter((idx) => view[idx]).map((idx) => maskRec(view[idx]));
+        if (selected.length) yield selected;
+        return;
+      }
       for (let start = 0; ; start += EXPORT_BATCH) {
-        const part = await paging.request('page', { start, size: EXPORT_BATCH });
+        signal?.throwIfAborted();
+        const part = await paging.request('page', { start, size: EXPORT_BATCH, expectedRevision });
+        if (part.stale) { const err = new Error('the export scope changed during export'); err.stale = true; throw err; }
         if (!part.rows.length) break;
-        busyMessage(bt, 'Preparing export… ' + Math.min(100, Math.round(((start + part.rows.length) / Math.max(1, part.total)) * 100)) + '%');
+        busyMessage(bt, 'Exporting… ' + Math.min(100, Math.round(((start + part.rows.length) / Math.max(1, part.total)) * 100)) + '%');
         yield part.rows.map(maskRec);
         if (start + part.rows.length >= part.total) break;
       }
@@ -531,6 +542,10 @@
   }
 
   let view = [];            // current visible records
+  let exportLock = false;   // blocks mutating UI while an export streams
+  let exportAbort = null;   // AbortController.abort() for the running export
+  let exportAbortController = null; // controller visible to archive export
+  let lastQueryRevision = 0; // worker order revision at the last rebuild
   let seqToIdx = new Map();
   let filteredCount = 0;
   let viewMaxLen = 0;       // longest raw line length in the view (chars)
@@ -558,6 +573,7 @@
     try {
       const result = await paging.request('query', { spec }, (p) => busyMessage(bt, p.progress));
       if (token !== viewToken || result.cancelled) return;
+      lastQueryRevision = result.revision || 0;
       filteredCount = result.total;
       await loadPage(state.follow ? Math.max(0, Math.floor((filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE) : 0, state.follow, bt);
       if (result.errors?.length) flash(result.errors.map((e) => e.error).join('; '));
@@ -1624,26 +1640,43 @@
   }
 
   async function exportRecords(kind) {
-    const prefix = $('exp-prefix').value;
+    if (exportLock) { flash('export in progress — please wait'); return; }
     const selectionOnly = $('exp-selection').checked;
+    const selectionIndices = selection.indices();
+    const expectedRevision = lastQueryRevision;
+    const prefix = $('exp-prefix').value;
     const name = (base, ext) => LT.timestampedName(new Date(), base, ext);
     let blob, fname, count = 0;
+    let sink = null;
+    const ac = new AbortController();
+    exportAbort = () => ac.abort();
+    exportAbortController = ac;
+    $('exp-cancel')?.classList.remove('hidden');
+    try {
+      // open the destination BEFORE any worker request to keep user activation
+      sink = await LT.openExportSink({ name: kind === 'bookmarks' ? name('log-triage-bookmarks', 'json') : name('log-triage-extract', kind === 'txt' ? 'log' : kind), mime: kind === 'csv' ? 'text/csv' : kind === 'json' ? 'application/json' : 'text/plain', onDownload: download });
+    } catch (err) {
+      exportAbort = null;
+      flash(err.cancelled ? 'export cancelled' : 'export failed: ' + err.message);
+      return;
+    }
+    exportLock = true;
+    const bt = busy('Preparing export…');
     try {
       if (kind === 'bookmarks') {
-        // export a sanitized CLONE - stored snippets/notes are not mutated;
-        // file identity keys stay intact for reimport (identity metadata is
-        // deliberately not anonymized)
         const eng = makeExportMasker();
         const maskText = (t) => (state.maskOn ? eng.maskLine(String(t)) : String(t));
         blob = new Blob([JSON.stringify(LT.sanitizeBookmarkPayload(bookmarksStore.toJSON(), maskText), null, 2)], { type: 'application/json' });
         fname = name('log-triage-bookmarks', 'json');
       } else {
         const txtParts = [], csvParts = [], jsonParts = [];
-        for await (const batch of iterExportBatches(selectionOnly)) {
+        const batches = iterExportBatches(selectionOnly, selectionIndices, { signal: ac.signal, expectedRevision });
+        for await (const batch of batches) {
           if (kind === 'txt') txtParts.push(LT.toText(batch, { prefix }));
           else if (kind === 'csv') { const c = LT.toCsv(batch); csvParts.push(count === 0 ? c : c.slice(c.indexOf('\n') + 1)); }
           else if (kind === 'json') jsonParts.push(JSON.stringify(batch, null, 2).slice(2, -2));
           count += batch.length;
+          busyMessage(bt, 'Exporting… ' + count.toLocaleString() + ' lines');
         }
         if (kind === 'txt') { blob = new Blob([txtParts.join('\n')], { type: 'text/plain' }); fname = name('log-triage-extract', 'log'); }
         else if (kind === 'csv') { blob = new Blob([csvParts.join('\n')], { type: 'text/csv' }); fname = name('log-triage-extract', 'csv'); }
@@ -1652,6 +1685,10 @@
       if (blob) download(blob, fname);
     } catch (err) {
       flash('export failed: ' + err.message);
+    } finally {
+      $('exp-cancel')?.classList.add('hidden');
+      exportAbort = null; exportLock = false;
+      doneBusy(bt);
     }
     const note = $('exp-note');
     note.textContent = count.toLocaleString() + ' line(s) exported' + (selectionOnly ? ' (selection only)' : '') + '.';
@@ -1659,22 +1696,35 @@
 
   /* Archive export: group the masked kept lines by source file and re-pack
    * them with the original (post-extraction) structure, e.g. bundle/a.log. */
+  const ARCHIVE_BUFFER_LIMIT = 32 * 1024 * 1024;
   async function exportArchive() {
+    let approxBytes = 0;
     const format = $('exp-archive-format').value;
     const note = $('exp-archive-note');
     const selectionOnly = $('exp-selection').checked;
+    const selectionIndices = selection.indices();
+    const expectedRevision = lastQueryRevision;
+    const ac = new AbortController();
+    exportAbortController = ac;
+    $('exp-archive-cancel')?.classList.remove('hidden');
     const eng = makeExportMasker();
     const fileById = {};
     for (const f of files) fileById[f.id] = f;
     const groups = new Map();
     let total = 0;
     try {
-      for await (const batch of iterExportBatches(selectionOnly)) {
+      for await (const batch of iterExportBatches(selectionOnly, selectionIndices, { signal: exportAbortController.signal, expectedRevision })) {
         for (const r of batch) {
           const key = r.fileId;
           if (!groups.has(key)) groups.set(key, { name: (fileById[key] && fileById[key].name) || key + '.log', text: [] });
-          groups.get(key).text.push(state.maskOn ? eng.maskLine(r.raw) : r.raw);
+          const line = state.maskOn ? eng.maskLine(r.raw) : r.raw;
+          groups.get(key).text.push(line);
           total++;
+          approxBytes += line.length + 1 + 512;
+          if (approxBytes > ARCHIVE_BUFFER_LIMIT) {
+            const err = new Error('Archive exceeds the buffered limit. Use TXT/CSV with direct file saving, or narrow the export with filters. No archive was created.');
+            err.limit = true; throw err;
+          }
         }
       }
     } catch (err) { note.textContent = 'archive export failed: ' + err.message; return; }
@@ -1682,6 +1732,7 @@
       .sort((a, b) => a.name.localeCompare(b.name))
       .map((g) => ({ name: g.name, data: new TextEncoder().encode(g.text.join('\n') + '\n') }));
     if (!entries.length) { note.textContent = 'nothing to export.'; return; }
+    exportAbortController = null;
     note.textContent = 'packing ' + entries.length + ' file(s), ' + total.toLocaleString() + ' line(s) as .' + format + '…';
     try {
       const blob = new Blob([await LT.buildArchive(entries, format)], { type: 'application/octet-stream' });
