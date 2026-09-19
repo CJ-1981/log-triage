@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.41.0 (2026-09-19)
+- Merge pull request #30 from CJ-1981/feat/drawer-toggle
+- feat: drawer toggle gates the line-click detail drawer
+- Merge pull request #29 from CJ-1981/feat/export-streaming
+- test: cover unknown formats, default opts, already-aborted signal, onBytes
+
 ## 1.40.2 (2026-09-19)
 - Merge pull request #28 from CJ-1981/fix/selection-scope-bookmark-privacy
 - fix: enforce selection-only export scope; sanitize bookmark export
