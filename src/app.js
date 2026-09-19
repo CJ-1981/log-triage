@@ -1401,7 +1401,10 @@
     const tags = topBy(recs, (r) => r.tag, 12);
     const msgs = topMessages(recs, 12);
     const issues = issueScan(recs);
-    const census = piiCensus(recs);
+    const censusRules = engine.rules.concat(engine.custom.filter((r) => r.enabled && r.re));
+    const census = LT.collectPiiCensus(recs, censusRules, { maxSamplesPerType: 25, maskText: (s) => engine.maskLine(s) });
+    // the open category survives a file-scope change when it still has matches
+    if (censusOpenType && !census.some((g) => g.type === censusOpenType)) censusOpenType = null;
 
     const cards = sel
       ? stat('Lines', selStats.total) + stat('Kept', selStats.kept) + stat('Dropped', selStats.dropped) +
@@ -1429,8 +1432,15 @@
       '<div class="rowline"><button id="btn-issue-add">+ Add rule</button><button id="btn-issue-restore" title="restore the built-in keyword groups">Restore defaults</button></div>' +
       '</details>' +
       (issues.length ? issueTreeHtml(issues) : '<span class="muted">no issue keywords found</span>') +
-      '<h2>PII census (kept lines, sample)</h2>' +
-      '<div class="card-row">' + Object.keys(census).map((k) => '<div class="stat-card"><div class="v">' + census[k] + '</div><div class="k">' + esc(k) + '</div></div>').join('') + '</div>';
+      '<h2>PII census (analysis sample)</h2>' +
+      (census.length
+        ? '<div class="card-row">' + census.map((g) =>
+            '<button type="button" class="stat-card census-card" data-census="' + esc(g.type) + '"' +
+            ' aria-expanded="' + (censusOpenType === g.type) + '" aria-controls="census-panel">' +
+            '<span class="v">' + g.count + '</span><span class="k">' + esc(g.label) + '</span>' +
+            '<span class="census-hint">View samples <span aria-hidden="true">›</span></span></button>').join('') + '</div>' +
+          '<div id="census-panel" role="region" aria-label="PII sample details"></div>'
+        : '<span class="muted">no PII found in this scope</span>');
 
     const fileSel = p.querySelector('#analysis-file');
     fileSel.value = sel;
@@ -1442,6 +1452,13 @@
       el.onclick = () => { const it = issueBySeq.get(el.dataset.seq); if (it && it.rec) jumpToRecord(it.rec); };
     });
     bindIssueEditor(p);
+    p.querySelectorAll('.census-card').forEach((el) => {
+      el.onclick = () => {
+        censusOpenType = censusOpenType === el.dataset.census ? null : el.dataset.census;
+        renderCensusPanel(p, census);
+      };
+    });
+    renderCensusPanel(p, census);
   }
 
   function issueGroupRows() {
@@ -1504,11 +1521,26 @@
   function issueScan(records) {
     return LT.issueScan(records, getIssueGroups(), fileDisplayName);
   }
-  function piiCensus(records) {
-    const eng = new LT.MaskEngine();
-    const sample = records.slice(0, 50000);
-    eng.maskLines(sample.map((r) => r.raw));
-    return eng.hitCounts();
+  let censusOpenType = null;
+  function censusPanelHtml(census) {
+    const g = census.find((x) => x.type === censusOpenType);
+    if (!g) return '';
+    const capped = g.count > g.samples.length;
+    return '<div class="census-head">' + esc(g.label) + ' · ' + g.count + ' matches · showing ' + g.samples.length +
+      ' example lines' + (capped ? ' (capped at ' + g.samples.length + ')' : '') + '</div>' +
+      g.samples.map((s) =>
+        '<div class="census-row"><span class="census-loc">' + esc(fileDisplayName(s.fileId)) + ' : ' + s.lineNo + '</span>' +
+        '<span class="census-text">' + esc(s.maskedText) + '</span>' +
+        '<button type="button" class="census-jump" data-fid="' + esc(s.fileId) + '" data-ln="' + s.lineNo + '">Show in viewer</button></div>').join('');
+  }
+  function renderCensusPanel(p, census) {
+    const panel = p.querySelector('#census-panel');
+    if (!panel) return;
+    panel.innerHTML = censusPanelHtml(census);
+    p.querySelectorAll('.census-card').forEach((el) => el.setAttribute('aria-expanded', String(el.dataset.census === censusOpenType)));
+    panel.querySelectorAll('.census-jump').forEach((el) => {
+      el.onclick = () => jumpToRecord({ fileId: el.dataset.fid, lineNo: Number(el.dataset.ln) });
+    });
   }
   function drawHistogram(recs) {
     const cv = document.getElementById('histo');

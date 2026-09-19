@@ -2078,3 +2078,85 @@ test('dlt-viewer text export: badge, chips, drawer fields, masking, quick filter
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '2', null, { timeout: 5000 });
   await page.fill('#quick', '');
 });
+
+test('analysis PII census: card buttons open masked sample panels, one at a time, jump to line', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => document.querySelector('#tab-analysis .census-card'), null, { timeout: 10000 });
+  // cards are real buttons with aria-expanded; empty categories never render
+  const kinds = await page.evaluate(() => Array.from(document.querySelectorAll('#tab-analysis .census-card')).map((b) => b.dataset.census));
+  assert.ok(kinds.includes('vin') && kinds.includes('email'), 'vin and email cards present: ' + kinds.join(','));
+  assert.strictEqual(await page.evaluate(() => document.querySelector('#tab-analysis .census-card[data-census=vin]').getAttribute('aria-expanded')), 'false');
+  // open VIN: the panel holds masked previews only
+  await page.click('#tab-analysis .census-card[data-census=vin]');
+  await page.waitForFunction(() => document.querySelector('#census-panel .census-head'), null, { timeout: 5000 });
+  assert.strictEqual(await page.evaluate(() => document.querySelector('#tab-analysis .census-card[data-census=vin]').getAttribute('aria-expanded')), 'true');
+  let panel = await page.evaluate(() => document.getElementById('census-panel').textContent);
+  assert.match(panel, /VIN · 2 matches · showing 2 example lines/);
+  assert.ok(panel.includes('YV4**********4567'), 'masked VIN in panel');
+  assert.ok(!panel.includes('YV4AB9CD12EF34567'), 'no raw VIN in panel');
+  // previews stay masked even with the viewer mask toggle off (category stays open)
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.click('#btn-mask'); // mask OFF
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => document.querySelector('#census-panel .census-head'), null, { timeout: 10000 });
+  panel = await page.evaluate(() => document.getElementById('census-panel').textContent);
+  assert.ok(!panel.includes('YV4AB9CD12EF34567'), 'preview masked while viewer mask is off');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.click('#btn-mask'); // mask back ON
+  // one category at a time: opening email closes vin
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => document.querySelector('#census-panel .census-head'), null, { timeout: 10000 });
+  await page.click('#tab-analysis .census-card[data-census=email]');
+  await page.waitForTimeout(150);
+  const cardState = await page.evaluate(() => ({
+    vin: document.querySelector('#tab-analysis .census-card[data-census=vin]').getAttribute('aria-expanded'),
+    email: document.querySelector('#tab-analysis .census-card[data-census=email]').getAttribute('aria-expanded'),
+    head: document.querySelector('#census-panel .census-head').textContent,
+  }));
+  assert.strictEqual(cardState.vin, 'false', 'vin card closed when email opened');
+  assert.strictEqual(cardState.email, 'true', 'email card open');
+  assert.match(cardState.head, /Email ·/);
+  // keyboard support: Enter toggles the focused card
+  await page.focus('#tab-analysis .census-card[data-census=email]');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  assert.strictEqual(await page.evaluate(() => document.querySelector('#tab-analysis .census-card[data-census=email]').getAttribute('aria-expanded')), 'false', 'Enter closes the card');
+  // a sample row jumps to the line in the viewer (selection + drawer)
+  await page.click('#tab-analysis .census-card[data-census=vin]');
+  await page.waitForFunction(() => document.querySelector('#census-panel .census-jump'), null, { timeout: 5000 });
+  await page.click('#census-panel .census-jump');
+  await page.waitForFunction(() => document.querySelector('#tabs button[data-tab=viewer]').classList.contains('active'), null, { timeout: 5000 });
+  await page.waitForFunction(() => document.querySelector('.vrow.sel'), null, { timeout: 5000 });
+  await page.waitForFunction(() => document.getElementById('drawer').classList.contains('open'), null, { timeout: 5000 });
+});
+
+test('analysis census: scope change keeps the open category; samples cap at 25', async () => {
+  await fresh();
+  const osmod = await import('node:os');
+  const tmp = join(osmod.tmpdir(), 'lt-census-cap.log');
+  fs.writeFileSync(tmp, Array.from({ length: 27 }, (_, i) =>
+    '08-24 15:37:01.' + String(100 + i).padStart(3, '0') + '  1234  5678 I VinSvc : vin YV4AB9CD12EF34' + String(500 + i)).join('\n') + '\n');
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log'), tmp]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '71', null, { timeout: 15000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => document.querySelector('#tab-analysis .census-card'), null, { timeout: 10000 });
+  // All files: 2 demo VINs + 27 synthetic = 29 matches, 25 example lines capped
+  await page.click('#tab-analysis .census-card[data-census=vin]');
+  await page.waitForFunction(() => { const h = document.querySelector('#census-panel .census-head'); return h && h.textContent.length > 1; }, null, { timeout: 5000 });
+  const head = await page.evaluate(() => document.querySelector('#census-panel .census-head').textContent);
+  assert.match(head, /VIN · 29 matches · showing 25 example lines \(capped at 25\)/, 'capped head: ' + head);
+  assert.strictEqual(await page.evaluate(() => document.querySelectorAll('#census-panel .census-row').length), 25);
+  // scope to demo.log: the open category survives, count and samples rescope
+  await page.selectOption('#analysis-file', { label: 'demo.log' });
+  await page.waitForFunction(() => { const h = document.querySelector('#census-panel .census-head'); return h && /VIN · 2 matches/.test(h.textContent); }, null, { timeout: 8000 });
+  const locs = await page.evaluate(() => Array.from(document.querySelectorAll('#census-panel .census-loc')).map((e) => e.textContent));
+  assert.ok(locs.length === 2 && locs.every((l) => l.startsWith('demo.log')), 'samples rescope to demo: ' + locs.join(';'));
+  // scope to the synthetic file: category still open, and empty categories vanish
+  await page.selectOption('#analysis-file', { label: 'lt-census-cap.log' });
+  await page.waitForFunction(() => { const h = document.querySelector('#census-panel .census-head'); return h && /VIN · 27 matches/.test(h.textContent); }, null, { timeout: 8000 });
+  const kinds2 = await page.evaluate(() => Array.from(document.querySelectorAll('#tab-analysis .census-card')).map((b) => b.dataset.census));
+  assert.deepStrictEqual(kinds2, ['vin'], 'VIN-only file renders exactly one card');
+});

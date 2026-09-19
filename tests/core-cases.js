@@ -429,6 +429,71 @@
     eq(eng.maskLine('safe text ([unclosed ok'), 'safe text ([unclosed ok');
   });
 
+  const censusRules = () => {
+    const eng = new SRC.MaskEngine();
+    return eng.rules.concat([
+      eng.addCustom({ name: 'Account tag', pattern: 'account=\\w+', replacement: 'account=***' }),
+      eng.addCustom({ name: 'broken', pattern: '([unclosed', replacement: 'x' }),
+    ]);
+  };
+  const vinRule = () => new SRC.MaskEngine().rules.find((r) => r.id === 'vin');
+
+  T('census', 'counts every match; one line with two matches counts twice but samples once', () => {
+    const groups = SRC.collectPiiCensus([
+      { fileId: 'f1', file: 'a.log', lineNo: 4, raw: 'vin YV4AB9CD12EF34567 and vin YV4ZZZCD12EF34567' },
+      { fileId: 'f1', file: 'a.log', lineNo: 9, raw: 'plain line' },
+      { fileId: 'f2', file: 'b.log', lineNo: 2, raw: 'single YV4MM00012FF34567 here' },
+    ], [vinRule()], { maskText: (s) => s.replace(/YV4[A-HJ-NPR-Z0-9]+/, '[VIN]') });
+    eq(groups.length, 1);
+    eq(groups[0].count, 3, 'each match counts');
+    eq(groups[0].samples.length, 2, 'the double-match line samples once');
+    eq(groups[0].samples[0].lineNo, 4);
+    eq(groups[0].samples[1].file, 'b.log');
+  });
+
+  T('census', 'samples are capped per type while counts cover the whole sample', () => {
+    const recs = [];
+    for (let i = 1; i <= 27; i++) recs.push({ fileId: 'f1', file: 'a.log', lineNo: i, raw: 'vin YV4AB9CD12EF34' + String(500 + i) });
+    const groups = SRC.collectPiiCensus(recs, [vinRule()], { maxSamplesPerType: 5, maskText: () => 'm' });
+    eq(groups[0].count, 27);
+    eq(groups[0].samples.length, 5);
+    eq(groups[0].samples[4].lineNo, 5, 'first five lines kept in order');
+  });
+
+  T('census', 'custom rules join the census under their configured name; broken rules are skipped', () => {
+    const recs = [{ fileId: 'f1', file: 'a.log', lineNo: 1, raw: 'account=u***@***.com auth failed' }];
+    const groups = SRC.collectPiiCensus(recs, censusRules(), { maskText: () => 'm' });
+    const custom = groups.find((g) => g.label === 'Account tag');
+    ok(custom, 'custom rule present under its name');
+    eq(custom.count, 1);
+    ok(!groups.some((g) => g.label === 'broken'), 'rule without a compiled regex is skipped');
+  });
+
+  T('census', 'sample text is always the masked preview passed by the caller', () => {
+    const recs = [{ fileId: 'f1', file: 'a.log', lineNo: 7, raw: 'VIN read: YV4AB9CD12EF34567 from gateway' }];
+    const groups = SRC.collectPiiCensus(recs, [vinRule()], { maskText: (s) => s.replace(/YV4[A-HJ-NPR-Z0-9]+/, 'YV4**********4567') });
+    eq(groups[0].samples[0].maskedText, 'VIN read: YV4**********4567 from gateway');
+    ok(!groups[0].samples[0].maskedText.includes('YV4AB9CD12EF34567'), 'raw VIN never appears');
+    deepEq(Object.keys(groups[0].samples[0]).sort(), ['file', 'fileId', 'lineNo', 'maskedText']);
+  });
+
+  T('census', 'zero-count rules are omitted and rule order is preserved', () => {
+    const eng = new SRC.MaskEngine();
+    const rules = [eng.rules.find((r) => r.id === 'vin'), eng.rules.find((r) => r.id === 'email')];
+    const groups = SRC.collectPiiCensus([
+      { fileId: 'f1', file: 'a.log', lineNo: 3, raw: 'mail bob@x.example hit' },
+    ], rules, { maskText: () => 'm' });
+    eq(groups.length, 1, 'vin group with no matches is omitted');
+    eq(groups[0].type, 'email');
+    eq(groups[0].label, 'Email');
+  });
+
+  T('census', 'zero-length matches do not loop forever', () => {
+    const rule = { id: 'z', label: 'Zero', re: /x*/g };
+    const groups = SRC.collectPiiCensus([{ fileId: 'f1', file: 'a.log', lineNo: 1, raw: 'abc' }], [rule], { maskText: () => 'm' });
+    eq(groups[0].count, 4, 'four zero-length positions counted once each');
+  });
+
   T('provider', 'registry validates and lists providers', () => {
     eq(SRC.listProviders().length, 1); // built-in local regex provider
     eq(SRC.listProviders()[0].id, 'local-regex');

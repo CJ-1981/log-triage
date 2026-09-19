@@ -199,6 +199,15 @@ table.rules input[type=text] { width: 100%; font-family: var(--mono); font-size:
 .count-pill { background: var(--surface2); border-radius: 8px; padding: 0 8px; font-size: 11px; color: var(--muted); }
 .card-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
 .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 10px 14px; min-width: 120px; }
+button.stat-card { color: var(--fg); cursor: pointer; font: inherit; text-align: left; display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
+button.stat-card:hover, button.stat-card[aria-expanded="true"] { border-color: var(--accent); }
+.census-hint { font-size: 11px; color: var(--muted); }
+#census-panel { margin-top: 8px; }
+.census-head { font-size: 12px; color: var(--muted); margin: 4px 0 6px; }
+.census-row { display: flex; gap: 10px; align-items: baseline; padding: 4px 0; border-bottom: 1px solid var(--border); font-size: 12px; }
+.census-loc { color: var(--muted); font-family: var(--mono); min-width: 180px; flex-shrink: 0; }
+.census-text { font-family: var(--mono); flex: 1; word-break: break-all; white-space: pre-wrap; }
+.census-row button { font-size: 11px; padding: 2px 8px; white-space: nowrap; flex-shrink: 0; }
 .stat-card .v { font-size: 20px; font-weight: 700; color: var(--accent); }
 .stat-card .k { font-size: 11.5px; color: var(--muted); }
 .hbar { display: flex; align-items: center; gap: 8px; margin: 3px 0; font-family: var(--mono); font-size: 12px; }
@@ -1019,7 +1028,49 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   function maskLine(line) { return new MaskEngine().maskLine(line); }
   function builtinRuleIds() { return buildBuiltinMaskRules().map((r) => r.id); }
 
-  return { buildBuiltinMaskRules, MaskEngine, maskLine, builtinRuleIds };
+  /** Pure PII census over an analysis sample. Counts EVERY match (a line with
+   * two emails counts twice) while keeping at most maxSamplesPerType example
+   * lines per rule; each sample carries the caller-masked preview, so the
+   * text never leaks regardless of the viewer's mask toggle. Rules without a
+   * compiled regex (broken custom rules) are skipped; zero-count rules are
+   * omitted; rule order is preserved. */
+  function collectPiiCensus(records, rules, { maxSamplesPerType = 25, maskText } = {}) {
+    const mask = maskText || ((s) => s);
+    const groups = new Map();
+    for (const rule of rules) {
+      groups.set(rule.id, {
+        type: rule.id,
+        label: rule.label || rule.name || rule.id,
+        count: 0,
+        samples: [],
+      });
+    }
+    for (const record of records) {
+      for (const rule of rules) {
+        if (!rule.re) continue;
+        const group = groups.get(rule.id);
+        const re = new RegExp(rule.re.source, rule.re.flags);
+        let match;
+        let matchedLine = false;
+        while ((match = re.exec(record.raw)) !== null) {
+          group.count++;
+          matchedLine = true;
+          if (match.index === re.lastIndex) re.lastIndex++; // zero-length guard
+        }
+        if (matchedLine && group.samples.length < maxSamplesPerType) {
+          group.samples.push({
+            fileId: record.fileId,
+            file: record.file,
+            lineNo: record.lineNo,
+            maskedText: mask(record.raw),
+          });
+        }
+      }
+    }
+    return [...groups.values()].filter((g) => g.count > 0);
+  }
+
+  return { buildBuiltinMaskRules, MaskEngine, maskLine, builtinRuleIds, collectPiiCensus };
 }));
 
 /* Log Triage — pii-provider.js: PiiProvider extension point (ADR-0003).
@@ -5282,7 +5333,10 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     const tags = topBy(recs, (r) => r.tag, 12);
     const msgs = topMessages(recs, 12);
     const issues = issueScan(recs);
-    const census = piiCensus(recs);
+    const censusRules = engine.rules.concat(engine.custom.filter((r) => r.enabled && r.re));
+    const census = LT.collectPiiCensus(recs, censusRules, { maxSamplesPerType: 25, maskText: (s) => engine.maskLine(s) });
+    // the open category survives a file-scope change when it still has matches
+    if (censusOpenType && !census.some((g) => g.type === censusOpenType)) censusOpenType = null;
 
     const cards = sel
       ? stat('Lines', selStats.total) + stat('Kept', selStats.kept) + stat('Dropped', selStats.dropped) +
@@ -5310,8 +5364,15 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       '<div class="rowline"><button id="btn-issue-add">+ Add rule</button><button id="btn-issue-restore" title="restore the built-in keyword groups">Restore defaults</button></div>' +
       '</details>' +
       (issues.length ? issueTreeHtml(issues) : '<span class="muted">no issue keywords found</span>') +
-      '<h2>PII census (kept lines, sample)</h2>' +
-      '<div class="card-row">' + Object.keys(census).map((k) => '<div class="stat-card"><div class="v">' + census[k] + '</div><div class="k">' + esc(k) + '</div></div>').join('') + '</div>';
+      '<h2>PII census (analysis sample)</h2>' +
+      (census.length
+        ? '<div class="card-row">' + census.map((g) =>
+            '<button type="button" class="stat-card census-card" data-census="' + esc(g.type) + '"' +
+            ' aria-expanded="' + (censusOpenType === g.type) + '" aria-controls="census-panel">' +
+            '<span class="v">' + g.count + '</span><span class="k">' + esc(g.label) + '</span>' +
+            '<span class="census-hint">View samples <span aria-hidden="true">›</span></span></button>').join('') + '</div>' +
+          '<div id="census-panel" role="region" aria-label="PII sample details"></div>'
+        : '<span class="muted">no PII found in this scope</span>');
 
     const fileSel = p.querySelector('#analysis-file');
     fileSel.value = sel;
@@ -5323,6 +5384,13 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       el.onclick = () => { const it = issueBySeq.get(el.dataset.seq); if (it && it.rec) jumpToRecord(it.rec); };
     });
     bindIssueEditor(p);
+    p.querySelectorAll('.census-card').forEach((el) => {
+      el.onclick = () => {
+        censusOpenType = censusOpenType === el.dataset.census ? null : el.dataset.census;
+        renderCensusPanel(p, census);
+      };
+    });
+    renderCensusPanel(p, census);
   }
 
   function issueGroupRows() {
@@ -5385,11 +5453,26 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   function issueScan(records) {
     return LT.issueScan(records, getIssueGroups(), fileDisplayName);
   }
-  function piiCensus(records) {
-    const eng = new LT.MaskEngine();
-    const sample = records.slice(0, 50000);
-    eng.maskLines(sample.map((r) => r.raw));
-    return eng.hitCounts();
+  let censusOpenType = null;
+  function censusPanelHtml(census) {
+    const g = census.find((x) => x.type === censusOpenType);
+    if (!g) return '';
+    const capped = g.count > g.samples.length;
+    return '<div class="census-head">' + esc(g.label) + ' · ' + g.count + ' matches · showing ' + g.samples.length +
+      ' example lines' + (capped ? ' (capped at ' + g.samples.length + ')' : '') + '</div>' +
+      g.samples.map((s) =>
+        '<div class="census-row"><span class="census-loc">' + esc(fileDisplayName(s.fileId)) + ' : ' + s.lineNo + '</span>' +
+        '<span class="census-text">' + esc(s.maskedText) + '</span>' +
+        '<button type="button" class="census-jump" data-fid="' + esc(s.fileId) + '" data-ln="' + s.lineNo + '">Show in viewer</button></div>').join('');
+  }
+  function renderCensusPanel(p, census) {
+    const panel = p.querySelector('#census-panel');
+    if (!panel) return;
+    panel.innerHTML = censusPanelHtml(census);
+    p.querySelectorAll('.census-card').forEach((el) => el.setAttribute('aria-expanded', String(el.dataset.census === censusOpenType)));
+    panel.querySelectorAll('.census-jump').forEach((el) => {
+      el.onclick = () => jumpToRecord({ fileId: el.dataset.fid, lineNo: Number(el.dataset.ln) });
+    });
   }
   function drawHistogram(recs) {
     const cv = document.getElementById('histo');
@@ -6826,6 +6909,71 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     const rule = eng.addCustom({ name: 'bad', pattern: '([unclosed', replacement: 'x' });
     ok(rule.error, 'rule.error must be set');
     eq(eng.maskLine('safe text ([unclosed ok'), 'safe text ([unclosed ok');
+  });
+
+  const censusRules = () => {
+    const eng = new SRC.MaskEngine();
+    return eng.rules.concat([
+      eng.addCustom({ name: 'Account tag', pattern: 'account=\\w+', replacement: 'account=***' }),
+      eng.addCustom({ name: 'broken', pattern: '([unclosed', replacement: 'x' }),
+    ]);
+  };
+  const vinRule = () => new SRC.MaskEngine().rules.find((r) => r.id === 'vin');
+
+  T('census', 'counts every match; one line with two matches counts twice but samples once', () => {
+    const groups = SRC.collectPiiCensus([
+      { fileId: 'f1', file: 'a.log', lineNo: 4, raw: 'vin YV4AB9CD12EF34567 and vin YV4ZZZCD12EF34567' },
+      { fileId: 'f1', file: 'a.log', lineNo: 9, raw: 'plain line' },
+      { fileId: 'f2', file: 'b.log', lineNo: 2, raw: 'single YV4MM00012FF34567 here' },
+    ], [vinRule()], { maskText: (s) => s.replace(/YV4[A-HJ-NPR-Z0-9]+/, '[VIN]') });
+    eq(groups.length, 1);
+    eq(groups[0].count, 3, 'each match counts');
+    eq(groups[0].samples.length, 2, 'the double-match line samples once');
+    eq(groups[0].samples[0].lineNo, 4);
+    eq(groups[0].samples[1].file, 'b.log');
+  });
+
+  T('census', 'samples are capped per type while counts cover the whole sample', () => {
+    const recs = [];
+    for (let i = 1; i <= 27; i++) recs.push({ fileId: 'f1', file: 'a.log', lineNo: i, raw: 'vin YV4AB9CD12EF34' + String(500 + i) });
+    const groups = SRC.collectPiiCensus(recs, [vinRule()], { maxSamplesPerType: 5, maskText: () => 'm' });
+    eq(groups[0].count, 27);
+    eq(groups[0].samples.length, 5);
+    eq(groups[0].samples[4].lineNo, 5, 'first five lines kept in order');
+  });
+
+  T('census', 'custom rules join the census under their configured name; broken rules are skipped', () => {
+    const recs = [{ fileId: 'f1', file: 'a.log', lineNo: 1, raw: 'account=u***@***.com auth failed' }];
+    const groups = SRC.collectPiiCensus(recs, censusRules(), { maskText: () => 'm' });
+    const custom = groups.find((g) => g.label === 'Account tag');
+    ok(custom, 'custom rule present under its name');
+    eq(custom.count, 1);
+    ok(!groups.some((g) => g.label === 'broken'), 'rule without a compiled regex is skipped');
+  });
+
+  T('census', 'sample text is always the masked preview passed by the caller', () => {
+    const recs = [{ fileId: 'f1', file: 'a.log', lineNo: 7, raw: 'VIN read: YV4AB9CD12EF34567 from gateway' }];
+    const groups = SRC.collectPiiCensus(recs, [vinRule()], { maskText: (s) => s.replace(/YV4[A-HJ-NPR-Z0-9]+/, 'YV4**********4567') });
+    eq(groups[0].samples[0].maskedText, 'VIN read: YV4**********4567 from gateway');
+    ok(!groups[0].samples[0].maskedText.includes('YV4AB9CD12EF34567'), 'raw VIN never appears');
+    deepEq(Object.keys(groups[0].samples[0]).sort(), ['file', 'fileId', 'lineNo', 'maskedText']);
+  });
+
+  T('census', 'zero-count rules are omitted and rule order is preserved', () => {
+    const eng = new SRC.MaskEngine();
+    const rules = [eng.rules.find((r) => r.id === 'vin'), eng.rules.find((r) => r.id === 'email')];
+    const groups = SRC.collectPiiCensus([
+      { fileId: 'f1', file: 'a.log', lineNo: 3, raw: 'mail bob@x.example hit' },
+    ], rules, { maskText: () => 'm' });
+    eq(groups.length, 1, 'vin group with no matches is omitted');
+    eq(groups[0].type, 'email');
+    eq(groups[0].label, 'Email');
+  });
+
+  T('census', 'zero-length matches do not loop forever', () => {
+    const rule = { id: 'z', label: 'Zero', re: /x*/g };
+    const groups = SRC.collectPiiCensus([{ fileId: 'f1', file: 'a.log', lineNo: 1, raw: 'abc' }], [rule], { maskText: () => 'm' });
+    eq(groups[0].count, 4, 'four zero-length positions counted once each');
   });
 
   T('provider', 'registry validates and lists providers', () => {
