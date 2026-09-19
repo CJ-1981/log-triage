@@ -79,7 +79,7 @@
         id: 'gnss', label: 'GNSS coordinates', hint: 'decimal pairs >= 3 decimals (incl. lat=/lon: forms) -> [coords]',
         // pair separator: whitespace/°/N-S/comma plus an optional lat/lon key
         // token (lat=… lon:…), keeping unrelated decimal pairs safe
-        re: /(?<![\d.])-?(?:[0-8]?\d|90)\.\d{3,7}\s*\u00b0?\s*[NS]?\s*,?\s*(?:(?:lon[g]?(?:itude)?|lat(?:itude)?)\s*[=: ]\s*)?-?(?:1?[0-7]?\d|180)\.\d{3,7}(?![\d.])/g,
+        re: /(?<![\d.:])-?(?:[0-8]?\d|90)\.\d{3,7}\s*\u00b0?\s*[NS]?\s*,?\s*(?:(?:lon[g]?(?:itude)?|lat(?:itude)?)\s*[=: ]\s*)?-?(?:1?[0-7]?\d|180)\.\d{3,7}(?![\d.])/g,
         repl: () => '[coords]',
       },
       {
