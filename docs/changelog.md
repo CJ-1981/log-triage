@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.44.2 (2026-09-19)
+- Merge pull request #36 from CJ-1981/fix/gnss-keyvalue-pairs
+- fix: GNSS rule masks lat=/lon: key-value coordinate pairs
+
 ## 1.44.1 (2026-09-19)
 - Merge pull request #35 from CJ-1981/fix/census-scroll-into-view
 - fix: open PII census card scrolls its sample panel into view
