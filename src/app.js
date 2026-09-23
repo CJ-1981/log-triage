@@ -1521,14 +1521,20 @@
   }
   function topMessages(records, n) {
     const m = {};
-    for (const r of records) { const k = normMsg(r.msg || r.raw); m[k] = (m[k] || 0) + 1; }
+    const mask = analysisMaskText();
+    for (const r of records) { const src = String(r.msg || r.raw); const k = normMsg(mask ? mask(src) : src); m[k] = (m[k] || 0) + 1; }
     return Object.keys(m).map((k) => ({ k, n: m[k] })).sort((a, b) => b.n - a.n).slice(0, n);
   }
   function getIssueGroups() {
     return (state.issueGroups || LT.DEFAULT_ISSUE_GROUPS).filter((g) => g.on && g.pattern);
   }
   function issueScan(records) {
-    return LT.issueScan(records, getIssueGroups(), fileDisplayName);
+    return LT.issueScan(records, getIssueGroups(), fileDisplayName, analysisMaskText());
+  }
+  /** Mask function for analysis display surfaces; honors the viewer mask
+   * toggle so no analysis screen renders raw PII while masking is on. */
+  function analysisMaskText() {
+    return state.maskOn ? (t) => engine.maskLine(String(t)) : null;
   }
   let censusOpenType = null;
   function censusPanelHtml(census) {
@@ -2022,6 +2028,8 @@
     $('btn-mask').classList.toggle('on', on);
     displayCache = new Map();
     saveState(); renderRows();
+    // analysis surfaces render masked text — keep a visible analysis tab in sync
+    if ($('tab-analysis').classList.contains('active')) renderAnalysis();
   }
   function setWrap(on) {
     state.wrapOn = on;

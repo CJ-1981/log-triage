@@ -49,8 +49,12 @@
   };
 
   /** Scan records against issue groups; at most one finding per line (first
-   * matching group wins), capped at 200. nameOf formats a fileId for display. */
-  function issueScan(records, groups, nameOf) {
+   * matching group wins), capped at 200. nameOf formats a fileId for display.
+   * maskText (optional) sanitizes the displayed snippet — applied to the FULL
+   * text before the 110-char slice so a PII token straddling the boundary
+   * cannot leak a raw fragment. Matching always runs on the raw line, so
+   * detection behavior is independent of the mask toggle. */
+  function issueScan(records, groups, nameOf, maskText) {
     const out = [];
     const name = nameOf || ((id) => id);
     const regexes = [];
@@ -60,7 +64,8 @@
     for (const r of records || []) {
       for (const g of regexes) {
         if (g.re.test(r.raw)) {
-          out.push({ kind: g.kind, snippet: (r.msg || r.raw).slice(0, 110), file: name(r.fileId), lineNo: r.lineNo, seq: r.seq, rec: r });
+          const src = String(r.msg || r.raw);
+          out.push({ kind: g.kind, snippet: (maskText ? maskText(src) : src).slice(0, 110), file: name(r.fileId), lineNo: r.lineNo, seq: r.seq, rec: r });
           break;
         }
       }

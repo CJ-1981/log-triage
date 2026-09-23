@@ -2356,3 +2356,25 @@ test('non-UTF-8 file gets an encoding warning badge in the files panel', async (
   const badges = await page.evaluate(() => document.querySelectorAll('.file-item .badge.enc').length);
   assert.strictEqual(badges, 1, 'only the latin-1 file is badged');
 });
+
+test('analysis surfaces respect the mask toggle (issue snippets + top message shapes)', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => {
+    const t = document.getElementById('tab-analysis').textContent;
+    return t.includes('Top message shapes') && (t.includes('d***@***.example') || t.includes('driver.jung@'));
+  }, null, { timeout: 10000 });
+  let text = await page.evaluate(() => document.getElementById('tab-analysis').textContent);
+  assert.ok(!text.includes('driver.jung@lotus-tech.example'), 'mask ON: no raw email anywhere in analysis');
+  assert.ok(text.includes('d***@***.example'), 'mask ON: masked email shown in issue snippet / message shapes');
+  // toggle mask OFF (via viewer toolbar) → analysis re-render shows the raw text
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.click('#btn-mask');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => document.getElementById('tab-analysis').textContent.includes('driver.jung@lotus-tech.example'), null, { timeout: 10000 });
+  // restore mask ON
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.click('#btn-mask');
+});
