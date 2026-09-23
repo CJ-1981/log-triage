@@ -10,13 +10,13 @@
   No network calls. Files never leave the machine.
 -->
 <style>
-:root { --bg:#0a0e1a; --surface:#111827; --surface2:#182236; --border:#24304a; --fg:#e5e9f0; --muted:#8b95a9; --accent:#00d4ff; --accent-fg:#04121a; --hl:#ffd54a; --selection:#134e2f; --lvl-v:#6b7a99; --lvl-d:#4da6ff; --lvl-i:#37c98b; --lvl-w:#ffb74a; --lvl-e:#ff5d5d; --lvl-f:#ff2d95; --tint-w:rgba(255,183,74,0.07); --tint-e:rgba(255,93,93,0.09); --tint-f:rgba(255,45,149,0.12); --ok:#37c98b; --warn:#ffb74a; --err:#ff5d5d; }
-body[data-theme="midnight"] { --bg:#0a0e1a; --surface:#111827; --surface2:#182236; --border:#24304a; --fg:#e5e9f0; --muted:#8b95a9; --accent:#00d4ff; --accent-fg:#04121a; --hl:#ffd54a; --selection:#134e2f; --lvl-v:#6b7a99; --lvl-d:#4da6ff; --lvl-i:#37c98b; --lvl-w:#ffb74a; --lvl-e:#ff5d5d; --lvl-f:#ff2d95; --tint-w:rgba(255,183,74,0.07); --tint-e:rgba(255,93,93,0.09); --tint-f:rgba(255,45,149,0.12); --ok:#37c98b; --warn:#ffb74a; --err:#ff5d5d; }
-body[data-theme="paper"] { --bg:#f6f7fb; --surface:#ffffff; --surface2:#eef0f6; --border:#d8dce6; --fg:#1c2430; --muted:#5f6b7d; --accent:#0b6bcb; --accent-fg:#ffffff; --hl:#ffe28a; --selection:#b7e4c7; --lvl-v:#8a93a6; --lvl-d:#1c6fd1; --lvl-i:#1e7f4f; --lvl-w:#a86a00; --lvl-e:#c22f2f; --lvl-f:#b3126b; --tint-w:rgba(168,106,0,0.08); --tint-e:rgba(194,47,47,0.10); --tint-f:rgba(179,18,107,0.12); --ok:#1e7f4f; --warn:#a86a00; --err:#c22f2f; }
-body[data-theme="solarized-dark"] { --bg:#002b36; --surface:#073642; --surface2:#0d4453; --border:#1a4a57; --fg:#eee8d5; --muted:#93a1a1; --accent:#2aa198; --accent-fg:#002b36; --hl:#b58900; --selection:#21596b; --lvl-v:#586e75; --lvl-d:#268bd2; --lvl-i:#859900; --lvl-w:#b58900; --lvl-e:#cb4b16; --lvl-f:#d33682; --tint-w:rgba(181,137,0,0.10); --tint-e:rgba(203,75,22,0.12); --tint-f:rgba(211,54,130,0.14); --ok:#859900; --warn:#b58900; --err:#cb4b16; }
-body[data-theme="solarized-light"] { --bg:#fdf6e3; --surface:#fffbf0; --surface2:#f3ecd9; --border:#e2d9bd; --fg:#073642; --muted:#657b83; --accent:#268bd2; --accent-fg:#fdf6e3; --hl:#f2d675; --selection:#d5e8b8; --lvl-v:#93a1a1; --lvl-d:#268bd2; --lvl-i:#859900; --lvl-w:#b58900; --lvl-e:#cb4b16; --lvl-f:#d33682; --tint-w:rgba(181,137,0,0.12); --tint-e:rgba(203,75,22,0.12); --tint-f:rgba(211,54,130,0.12); --ok:#859900; --warn:#b58900; --err:#cb4b16; }
-body[data-theme="monokai"] { --bg:#272822; --surface:#2f3129; --surface2:#3a3d33; --border:#4a4d40; --fg:#f8f8f2; --muted:#a2a492; --accent:#a6e22e; --accent-fg:#1d1f17; --hl:#fd971f; --selection:#3e5a41; --lvl-v:#75715e; --lvl-d:#66d9ef; --lvl-i:#a6e22e; --lvl-w:#e6db74; --lvl-e:#f92672; --lvl-f:#ff0058; --tint-w:rgba(230,219,116,0.08); --tint-e:rgba(249,38,114,0.10); --tint-f:rgba(255,0,88,0.14); --ok:#a6e22e; --warn:#e6db74; --err:#f92672; }
-body[data-theme="high-contrast"] { --bg:#000000; --surface:#0d0d0d; --surface2:#1a1a1a; --border:#4d4d4d; --fg:#ffffff; --muted:#b3b3b3; --accent:#ffff00; --accent-fg:#000000; --hl:#00ffff; --selection:#004400; --lvl-v:#a0a0a0; --lvl-d:#66ccff; --lvl-i:#66ff99; --lvl-w:#ffcc00; --lvl-e:#ff6666; --lvl-f:#ff33cc; --tint-w:rgba(255,204,0,0.10); --tint-e:rgba(255,102,102,0.14); --tint-f:rgba(255,51,204,0.18); --ok:#66ff99; --warn:#ffcc00; --err:#ff6666; }
+:root { --bg:#0a0e1a; --surface:#111827; --surface2:#182236; --border:#24304a; --fg:#e5e9f0; --muted:#8b95a9; --accent:#00d4ff; --accent-fg:#04121a; --hl:#ffd54a; --selection:#134e2f; --hit:rgba(255,213,74,0.10); --lvl-v:#6b7a99; --lvl-d:#4da6ff; --lvl-i:#37c98b; --lvl-w:#ffb74a; --lvl-e:#ff5d5d; --lvl-f:#ff2d95; --tint-w:rgba(255,183,74,0.07); --tint-e:rgba(255,93,93,0.09); --tint-f:rgba(255,45,149,0.12); --ok:#37c98b; --warn:#ffb74a; --err:#ff5d5d; }
+body[data-theme="midnight"] { --bg:#0a0e1a; --surface:#111827; --surface2:#182236; --border:#24304a; --fg:#e5e9f0; --muted:#8b95a9; --accent:#00d4ff; --accent-fg:#04121a; --hl:#ffd54a; --selection:#134e2f; --hit:rgba(255,213,74,0.10); --lvl-v:#6b7a99; --lvl-d:#4da6ff; --lvl-i:#37c98b; --lvl-w:#ffb74a; --lvl-e:#ff5d5d; --lvl-f:#ff2d95; --tint-w:rgba(255,183,74,0.07); --tint-e:rgba(255,93,93,0.09); --tint-f:rgba(255,45,149,0.12); --ok:#37c98b; --warn:#ffb74a; --err:#ff5d5d; }
+body[data-theme="paper"] { --bg:#f6f7fb; --surface:#ffffff; --surface2:#eef0f6; --border:#d8dce6; --fg:#1c2430; --muted:#5f6b7d; --accent:#0b6bcb; --accent-fg:#ffffff; --hl:#ffe28a; --selection:#b7e4c7; --hit:rgba(191,135,0,0.13); --lvl-v:#8a93a6; --lvl-d:#1c6fd1; --lvl-i:#1e7f4f; --lvl-w:#a86a00; --lvl-e:#c22f2f; --lvl-f:#b3126b; --tint-w:rgba(168,106,0,0.08); --tint-e:rgba(194,47,47,0.10); --tint-f:rgba(179,18,107,0.12); --ok:#1e7f4f; --warn:#a86a00; --err:#c22f2f; }
+body[data-theme="solarized-dark"] { --bg:#002b36; --surface:#073642; --surface2:#0d4453; --border:#1a4a57; --fg:#eee8d5; --muted:#93a1a1; --accent:#2aa198; --accent-fg:#002b36; --hl:#b58900; --selection:#21596b; --hit:rgba(181,137,0,0.15); --lvl-v:#586e75; --lvl-d:#268bd2; --lvl-i:#859900; --lvl-w:#b58900; --lvl-e:#cb4b16; --lvl-f:#d33682; --tint-w:rgba(181,137,0,0.10); --tint-e:rgba(203,75,22,0.12); --tint-f:rgba(211,54,130,0.14); --ok:#859900; --warn:#b58900; --err:#cb4b16; }
+body[data-theme="solarized-light"] { --bg:#fdf6e3; --surface:#fffbf0; --surface2:#f3ecd9; --border:#e2d9bd; --fg:#073642; --muted:#657b83; --accent:#268bd2; --accent-fg:#fdf6e3; --hl:#f2d675; --selection:#d5e8b8; --hit:rgba(160,120,10,0.13); --lvl-v:#93a1a1; --lvl-d:#268bd2; --lvl-i:#859900; --lvl-w:#b58900; --lvl-e:#cb4b16; --lvl-f:#d33682; --tint-w:rgba(181,137,0,0.12); --tint-e:rgba(203,75,22,0.12); --tint-f:rgba(211,54,130,0.12); --ok:#859900; --warn:#b58900; --err:#cb4b16; }
+body[data-theme="monokai"] { --bg:#272822; --surface:#2f3129; --surface2:#3a3d33; --border:#4a4d40; --fg:#f8f8f2; --muted:#a2a492; --accent:#a6e22e; --accent-fg:#1d1f17; --hl:#fd971f; --selection:#3e5a41; --hit:rgba(253,151,31,0.12); --lvl-v:#75715e; --lvl-d:#66d9ef; --lvl-i:#a6e22e; --lvl-w:#e6db74; --lvl-e:#f92672; --lvl-f:#ff0058; --tint-w:rgba(230,219,116,0.08); --tint-e:rgba(249,38,114,0.10); --tint-f:rgba(255,0,88,0.14); --ok:#a6e22e; --warn:#e6db74; --err:#f92672; }
+body[data-theme="high-contrast"] { --bg:#000000; --surface:#0d0d0d; --surface2:#1a1a1a; --border:#4d4d4d; --fg:#ffffff; --muted:#b3b3b3; --accent:#ffff00; --accent-fg:#000000; --hl:#00ffff; --selection:#004400; --hit:rgba(0,255,255,0.18); --lvl-v:#a0a0a0; --lvl-d:#66ccff; --lvl-i:#66ff99; --lvl-w:#ffcc00; --lvl-e:#ff6666; --lvl-f:#ff33cc; --tint-w:rgba(255,204,0,0.10); --tint-e:rgba(255,102,102,0.14); --tint-f:rgba(255,51,204,0.18); --ok:#66ff99; --warn:#ffcc00; --err:#ff6666; }
 </style>
 <style>
 :root { --row-h: 22px; --mono: 'Cascadia Mono', Consolas, 'JetBrains Mono', Menlo, monospace; }
@@ -25,11 +25,21 @@ html, body { height: 100%; }
 body { background: var(--bg); color: var(--fg); font: 14px/1.45 'Segoe UI', system-ui, sans-serif; overflow: hidden; }
 button { background: var(--surface2); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; cursor: pointer; font: inherit; }
 button:hover { border-color: var(--accent); }
+button:disabled { opacity: .45; cursor: not-allowed; }
+button:disabled:hover { border-color: var(--border); }
 button.primary { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); font-weight: 600; }
 button.on { background: var(--accent); color: var(--accent-fg); border-color: var(--accent); }
-input[type=text], select { background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; }
-input[type=text]:focus, select:focus { outline: 1px solid var(--accent); }
+input[type=text], input[type=search], input[type=number], input[type=password], input:not([type]), select, textarea { background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; font: inherit; }
+input[type=text]:focus, input[type=search]:focus, input[type=number]:focus, input[type=password]:focus, input:not([type]):focus, select:focus, textarea:focus { outline: 1px solid var(--accent); }
+input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 input.err { outline: 1px solid var(--err); }
+/* custom checkbox: themed unchecked state, accent fill + on-accent checkmark,
+   keyboard focus ring — one rule covers every .toggle checkbox in the app */
+input[type=checkbox].toggle { appearance: none; -webkit-appearance: none; width: 18px; height: 18px; min-width: 18px; margin: 0; border: 2px solid var(--muted); border-radius: 4px; background: var(--surface2); cursor: pointer; position: relative; vertical-align: middle; }
+input[type=checkbox].toggle:hover { border-color: var(--accent); }
+input[type=checkbox].toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type=checkbox].toggle:checked { background: var(--accent); border-color: var(--accent); }
+input[type=checkbox].toggle:checked::after { content: '✓'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--accent-fg); font-size: 13px; font-weight: 700; line-height: 1; }
 small.muted, .muted { color: var(--muted); }
 
 #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; }
@@ -253,7 +263,7 @@ details.sr-group > summary.sr-file .count-pill { margin-left: 8px; }
 .sr-row .srl { flex: none; min-width: 56px; text-align: right; color: var(--muted); padding-right: 10px; }
 .sr-row .srt { flex: none; min-width: 132px; color: var(--muted); padding-right: 10px; }
 .sr-row .srx { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; word-break: break-all; }
-.sr-row.hit { background: var(--selection); }
+.sr-row.hit { background: var(--hit); }
 /* viewer-style uniform bands: an inner max-content wrapper (like the
  * viewer's #vspacer) sizes to the widest row, and every row/group band
  * stretches across it — instead of each band ending at its own text */
@@ -2302,7 +2312,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
 
   const REQUIRED_VARS = [
     '--bg', '--surface', '--surface2', '--border', '--fg', '--muted',
-    '--accent', '--accent-fg', '--hl', '--selection',
+    '--accent', '--accent-fg', '--hl', '--selection', '--hit',
     '--lvl-v', '--lvl-d', '--lvl-i', '--lvl-w', '--lvl-e', '--lvl-f',
     '--tint-w', '--tint-e', '--tint-f',
     '--ok', '--warn', '--err',
@@ -2316,7 +2326,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         '--bg': '#0a0e1a', '--surface': '#111827', '--surface2': '#182236',
         '--border': '#24304a', '--fg': '#e5e9f0', '--muted': '#8b95a9',
         '--accent': '#00d4ff', '--accent-fg': '#04121a',
-        '--hl': '#ffd54a', '--selection': '#134e2f',
+        '--hl': '#ffd54a', '--selection': '#134e2f', '--hit': 'rgba(255,213,74,0.10)',
         '--lvl-v': '#6b7a99', '--lvl-d': '#4da6ff', '--lvl-i': '#37c98b',
         '--lvl-w': '#ffb74a', '--lvl-e': '#ff5d5d', '--lvl-f': '#ff2d95',
         '--tint-w': 'rgba(255,183,74,0.07)', '--tint-e': 'rgba(255,93,93,0.09)',
@@ -2331,7 +2341,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         '--bg': '#f6f7fb', '--surface': '#ffffff', '--surface2': '#eef0f6',
         '--border': '#d8dce6', '--fg': '#1c2430', '--muted': '#5f6b7d',
         '--accent': '#0b6bcb', '--accent-fg': '#ffffff',
-        '--hl': '#ffe28a', '--selection': '#b7e4c7',
+        '--hl': '#ffe28a', '--selection': '#b7e4c7', '--hit': 'rgba(191,135,0,0.13)',
         '--lvl-v': '#8a93a6', '--lvl-d': '#1c6fd1', '--lvl-i': '#1e7f4f',
         '--lvl-w': '#a86a00', '--lvl-e': '#c22f2f', '--lvl-f': '#b3126b',
         '--tint-w': 'rgba(168,106,0,0.08)', '--tint-e': 'rgba(194,47,47,0.10)',
@@ -2346,7 +2356,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         '--bg': '#002b36', '--surface': '#073642', '--surface2': '#0d4453',
         '--border': '#1a4a57', '--fg': '#eee8d5', '--muted': '#93a1a1',
         '--accent': '#2aa198', '--accent-fg': '#002b36',
-        '--hl': '#b58900', '--selection': '#21596b',
+        '--hl': '#b58900', '--selection': '#21596b', '--hit': 'rgba(181,137,0,0.15)',
         '--lvl-v': '#586e75', '--lvl-d': '#268bd2', '--lvl-i': '#859900',
         '--lvl-w': '#b58900', '--lvl-e': '#cb4b16', '--lvl-f': '#d33682',
         '--tint-w': 'rgba(181,137,0,0.10)', '--tint-e': 'rgba(203,75,22,0.12)',
@@ -2361,7 +2371,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         '--bg': '#fdf6e3', '--surface': '#fffbf0', '--surface2': '#f3ecd9',
         '--border': '#e2d9bd', '--fg': '#073642', '--muted': '#657b83',
         '--accent': '#268bd2', '--accent-fg': '#fdf6e3',
-        '--hl': '#f2d675', '--selection': '#d5e8b8',
+        '--hl': '#f2d675', '--selection': '#d5e8b8', '--hit': 'rgba(160,120,10,0.13)',
         '--lvl-v': '#93a1a1', '--lvl-d': '#268bd2', '--lvl-i': '#859900',
         '--lvl-w': '#b58900', '--lvl-e': '#cb4b16', '--lvl-f': '#d33682',
         '--tint-w': 'rgba(181,137,0,0.12)', '--tint-e': 'rgba(203,75,22,0.12)',
@@ -2376,7 +2386,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         '--bg': '#272822', '--surface': '#2f3129', '--surface2': '#3a3d33',
         '--border': '#4a4d40', '--fg': '#f8f8f2', '--muted': '#a2a492',
         '--accent': '#a6e22e', '--accent-fg': '#1d1f17',
-        '--hl': '#fd971f', '--selection': '#3e5a41',
+        '--hl': '#fd971f', '--selection': '#3e5a41', '--hit': 'rgba(253,151,31,0.12)',
         '--lvl-v': '#75715e', '--lvl-d': '#66d9ef', '--lvl-i': '#a6e22e',
         '--lvl-w': '#e6db74', '--lvl-e': '#f92672', '--lvl-f': '#ff0058',
         '--tint-w': 'rgba(230,219,116,0.08)', '--tint-e': 'rgba(249,38,114,0.10)',
@@ -2391,7 +2401,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         '--bg': '#000000', '--surface': '#0d0d0d', '--surface2': '#1a1a1a',
         '--border': '#4d4d4d', '--fg': '#ffffff', '--muted': '#b3b3b3',
         '--accent': '#ffff00', '--accent-fg': '#000000',
-        '--hl': '#00ffff', '--selection': '#004400',
+        '--hl': '#00ffff', '--selection': '#004400', '--hit': 'rgba(0,255,255,0.18)',
         '--lvl-v': '#a0a0a0', '--lvl-d': '#66ccff', '--lvl-i': '#66ff99',
         '--lvl-w': '#ffcc00', '--lvl-e': '#ff6666', '--lvl-f': '#ff33cc',
         '--tint-w': 'rgba(255,204,0,0.10)', '--tint-e': 'rgba(255,102,102,0.14)',
@@ -5164,7 +5174,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     const t0 = performance.now();
     const res = LT.searchRecords(store.kept, s);
     const mode = $('rg-mode').value;
-    renderSearchRows(res, mode, performance.now() - t0);
+    renderSearchRows(res, mode, performance.now() - t0, s);
   }
 
   /** collapsible per-file group: <details><summary>file (count)</summary>rows</details> */
@@ -5178,7 +5188,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
    * or the panel width (Wrap: ON) — never to each line's own text length. */
   function srInner(html) { return '<div class="sr-inner">' + html + '</div>'; }
 
-  function renderSearchRows(res, mode, ms) {
+  function renderSearchRows(res, mode, ms, searcher) {
     const out = $('search-results');
     // instant search runs over the analysis sample (bounded); the viewer's
     // filter/paging always cover the complete indexed files, so there is no
@@ -5202,17 +5212,34 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       (byFile[name] = byFile[name] || []).push({ fileId: rec.fileId, lineNo: rec.lineNo, ts: rec.ts, text: displayText(rec) });
     }
     out.innerHTML = srInner(Object.keys(byFile).map((f) =>
-      groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true, r.fileId)).join(''), byFile[f].length)).join('')) ||
+      groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true, r.fileId, searcher)).join(''), byFile[f].length)).join('')) ||
       '<div class="muted" style="padding:20px">no matches</div>';
   }
 
-  function srRow(file, lineNo, ts, text, isMatch, fid) {
+  /* Escape text and wrap [start,end) spans in <mark> — search-row match
+   * marking. Spans are computed on the DISPLAYED text (masked, preview-
+   * truncated), so a mark always wraps exactly what is visible; if masking
+   * hid the match, no misleading mark is drawn. */
+  function markSpansHtml(text, spans) {
+    if (!spans || !spans.length) return esc(text);
+    let out = '', pos = 0;
+    for (const sp of spans) {
+      const a = sp[0], b = sp[1];
+      if (a < pos || b <= a || b > text.length) continue; // defensive: overlap/out-of-range
+      out += esc(text.slice(pos, a)) + '<mark>' + esc(text.slice(a, b)) + '</mark>';
+      pos = b;
+    }
+    return out + esc(text.slice(pos));
+  }
+
+  function srRow(file, lineNo, ts, text, isMatch, fid, searcher) {
     const cls = isMatch ? 'hit' : 'ctx';
+    const spans = isMatch && searcher && searcher.ok ? LT.matchSpans(searcher, text) : [];
     return '<div class="sr-row ' + cls + '" data-file="' + esc(file) + '" data-fid="' + esc(fid || '') + '" data-ln="' + lineNo + '">' +
       '<span class="srf" title="' + esc(file) + '">' + esc(file) + '</span>' +
       '<span class="srl">' + lineNo + '</span>' +
       '<span class="srt">' + esc(ts || '—') + '</span>' +
-      '<span class="srx">' + esc(text) + '</span></div>';
+      '<span class="srx">' + markSpansHtml(text, spans) + '</span></div>';
   }
 
   let deepAbort = false;
@@ -5282,7 +5309,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     }
     out.innerHTML = srInner(Object.keys(byFile).map((f) => {
       const matches = byFile[f].filter((r) => r.isMatch).length;
-      return groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch, r.id)).join(''), matches);
+      return groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch, r.id, s)).join(''), matches);
     }).join('')) || '<div class="muted" style="padding:20px">no matches</div>';
   }
 
@@ -7846,6 +7873,14 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
 
   T('themes', 'every theme defines every required variable', () => {
     deepEq(SRC.themeCompletenessErrors(), []);
+  });
+
+  T('themes', 'every theme defines a search-hit tint distinct from the selection color', () => {
+    for (const name of SRC.themeNames()) {
+      const vars = SRC.THEMES[name].vars;
+      ok(vars['--hit'], name + ' defines --hit');
+      ok(vars['--hit'] !== vars['--selection'], name + ': --hit differs from --selection (match vs selected rows stay distinguishable)');
+    }
   });
 
   T('themes', 'generated CSS includes default root block and all data-theme blocks', () => {

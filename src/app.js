@@ -1059,7 +1059,7 @@
     const t0 = performance.now();
     const res = LT.searchRecords(store.kept, s);
     const mode = $('rg-mode').value;
-    renderSearchRows(res, mode, performance.now() - t0);
+    renderSearchRows(res, mode, performance.now() - t0, s);
   }
 
   /** collapsible per-file group: <details><summary>file (count)</summary>rows</details> */
@@ -1073,7 +1073,7 @@
    * or the panel width (Wrap: ON) — never to each line's own text length. */
   function srInner(html) { return '<div class="sr-inner">' + html + '</div>'; }
 
-  function renderSearchRows(res, mode, ms) {
+  function renderSearchRows(res, mode, ms, searcher) {
     const out = $('search-results');
     // instant search runs over the analysis sample (bounded); the viewer's
     // filter/paging always cover the complete indexed files, so there is no
@@ -1097,17 +1097,34 @@
       (byFile[name] = byFile[name] || []).push({ fileId: rec.fileId, lineNo: rec.lineNo, ts: rec.ts, text: displayText(rec) });
     }
     out.innerHTML = srInner(Object.keys(byFile).map((f) =>
-      groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true, r.fileId)).join(''), byFile[f].length)).join('')) ||
+      groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, true, r.fileId, searcher)).join(''), byFile[f].length)).join('')) ||
       '<div class="muted" style="padding:20px">no matches</div>';
   }
 
-  function srRow(file, lineNo, ts, text, isMatch, fid) {
+  /* Escape text and wrap [start,end) spans in <mark> — search-row match
+   * marking. Spans are computed on the DISPLAYED text (masked, preview-
+   * truncated), so a mark always wraps exactly what is visible; if masking
+   * hid the match, no misleading mark is drawn. */
+  function markSpansHtml(text, spans) {
+    if (!spans || !spans.length) return esc(text);
+    let out = '', pos = 0;
+    for (const sp of spans) {
+      const a = sp[0], b = sp[1];
+      if (a < pos || b <= a || b > text.length) continue; // defensive: overlap/out-of-range
+      out += esc(text.slice(pos, a)) + '<mark>' + esc(text.slice(a, b)) + '</mark>';
+      pos = b;
+    }
+    return out + esc(text.slice(pos));
+  }
+
+  function srRow(file, lineNo, ts, text, isMatch, fid, searcher) {
     const cls = isMatch ? 'hit' : 'ctx';
+    const spans = isMatch && searcher && searcher.ok ? LT.matchSpans(searcher, text) : [];
     return '<div class="sr-row ' + cls + '" data-file="' + esc(file) + '" data-fid="' + esc(fid || '') + '" data-ln="' + lineNo + '">' +
       '<span class="srf" title="' + esc(file) + '">' + esc(file) + '</span>' +
       '<span class="srl">' + lineNo + '</span>' +
       '<span class="srt">' + esc(ts || '—') + '</span>' +
-      '<span class="srx">' + esc(text) + '</span></div>';
+      '<span class="srx">' + markSpansHtml(text, spans) + '</span></div>';
   }
 
   let deepAbort = false;
@@ -1177,7 +1194,7 @@
     }
     out.innerHTML = srInner(Object.keys(byFile).map((f) => {
       const matches = byFile[f].filter((r) => r.isMatch).length;
-      return groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch, r.id)).join(''), matches);
+      return groupHtml(f, byFile[f].map((r) => srRow(f, r.lineNo, r.ts, r.text, r.isMatch, r.id, s)).join(''), matches);
     }).join('')) || '<div class="muted" style="padding:20px">no matches</div>';
   }
 
