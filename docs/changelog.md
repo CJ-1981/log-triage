@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.46.1 (2026-09-23)
+- Merge pull request #43 from CJ-1981/fix/analysis-mask-bypass
+- fix: mask analysis surfaces - issue snippets and top message shapes honor mask toggle
+- test: pin analysis mask-toggle respect for issue snippets and message shapes
+
 ## 1.46.0 (2026-09-23)
 - Merge pull request #42 from CJ-1981/feat/encoding-tier1
 - feat: encoding awareness - strict UTF-8 sniff with enc? badge, CJK-safe board-dump extraction
