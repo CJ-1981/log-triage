@@ -1119,6 +1119,14 @@
     deepEq(SRC.themeCompletenessErrors(), []);
   });
 
+  T('themes', 'every theme defines a search-hit tint distinct from the selection color', () => {
+    for (const name of SRC.themeNames()) {
+      const vars = SRC.THEMES[name].vars;
+      ok(vars['--hit'], name + ' defines --hit');
+      ok(vars['--hit'] !== vars['--selection'], name + ': --hit differs from --selection (match vs selected rows stay distinguishable)');
+    }
+  });
+
   T('themes', 'generated CSS includes default root block and all data-theme blocks', () => {
     const css = SRC.generateCss();
     ok(css.includes(':root {'), 'root block');
