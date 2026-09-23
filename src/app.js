@@ -1744,6 +1744,10 @@
    * zip / tar.gz / tar stream straight to the export sink (nothing buffered
    * whole); .7z and selection-only keep the bounded buffered writer. */
   async function exportArchive() {
+    // one export at a time: the worker keeps a single exportOrder slot and the
+    // cancel button targets the running controller (review P2)
+    if (exportLock) { flash('export in progress — please wait'); return; }
+    exportLock = true;
     const format = $('exp-archive-format').value;
     const note = $('exp-archive-note');
     const selectionOnly = $('exp-selection').checked;
@@ -1753,7 +1757,7 @@
     exportAbortController = ac;
     $('exp-archive-cancel')?.classList.remove('hidden');
     let sink = null;
-    const finish = async (msg) => { note.textContent = msg; $('exp-archive-cancel')?.classList.add('hidden'); exportAbortController = null; };
+    const finish = async (msg) => { note.textContent = msg; $('exp-archive-cancel')?.classList.add('hidden'); exportAbortController = null; exportLock = false; };
     const stale = () => { const e = new Error('the export scope changed during export — retry'); e.stale = true; return e; };
     try {
       if (!selectionOnly && format === '7z') {
@@ -1764,7 +1768,6 @@
       }
       if (selectionOnly) {
         // selection sets are small by construction — keep the buffered writer
-        const eng = makeExportMasker();
         const fileById = {};
         for (const f of files) fileById[f.id] = f;
         const groups = new Map();
@@ -1773,7 +1776,8 @@
           for (const r of batch) {
             const key = r.fileId;
             if (!groups.has(key)) groups.set(key, { name: (fileById[key] && fileById[key].name) || key + '.log', text: [] });
-            groups.get(key).text.push(state.maskOn ? eng.maskLine(r.raw) : r.raw);
+            // iterExportBatches already applies the mask toggle to raw
+            groups.get(key).text.push(r.raw);
             total++;
           }
         }
@@ -1796,9 +1800,13 @@
         bookmarks: files.map((f) => [f.id, bookmarksStore.list(bookmarkKeyFor(f.id)).map((b) => b.lineNo)]),
       };
       const exportFiles = [];
-      for (const f of [...files].sort((a, b) => a.name.localeCompare(b.name))) {
+      // honor the view scope: per-file view exports only the displayed file,
+      // matching the TXT/CSV/JSON exports (review P1)
+      const scoped = spec.fileId ? files.filter((f) => f.id === spec.fileId) : files;
+      for (const f of [...scoped].sort((a, b) => a.name.localeCompare(b.name))) {
         const r = await paging.request('exportInit', { fileId: f.id, spec, expectedRevision }, (p) => { if (p.progress) note.textContent = 'preparing ' + f.name + ' — ' + p.progress; });
         if (r.stale) throw stale();
+        if (r.cancelled) { const e = new Error('export cancelled'); e.cancelled = true; throw e; }
         if (r.total > 0) exportFiles.push({ name: f.name, total: r.total });
       }
       if (!exportFiles.length) { await finish('nothing to export.'); return; }
@@ -2550,7 +2558,9 @@
     $('exp-selection').onchange = syncExportButtons;
     $('exp-bookmarks').onclick = () => exportRecords('bookmarks');
     $('exp-archive').onclick = () => { exportArchive(); };
-    $('exp-archive-cancel').onclick = () => { if (exportAbortController) exportAbortController.abort(); };
+    $('exp-archive-cancel').onclick = () => {
+      if (exportAbortController) { exportAbortController.abort(); paging.request('cancelExport'); }
+    };
 
     // restore UI state
     $('quick').value = state.quick || '';
