@@ -43,6 +43,7 @@ Status: implemented (v1.0.0).
 - AC-2: Flags are supported: `-F` fixed strings, smart-case default with explicit `-i`/sensitive modes, `-w` whole word, `-v` invert, `-B`/`-A` context lines.
 - AC-3: Modes are supported: normal output, `-c` (count per file), `-l` (files with matches).
 - AC-4: Results are grouped by file as `file:lineNo:` entries, capped (default 10,000), and exportable as rg-style text or JSON.
+- AC-5 (v1.47.0, shared by instant and deep result rows): a match row shows the matched span(s) with an inline `<mark>` computed on the DISPLAYED text — masked and preview-truncated — so a mark always wraps exactly what is visible and a match hidden by masking draws no misleading mark; `-F`/`-w`/case flags are honored by the marking (it reuses the same compiled searcher), and inverted (`-v`) rows carry no marks by definition. Match rows use a faint per-theme `--hit` tint, visually distinct from the viewer's `--selection` green, so "selected" and "matched" never look alike (ADR-0016).
 
 ### FR-5 — PII masking (built-in and custom rules)
 

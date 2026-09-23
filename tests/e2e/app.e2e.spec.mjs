@@ -2378,3 +2378,43 @@ test('analysis surfaces respect the mask toggle (issue snippets + top message sh
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
   await page.click('#btn-mask');
 });
+
+test('search rows mark matches inline; UI token pass (hit tint, disabled pager, checkboxes, inputs)', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
+  await page.fill('#rg-pattern', 'heartbeat');
+  // inline <mark> around the exact matched term inside hit rows
+  await page.waitForFunction(() => document.querySelector('.sr-row.hit .srx mark'), null, { timeout: 5000 });
+  const markText = await page.evaluate(() => document.querySelector('.sr-row.hit .srx mark').textContent);
+  assert.strictEqual(markText, 'heartbeat', 'mark wraps exactly the matched term');
+  const markCount = await page.evaluate(() => document.querySelectorAll('.sr-row.hit .srx mark').length);
+  assert.ok(markCount >= 4, 'every hit row marks its match: ' + markCount);
+  // hit tint is its own token, distinct from the viewer selection green
+  const tokens = await page.evaluate(() => {
+    const cs = getComputedStyle(document.body);
+    return { hit: cs.getPropertyValue('--hit').trim(), sel: cs.getPropertyValue('--selection').trim() };
+  });
+  assert.ok(tokens.hit.length > 0, '--hit token defined');
+  assert.notStrictEqual(tokens.hit, tokens.sel, '--hit differs from --selection');
+  const hitBg = await page.evaluate(() => getComputedStyle(document.querySelector('.sr-row.hit')).backgroundColor);
+  const selToken = await page.evaluate(() => getComputedStyle(document.body).getPropertyValue('--selection').trim());
+  assert.ok(!hitBg.includes('19, 78, 47'), 'hit row no longer paints the selection green: ' + hitBg + ' vs ' + selToken);
+  // checkboxes: custom themed control at >= 17px (measured while the search tab is visible)
+  const cb = await page.evaluate(() => {
+    const el = document.getElementById('rg-fixed');
+    const cs = getComputedStyle(el);
+    return { w: el.getBoundingClientRect().width, appearance: cs.appearance || cs.webkitAppearance };
+  });
+  assert.ok(cb.w >= 17, 'checkbox target >= 17px: ' + cb.w);
+  assert.strictEqual(cb.appearance, 'none', 'checkbox uses the custom appearance');
+  // sidebar text input is themed, not browser-default white
+  const ffBg = await page.evaluate(() => getComputedStyle(document.getElementById('file-filter')).backgroundColor);
+  assert.notStrictEqual(ffBg, 'rgb(255, 255, 255)', 'sidebar input themed: ' + ffBg);
+  // disabled pager buttons are visibly dimmed (demo = single page)
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForFunction(() => document.getElementById('page-first').disabled, null, { timeout: 5000 });
+  const op = await page.evaluate(() => getComputedStyle(document.getElementById('page-first')).opacity);
+  assert.ok(parseFloat(op) < 1, 'disabled pager button dimmed: ' + op);
+});
