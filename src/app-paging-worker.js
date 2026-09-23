@@ -75,7 +75,7 @@ self.onmessage = async ({ data: m }) => {
       let last = 0;
       const sample = await s.index((bytes) => { if (performance.now() - last > 60) { emit(id, { progress: 'Indexing… ' + Math.floor(bytes / Math.max(1, m.file.size) * 100) + '%', bytes }); last = performance.now(); } }, () => token !== indexToken, m.sampleLimit);
       nextBase += s.count; sources.push(s); allOrder = null; version++; orderRevision++;
-      emit(id, { count: s.count, counts: s.counts, format: s.format, firstLine: s.firstLine, maxLength: s.maxLength, sample });
+      emit(id, { count: s.count, counts: s.counts, format: s.format, firstLine: s.firstLine, maxLength: s.maxLength, utf8: s.utf8 !== false, sample });
     } else if (type === 'query' || type === 'search') await query(id, m.spec, type === 'search');
     else if (type === 'page') {
       // export callers pin the result set: reject if the scope changed since
