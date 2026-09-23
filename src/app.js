@@ -1740,10 +1740,10 @@
   }
 
   /* Archive export: group the masked kept lines by source file and re-pack
-   * them with the original (post-extraction) structure, e.g. bundle/a.log. */
-  const ARCHIVE_BUFFER_LIMIT = 32 * 1024 * 1024;
+   * them with the original (post-extraction) structure, e.g. bundle/a.log.
+   * zip / tar.gz / tar stream straight to the export sink (nothing buffered
+   * whole); .7z and selection-only keep the bounded buffered writer. */
   async function exportArchive() {
-    let approxBytes = 0;
     const format = $('exp-archive-format').value;
     const note = $('exp-archive-note');
     const selectionOnly = $('exp-selection').checked;
@@ -1752,39 +1752,85 @@
     const ac = new AbortController();
     exportAbortController = ac;
     $('exp-archive-cancel')?.classList.remove('hidden');
-    const eng = makeExportMasker();
-    const fileById = {};
-    for (const f of files) fileById[f.id] = f;
-    const groups = new Map();
-    let total = 0;
+    let sink = null;
+    const finish = async (msg) => { note.textContent = msg; $('exp-archive-cancel')?.classList.add('hidden'); exportAbortController = null; };
+    const stale = () => { const e = new Error('the export scope changed during export — retry'); e.stale = true; return e; };
     try {
-      for await (const batch of iterExportBatches(selectionOnly, selectionIndices, { signal: exportAbortController.signal, expectedRevision })) {
-        for (const r of batch) {
-          const key = r.fileId;
-          if (!groups.has(key)) groups.set(key, { name: (fileById[key] && fileById[key].name) || key + '.log', text: [] });
-          const line = state.maskOn ? eng.maskLine(r.raw) : r.raw;
-          groups.get(key).text.push(line);
-          total++;
-          approxBytes += line.length + 1 + 512;
-          if (approxBytes > ARCHIVE_BUFFER_LIMIT) {
-            const err = new Error('Archive exceeds the buffered limit. Use TXT/CSV with direct file saving, or narrow the export with filters. No archive was created.');
-            err.limit = true; throw err;
+      if (!selectionOnly && format === '7z') {
+        // 7z sizes live in the start header — nothing to stream against; keep
+        // the bounded buffered writer and say so plainly
+        const err = new Error('.7z is written from a bounded buffer. Choose .zip / .tar.gz / .tar for large exports — they stream straight to disk. No archive was created.');
+        err.limit = true; throw err;
+      }
+      if (selectionOnly) {
+        // selection sets are small by construction — keep the buffered writer
+        const eng = makeExportMasker();
+        const fileById = {};
+        for (const f of files) fileById[f.id] = f;
+        const groups = new Map();
+        let total = 0;
+        for await (const batch of iterExportBatches(true, selectionIndices, { signal: ac.signal, expectedRevision })) {
+          for (const r of batch) {
+            const key = r.fileId;
+            if (!groups.has(key)) groups.set(key, { name: (fileById[key] && fileById[key].name) || key + '.log', text: [] });
+            groups.get(key).text.push(state.maskOn ? eng.maskLine(r.raw) : r.raw);
+            total++;
           }
         }
+        const entries = [...groups.values()]
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .map((g) => ({ name: g.name, data: new TextEncoder().encode(g.text.join('\n') + '\n') }));
+        if (!entries.length) { await finish('nothing to export.'); return; }
+        const blob = new Blob([await LT.buildArchive(entries, format)], { type: 'application/octet-stream' });
+        download(blob, LT.timestampedName(new Date(), 'log-triage-extract', format));
+        await finish('exported ' + entries.length + ' file(s), ' + total.toLocaleString() + ' line(s) as .' + format + (format === '7z' ? ' (stored, no recompression)' : '') + '.');
+        return;
       }
-    } catch (err) { note.textContent = 'archive export failed: ' + err.message; return; }
-    const entries = [...groups.values()]
-      .sort((a, b) => a.name.localeCompare(b.name))
-      .map((g) => ({ name: g.name, data: new TextEncoder().encode(g.text.join('\n') + '\n') }));
-    if (!entries.length) { note.textContent = 'nothing to export.'; return; }
-    exportAbortController = null;
-    note.textContent = 'packing ' + entries.length + ' file(s), ' + total.toLocaleString() + ' line(s) as .' + format + '…';
-    try {
-      const blob = new Blob([await LT.buildArchive(entries, format)], { type: 'application/octet-stream' });
-      download(blob, LT.timestampedName(new Date(), 'log-triage-extract', format));
-      note.textContent = 'exported ' + entries.length + ' file(s) as .' + format + (format === '7z' ? ' (stored, no recompression)' : '') + '.';
+      // streaming path: one archive entry per source file, paged from the
+      // worker with the current filter scope and written straight to the sink
+      const spec = {
+        fileId: state.viewMode === 'file' ? state.activeFile : null,
+        rules: filter.rules, quick: filter.quick, levels: filter.levels,
+        timeFrom: filter.timeFrom, timeTo: filter.timeTo,
+        bookmarkOnly: state.showOnlyBookmarked,
+        bookmarks: files.map((f) => [f.id, bookmarksStore.list(bookmarkKeyFor(f.id)).map((b) => b.lineNo)]),
+      };
+      const exportFiles = [];
+      for (const f of [...files].sort((a, b) => a.name.localeCompare(b.name))) {
+        const r = await paging.request('exportInit', { fileId: f.id, spec, expectedRevision }, (p) => { if (p.progress) note.textContent = 'preparing ' + f.name + ' — ' + p.progress; });
+        if (r.stale) throw stale();
+        if (r.total > 0) exportFiles.push({ name: f.name, total: r.total });
+      }
+      if (!exportFiles.length) { await finish('nothing to export.'); return; }
+      sink = await LT.openExportSink({ name: LT.timestampedName(new Date(), 'log-triage-extract', format), mime: 'application/octet-stream' });
+      const entries = exportFiles.map((f) => ({
+        name: f.name,
+        chunksFactory: async function* () {
+          const eng = makeExportMasker(); // fresh per pass (tar runs the factory twice)
+          const te = new TextEncoder();
+          for (let start = 0; ; start += EXPORT_BATCH) {
+            ac.signal.throwIfAborted();
+            const part = await paging.request('exportPage', { start, size: EXPORT_BATCH, expectedRevision });
+            if (part.stale) throw stale();
+            if (!part.rows.length) break;
+            const lines = part.rows.map((r) => (state.maskOn ? eng.maskLine(r.raw) : r.raw));
+            yield te.encode(lines.join('\n') + '\n');
+            if (start + part.rows.length >= part.total) break;
+          }
+        },
+      }));
+      let lastNote = 0;
+      const total = await LT.streamArchive(entries, format, (b) => sink.write(b), {
+        signal: ac.signal,
+        onBytes: (n) => { if (Date.now() - lastNote > 150) { lastNote = Date.now(); note.textContent = 'packing ' + exportFiles.length + ' file(s) — ' + (n / 1048576).toFixed(1) + ' MB…'; } },
+      });
+      await sink.close();
+      sink = null;
+      await finish('exported ' + exportFiles.length + ' file(s), ' + (total / 1048576).toFixed(1) + ' MB as .' + format + ' (streamed).');
     } catch (err) {
-      note.textContent = 'archive export failed: ' + err.message;
+      if (err && err.cancelled) { await finish('archive export cancelled.'); return; }
+      if (sink) { try { await sink.abort(); } catch (e) { /* best effort */ } sink = null; }
+      await finish(err && err.limit ? err.message : 'archive export failed: ' + (err ? err.message : 'unknown error'));
     }
   }
   function st() { return store.stats(); }
@@ -2504,6 +2550,7 @@
     $('exp-selection').onchange = syncExportButtons;
     $('exp-bookmarks').onclick = () => exportRecords('bookmarks');
     $('exp-archive').onclick = () => { exportArchive(); };
+    $('exp-archive-cancel').onclick = () => { if (exportAbortController) exportAbortController.abort(); };
 
     // restore UI state
     $('quick').value = state.quick || '';

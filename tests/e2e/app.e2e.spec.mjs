@@ -2026,7 +2026,12 @@ test('archive export re-packs the extract (.7z stored) as a download', { skip: !
   await fresh();
   await page.setInputFiles('#file-input', [sevenZipBundle()]);
   await page.waitForFunction(() => document.querySelectorAll('.file-item .fname').length === 2, null, { timeout: 15000 });
+  // .7z keeps the bounded buffered writer, which is selection-scoped: select all rows first
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.keyboard.press('Control+a');
+  await page.waitForFunction(() => document.getElementById('st-sel') && Number(document.getElementById('st-sel').textContent.replace(/\D/g, '')) > 0, null, { timeout: 5000 });
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  await page.evaluate(() => { document.getElementById('exp-selection').checked = true; });
   await page.evaluate(() => {
     const sel = document.getElementById('exp-archive-format');
     sel.value = '7z';
@@ -2041,6 +2046,87 @@ test('archive export re-packs the extract (.7z stored) as a download', { skip: !
   assert.deepStrictEqual([...magic], [0x37, 0x7a, 0xbc, 0xaf, 0x27, 0x1c], 'download is a real 7z');
   const note = await page.evaluate(() => document.getElementById('exp-archive-note').textContent);
   assert.match(note, /exported/);
+});
+
+test('.7z full-scope export explains the buffered limit and streams zip instead', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  await page.evaluate(() => {
+    const sel = document.getElementById('exp-archive-format');
+    sel.value = '7z';
+    sel.dispatchEvent(new Event('change'));
+  });
+  await click('exp-archive');
+  await page.waitForFunction(() => /bounded buffer/.test(document.getElementById('exp-archive-note').textContent), null, { timeout: 5000 });
+  // streaming zip works from the current view
+  await page.evaluate(() => {
+    const sel = document.getElementById('exp-archive-format');
+    sel.value = 'zip';
+    sel.dispatchEvent(new Event('change'));
+  });
+  // mock the direct-save picker with an in-memory writable so the streamed
+  // bytes can be verified without touching the real file system
+  await page.evaluate(() => {
+    window.__sink = [];
+    window.__sinkClosed = false;
+    window.showSaveFilePicker = async () => ({
+      createWritable: async () => ({
+        async write(b) { window.__sink.push(b); return window.__sink.reduce((s, c) => s + c.byteLength, 0); },
+        async close() { window.__sinkClosed = true; },
+        async abort() { window.__sinkAborted = true; },
+      }),
+    });
+  });
+  await click('exp-archive');
+  await page.waitForFunction(() => window.__sinkClosed === true, null, { timeout: 15000 });
+  const size = await page.evaluate(() => window.__sink.reduce((s, c) => s + c.byteLength, 0));
+  assert.ok(size > 0, 'zip streamed bytes: ' + size);
+  const magic = await page.evaluate(() => [window.__sink[0][0], window.__sink[0][1], window.__sink[0][2], window.__sink[0][3]].join(','));
+  assert.strictEqual(magic, '80,75,3,4', 'PK\\x03\\x04 local header');
+  const eocd = await page.evaluate(() => {
+    const all = window.__sink.reduce((acc, b) => { const o = new Uint8Array(acc.length + b.length); o.set(acc); o.set(b, acc.length); return o; }, new Uint8Array(0));
+    return [all[all.length - 22], all[all.length - 21], all[all.length - 20], all[all.length - 19]].join(',');
+  });
+  assert.strictEqual(eocd, '80,75,5,6', 'PK\\x05\\x06 end of central directory');
+  const note = await page.evaluate(() => document.getElementById('exp-archive-note').textContent);
+  assert.match(note, /streamed/);
+});
+
+test('archive export streams a >32 MiB extract straight to the sink (uncapped zip)', async () => {
+  await fresh();
+  const osmod = await import('node:os');
+  const tmp = join(osmod.tmpdir(), 'lt-big-archive.log');
+  const filler = 'x'.repeat(170);
+  const lines = [];
+  for (let i = 0; i < 190000; i++) lines.push('08-24 15:37:01.123  1234  5678 I BigFeed : ' + filler + ' seq=' + i);
+  fs.writeFileSync(tmp, lines.join('\n') + '\n');
+  await page.setInputFiles('#file-input', [tmp]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '190000', null, { timeout: 120000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  await page.evaluate(() => {
+    const sel = document.getElementById('exp-archive-format');
+    sel.value = 'zip';
+    sel.dispatchEvent(new Event('change'));
+    window.__sink = [];
+    window.__sinkClosed = false;
+    window.showSaveFilePicker = async () => ({
+      createWritable: async () => ({
+        async write(b) { window.__sink.push(b); return window.__sink.reduce((s, c) => s + c.byteLength, 0); },
+        async close() { window.__sinkClosed = true; },
+        async abort() { window.__sinkAborted = true; },
+      }),
+    });
+  });
+  await click('exp-archive');
+  await page.waitForFunction(() => window.__sinkClosed === true, null, { timeout: 120000 });
+  const size = await page.evaluate(() => window.__sink.reduce((s, c) => s + c.byteLength, 0));
+  assert.ok(size > 32 * 1024 * 1024, 'streamed beyond the old buffered limit: ' + (size / 1048576).toFixed(1) + ' MB');
+  const magic = await page.evaluate(() => [window.__sink[0][0], window.__sink[0][1], window.__sink[0][2], window.__sink[0][3]].join(','));
+  assert.strictEqual(magic, '80,75,3,4', 'zip magic');
+  const note = await page.evaluate(() => document.getElementById('exp-archive-note').textContent);
+  assert.match(note, /streamed/);
 });
 
 test('dlt-viewer text export: badge, chips, drawer fields, masking, quick filter, masked export', async () => {
