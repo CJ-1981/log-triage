@@ -231,6 +231,7 @@
       const result = await paging.request('index', { fileId: entry.id, file: entry.file, sampleLimit: Math.min(100000, state.cap || 100000) }, (p) => { entry.read = p.bytes || entry.read; busyMessage(bt, p.progress); });
       if (ingestAbort || !files.includes(entry)) return;
       entry.format = result.format; entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
+      entry.utf8 = result.utf8 !== false; // false => head failed strict UTF-8 validation
       const f = store._files[entry.id];
       Object.assign(f, { total: result.count, kept: result.count, dropped: 0, bytes: entry.size, levelCounts: result.counts });
       store._keptTotal += result.count;
@@ -389,6 +390,7 @@
       div.innerHTML = '<button class="fx" data-remove="' + esc(f.id) + '" title="remove this file">✕</button>' +
         '<div class="fname">' + esc(f.name) + '</div>' +
         '<div class="fmeta"><span class="badge fmt">' + esc(f.format) + '</span>' +
+        (f.utf8 === false ? '<span class="badge enc" title="not valid UTF-8 — decoded with replacement characters; text may be garbled">enc?</span>' : '') +
         '<span>' + LT.fmtBytes(f.size) + '</span><span>' + st.total + ' lines</span>' +
         '<span>' + st.kept + ' kept</span></div>';
       div.onclick = (e) => {
@@ -420,6 +422,7 @@
         div.title = 'cached — click to load';
         div.insertAdjacentHTML('beforeend', '<div class="fname">' + esc(c.name) + '</div>' +
           '<div class="fmeta"><span class="badge fmt">' + esc(c.format || '—') + '</span>' +
+          (c.utf8 === false ? '<span class="badge enc" title="not valid UTF-8 — decoded with replacement characters; text may be garbled">enc?</span>' : '') +
           '<span>' + LT.fmtBytes(c.size) + '</span><span>cached — click to load</span></div>');
         div.onclick = () => loadCachedFile(c);
       } else {

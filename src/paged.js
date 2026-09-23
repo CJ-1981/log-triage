@@ -40,8 +40,18 @@
       this.offsets = new Column(Float64Array); this.times = new Column(Float64Array); this.levels = new Column(Uint8Array);
       this.format = 'plain'; this.counts = {}; this.firstLine = ''; this.maxLength = 0;
       this.cache = new Map(); this.cacheBytes = 0;
+      this.utf8 = true; // set false by index() when the head fails strict UTF-8 validation
     }
     async index(onProgress, cancelled, sampleLimit = 2000) {
+      // encoding sniff: strict-validate the first 64 KB so the UI can flag
+      // files that decode with replacement characters (garbled text). A
+      // sequence truncated at the slice boundary is buffered by {stream:true}
+      // instead of throwing; the BOM is stripped by the decoder itself.
+      try {
+        const head = new Uint8Array(await this.file.slice(0, 65536).arrayBuffer());
+        new TextDecoder('utf-8', { fatal: true }).decode(head, { stream: true });
+        this.utf8 = true;
+      } catch (e) { this.utf8 = false; }
       const pending = []; let detected = false, lastTime = 0;
       // analysis sample = first half of the budget (file head: format intro,
       // boot lines) + a ring of the newest rest (crashes usually land late).

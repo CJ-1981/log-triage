@@ -276,7 +276,15 @@
         while (j < chunk.length) {
           const c = chunk[j];
           if (!isTextByte(c)) break;
-          if ((c >= 32 && c <= 126) || c === 9) good++;
+          if ((c >= 32 && c <= 126) || c === 9) { good++; j++; continue; }
+          if (c >= 0xc2 && c <= 0xf4) {
+            // a well-formed UTF-8 multi-byte sequence counts as printable
+            // text, so CJK runs (3 bytes per char) survive the 80% bar
+            const need = c >= 0xf0 ? 3 : c >= 0xe0 ? 2 : 1;
+            let ok = j + need < chunk.length;
+            for (let k = 1; ok && k <= need; k++) ok = (chunk[j + k] & 0xc0) === 0x80;
+            if (ok) { good += need + 1; j += need + 1; continue; }
+          }
           j++;
         }
         const seg = chunk.subarray(i, j);
