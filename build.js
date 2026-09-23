@@ -23,6 +23,7 @@ const MODULE_ORDER = [
   'bookmarks.js',
   'exporter.js',
   'export-stream.js',
+  'export-archive.js',
   'themes.js',
   'issues.js',
   'lzma.js',

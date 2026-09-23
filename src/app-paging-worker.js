@@ -3,6 +3,7 @@
 const sources = [];
 let nextBase = 0, queryToken = 0, searchToken = 0, indexToken = 0;
 let order = new Float64Array(), searchOrder = new Float64Array();
+let exportOrder = new Float64Array(); // per-file result set for streaming archive export
 let allOrder = null, version = 0;
 let orderRevision = 1; // bumped whenever the visible result set changes
 const emit = (id, value) => self.postMessage(Object.assign({ id }, value));
@@ -86,6 +87,37 @@ self.onmessage = async ({ data: m }) => {
       emit(id, { rows, start, total: ids.length });
     }
     else if (type === 'record') { const s = sources.find((s) => s.id === m.fileId && !s.removed); emit(id, { record: s ? await s.get(m.lineNo - 1) : null }); }
+    else if (type === 'exportInit') {
+      // build the per-file filtered result set for a streaming archive entry,
+      // stored in a dedicated slot so the live view's order/revision are untouched
+      if (m.expectedRevision != null && m.expectedRevision !== orderRevision) { emit(id, { stale: true, total: 0 }); return; }
+      const s = sources.find((x) => x.id === m.fileId && !x.removed);
+      if (!s) { exportOrder = new Float64Array(); emit(id, { total: 0, revision: orderRevision }); return; }
+      const filter = new LT.FilterEngine();
+      filter.setRules(m.spec.rules || []); filter.setLevels(m.spec.levels || []); filter.quick = m.spec.quick || null;
+      filter.timeFrom = m.spec.timeFrom || ''; filter.timeTo = m.spec.timeTo || '';
+      const bookmarkSets = new Map((m.spec.bookmarks || []).map(([fid, lines]) => [fid, new Set(lines)]));
+      const bm = m.spec.bookmarkOnly ? (bookmarkSets.get(s.id) || new Set()) : null;
+      const rawNeeded = !!filter.quick || filter.rules.some((r) => r.enabled && r.action !== 'highlight');
+      const matches = new LT.Column(Float64Array);
+      let i = 0, last = 0;
+      const progress = (frac) => { if (performance.now() - last > 60) { last = performance.now(); emit(id, { progress: 'Preparing ' + (Math.floor(frac * 100)) + '%' }); } };
+      const accepts = (rec, index) => (!bm || bm.has(index + 1)) && filter.evaluate(rec).kept;
+      if (rawNeeded) {
+        for await (const line of LT.byteLines(s.file, null, () => false)) { const rec = Object.assign({ raw: line.raw }, s.metadata(i)); if (accepts(rec, i)) matches.push(s.base + i); i++; progress(i / Math.max(1, s.count)); }
+      } else {
+        for (; i < s.count; i++) { if (accepts(s.metadata(i), i)) matches.push(s.base + i); if ((i & 16383) === 0) { progress(i / Math.max(1, s.count)); await new Promise((r) => setTimeout(r, 0)); } }
+      }
+      exportOrder = new Float64Array(matches.length);
+      for (let k = 0; k < matches.length; k++) exportOrder[k] = matches.get(k);
+      emit(id, { total: exportOrder.length, revision: orderRevision });
+    }
+    else if (type === 'exportPage') {
+      if (m.expectedRevision != null && m.expectedRevision !== orderRevision) { emit(id, { stale: true, total: 0, rows: [], start: m.start }); return; }
+      const rows = await records(exportOrder, m.start, m.size);
+      if (m.expectedRevision != null && m.expectedRevision !== orderRevision) { emit(id, { stale: true, total: 0, rows: [], start: m.start }); return; }
+      emit(id, { rows, start: m.start, total: exportOrder.length });
+    }
     else if (type === 'locate') { let at = -1; const s = sources.find((s) => s.id === m.fileId && !s.removed); if (s) { const value = s.base + m.lineNo - 1; for (let i = 0; i < order.length; i++) { if (order[i] === value) { at = i; break; } if ((i & 65535) === 0) await new Promise((r) => setTimeout(r, 0)); } } emit(id, { at }); }
     else if (type === 'remove') { queryToken++; searchToken++; indexToken++; orderRevision++; const s = sources.find((s) => s.id === m.fileId); if (s) { s.removed = true; s.cache.clear(); s.offsets = s.times = s.levels = null; } allOrder = null; version++; emit(id, {}); }
     else if (type === 'cancel') { queryToken++; searchToken++; indexToken++; emit(id, {}); }

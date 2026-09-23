@@ -95,7 +95,7 @@ Note: the G0–G8 records below are historical — they describe the design veri
 - **Browser:** `build.js` inlines the identical file into `log-triage.html`; opening it with `?selftest` executes the suite and reports pass/fail counts and failing case names.
 - **Guarantee:** any behavior change must be expressed as a case update, so Node CI and the in-browser self-test can never disagree.
 
-## E2e scope (Playwright — 76 specs: 68 app + 8 stress)
+## E2e scope (Playwright — 78 specs: 70 app + 8 stress)
 
 App suite (55 specs) — coverage includes:
 
@@ -117,7 +117,7 @@ App suite (55 specs) — coverage includes:
 16. Analysis file selector: scoping to one file or all updates every section; issue entries click-jump with auto-switch.
 17. ★ only-bookmarks chip in the level-chips row: appears with a live bookmarked count when bookmarks exist in scope, click toggles the filter, hidden otherwise.
 18. `.7z` ingest: a real 7-Zip-built archive (solid LZMA2, subfolder, file names with directories) is loaded through the file input; both extracted entries appear in the file list, the inner log is detected as logcat, and line counts match (skips when no 7-Zip CLI; CI installs `p7zip-full`).
-19. Archive export: the export tab re-packs the extract as `.7z` (format dropdown) — the download's first bytes are the 7z signature `37 7A BC AF 27 1C` and the status line confirms (same skip condition).
+19. Archive export: the export tab re-packs the extract as `.7z` (format dropdown, selection-scoped since v1.45.0) — the download's first bytes are the 7z signature `37 7A BC AF 27 1C` and the status line confirms (same skip condition). Streaming formats (v1.45.0, ADR-0015): `.7z` without a selection shows the bounded-buffer note; `.zip` streams to a mocked direct-save sink (PK\x03\x04 first, PK\x05\x06 last, status "streamed"), and a 190k-line / ~44 MB fixture streams past the old 32 MiB buffered limit end to end. Unit round-trips pin the writer: zip extracts via the in-house reader, tar via parseTar, tar.gz via gunzipData + parseTar, zip = 1 factory pass vs tar = 2, plus cancellation and write-error propagation.
 20. Bookmarks-panel Clear button: a live demo bookmark plus an injected stale entry (unloaded `ghost.log`) are both listed; Clear wipes **all** bookmarks — count pill and status-bar counter reset to 0, the ★ chip disappears, and the status line reports "cleared 2 bookmark(s)"; a second click is a clean no-op.
 21. Bookmarks per-entry ✕: removing one entry leaves the other untouched, updates the pill and status counters, and never triggers the click-to-jump drawer; removing the last entry drops the ★ chip.
 22. Theme 🎨 icon dropdown: opens from the header icon, applies the picked theme and persists across reload, closes on selection and outside click; at a 390px viewport the icon keeps the header on a single line.
