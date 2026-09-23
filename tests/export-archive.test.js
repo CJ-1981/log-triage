@@ -93,3 +93,16 @@ test('streamArchive honors cancellation and propagates write errors', async () =
   );
   await assert.rejects(EA.streamArchive(mkEntries(groups), '7z', () => {}, {}), /not streamable/);
 });
+
+test('tar.gz without CompressionStream fails with an actionable message', async () => {
+  const saved = globalThis.CompressionStream;
+  delete globalThis.CompressionStream;
+  try {
+    await assert.rejects(
+      EA.streamArchive(mkEntries([{ name: 'a.log', lines: ['x'] }]), 'tar.gz', () => Promise.resolve(), {}),
+      /\.zip or \.tar/,
+    );
+  } finally {
+    globalThis.CompressionStream = saved;
+  }
+});
