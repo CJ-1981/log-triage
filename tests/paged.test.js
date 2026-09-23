@@ -141,3 +141,22 @@ test('sortIds orders by comparator and reports cancellation', async () => {
   const empty = await LT.sortIds(new Float64Array(0), (a, b) => a - b, () => false);
   assert.strictEqual(empty.length, 0);
 });
+
+test('PagedLog.index pins BOM handling and flags non-UTF-8 files', async () => {
+  const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+  const text = LOGCAT.join('\n') + '\n';
+  const log = new LT.PagedLog(new Blob([bom, text]), 'f1', 0);
+  await log.index(null, null, 10);
+  assert.strictEqual(log.utf8, true, 'clean utf-8 (with BOM) flagged utf8');
+  assert.strictEqual(log.format, 'logcat', 'BOM does not disturb detection');
+  const rec0 = await log.get(0);
+  assert.ok(!rec0.raw.startsWith('\uFEFF'), 'no BOM char in first record');
+  assert.strictEqual(rec0.ts, '09-11 22:14:01.100', 'first line parses despite BOM');
+  assert.ok(!log.firstLine.startsWith('\uFEFF'), 'firstLine has no BOM');
+  // a latin-1 byte (0xE9) is invalid utf-8
+  const bad = new Blob([Buffer.from('09-11 22:14:01.100  1  2 I T: caf\xe9 broken\n09-11 22:14:02.100  1  2 I T: ok\n', 'latin1')]);
+  const log2 = new LT.PagedLog(bad, 'f2', 0);
+  await log2.index(null, null, 10);
+  assert.strictEqual(log2.utf8, false, 'invalid utf-8 flagged false');
+  assert.strictEqual(log2.count, 2, 'lines still split and counted');
+});

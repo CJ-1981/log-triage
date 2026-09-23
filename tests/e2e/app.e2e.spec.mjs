@@ -2336,3 +2336,23 @@ test('analysis census: scope change keeps the open category; samples cap at 25',
   const kinds2 = await page.evaluate(() => Array.from(document.querySelectorAll('#tab-analysis .census-card')).map((b) => b.dataset.census));
   assert.deepStrictEqual(kinds2, ['vin'], 'VIN-only file renders exactly one card');
 });
+
+test('non-UTF-8 file gets an encoding warning badge in the files panel', async () => {
+  await fresh();
+  const osmod = await import('node:os');
+  const tmp = join(osmod.tmpdir(), 'lt-latin1-enc.log');
+  const line = '08-24 15:37:01.123  1234  5678 I Tag: caf\xe9 latin1 line\n';
+  fs.writeFileSync(tmp, Buffer.from(line.repeat(3), 'latin1'));
+  await page.setInputFiles('#file-input', [tmp]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '3', null, { timeout: 8000 });
+  const badge = await page.evaluate(() => {
+    const b = document.querySelector('.file-item .badge.enc');
+    return b ? b.title : null;
+  });
+  assert.ok(badge && /utf-8/i.test(badge), 'enc badge carries an explanatory title: ' + badge);
+  // a clean UTF-8 file added alongside shows no badge
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '47', null, { timeout: 8000 });
+  const badges = await page.evaluate(() => document.querySelectorAll('.file-item .badge.enc').length);
+  assert.strictEqual(badges, 1, 'only the latin-1 file is badged');
+});

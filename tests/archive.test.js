@@ -356,6 +356,20 @@ test('boardBinToText extracts text lines from a binary board dump', async () => 
   assert.ok(!text.includes('\u0000'), 'no NUL bytes in extracted text');
 });
 
+test('boardBinToText keeps UTF-8 CJK runs and still rejects invalid high bytes', async () => {
+  const parts = [];
+  parts.push(Buffer.from([0, 1, 2, 255, 254, 0]));            // binary junk
+  parts.push(Buffer.from('09-11 22:14:01 I Loc: 车辆定位 thread created ok\n', 'utf8'));
+  parts.push(Buffer.from([255, 254, 0, 7]));                   // junk
+  // invalid utf-8: lone 0xE9 lead bytes with no continuation — 3/8 bytes bad, below the 80% bar
+  parts.push(Buffer.concat([Buffer.from('AB', 'latin1'), Buffer.from([0xe9, 0xe9, 0xe9]), Buffer.from('CD\n', 'latin1')]));
+  const bin = Buffer.concat(parts);
+  const out = await ar.boardBinToText(new Uint8Array(bin), 1024 * 1024, () => {});
+  const text = Buffer.from(out).toString('utf8');
+  assert.match(text, /车辆定位/, 'valid UTF-8 CJK run kept');
+  assert.ok(!text.includes('AB'), 'run with invalid high bytes still rejected');
+});
+
 test('boardBinToText keeps the newest text within the cap', async () => {
   const ar2 = require('../src/archive.js');
   const parts = [];
