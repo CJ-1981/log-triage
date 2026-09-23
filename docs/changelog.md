@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.45.1 (2026-09-23)
+- Merge pull request #41 from CJ-1981/fix/archive-review-followups
+- fix: archive export honors per-file scope, single-flight guard, cancellable prepare
+- test: pin archive export review follow-ups (view scope, single-flight, no-CompressionStream)
+
 ## 1.45.0 (2026-09-23)
 - Merge pull request #40 from CJ-1981/feat/archive-streaming
 - docs: streaming archive export (FR-26 AC-6, ADR-0015)
