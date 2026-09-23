@@ -2484,8 +2484,12 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   };
 
   /** Scan records against issue groups; at most one finding per line (first
-   * matching group wins), capped at 200. nameOf formats a fileId for display. */
-  function issueScan(records, groups, nameOf) {
+   * matching group wins), capped at 200. nameOf formats a fileId for display.
+   * maskText (optional) sanitizes the displayed snippet — applied to the FULL
+   * text before the 110-char slice so a PII token straddling the boundary
+   * cannot leak a raw fragment. Matching always runs on the raw line, so
+   * detection behavior is independent of the mask toggle. */
+  function issueScan(records, groups, nameOf, maskText) {
     const out = [];
     const name = nameOf || ((id) => id);
     const regexes = [];
@@ -2495,7 +2499,8 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     for (const r of records || []) {
       for (const g of regexes) {
         if (g.re.test(r.raw)) {
-          out.push({ kind: g.kind, snippet: (r.msg || r.raw).slice(0, 110), file: name(r.fileId), lineNo: r.lineNo, seq: r.seq, rec: r });
+          const src = String(r.msg || r.raw);
+          out.push({ kind: g.kind, snippet: (maskText ? maskText(src) : src).slice(0, 110), file: name(r.fileId), lineNo: r.lineNo, seq: r.seq, rec: r });
           break;
         }
       }
@@ -5621,14 +5626,20 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   }
   function topMessages(records, n) {
     const m = {};
-    for (const r of records) { const k = normMsg(r.msg || r.raw); m[k] = (m[k] || 0) + 1; }
+    const mask = analysisMaskText();
+    for (const r of records) { const src = String(r.msg || r.raw); const k = normMsg(mask ? mask(src) : src); m[k] = (m[k] || 0) + 1; }
     return Object.keys(m).map((k) => ({ k, n: m[k] })).sort((a, b) => b.n - a.n).slice(0, n);
   }
   function getIssueGroups() {
     return (state.issueGroups || LT.DEFAULT_ISSUE_GROUPS).filter((g) => g.on && g.pattern);
   }
   function issueScan(records) {
-    return LT.issueScan(records, getIssueGroups(), fileDisplayName);
+    return LT.issueScan(records, getIssueGroups(), fileDisplayName, analysisMaskText());
+  }
+  /** Mask function for analysis display surfaces; honors the viewer mask
+   * toggle so no analysis screen renders raw PII while masking is on. */
+  function analysisMaskText() {
+    return state.maskOn ? (t) => engine.maskLine(String(t)) : null;
   }
   let censusOpenType = null;
   function censusPanelHtml(census) {
@@ -6122,6 +6133,8 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     $('btn-mask').classList.toggle('on', on);
     displayCache = new Map();
     saveState(); renderRows();
+    // analysis surfaces render masked text — keep a visible analysis tab in sync
+    if ($('tab-analysis').classList.contains('active')) renderAnalysis();
   }
   function setWrap(on) {
     state.wrapOn = on;
@@ -7947,6 +7960,28 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   T('issues', 'built-in groups cover crash, ANR, process death, connectivity, auth, suspend', () => {
     deepEq(GROUPS.map((g) => g.kind).sort(), ['anr', 'auth', 'binder', 'boot', 'connectivity', 'crash', 'mem', 'proc-death', 'selinux', 'storage', 'subsys', 'suspend', 'thermal', 'watchdog']);
     for (const g of GROUPS) ok(g.pattern.length > 3, 'each group has a non-trivial pattern');
+  });
+
+  T('issues', 'issueScan masks snippets via the maskText option (mask before slice)', () => {
+    const mask = (t) => SRC.maskLine(String(t));
+    const found = SRC.issueScan(recs([
+      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed, credential rejected for driver.jung@lotus-tech.example',
+    ]), GROUPS, (id) => id, mask);
+    eq(found.length, 1, 'auth group matches');
+    ok(!found[0].snippet.includes('driver.jung@lotus-tech.example'), 'raw email never rendered');
+    ok(found[0].snippet.includes('d***@***.example'), 'masked email in snippet: ' + found[0].snippet);
+    // default (no maskText) keeps the legacy identity behavior
+    const plain = SRC.issueScan(recs([
+      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed for driver.jung@lotus-tech.example',
+    ]), GROUPS, (id) => id);
+    ok(plain[0].snippet.includes('driver.jung@'), 'identity default keeps snippet as-is');
+    // mask runs BEFORE the 110-char slice: an email starting at char 105 leaks nothing
+    const long = SRC.issueScan(recs([
+      'credential rejected ' + 'x'.repeat(84) + ' driver.jung@lotus-tech.example tail',
+    ]), GROUPS, (id) => id, mask);
+    eq(long.length, 1);
+    ok(!long[0].snippet.includes('driver'), 'no raw local-part fragment past the slice boundary');
+    ok(long[0].snippet.includes('d***'), 'masked form reaches into the slice');
   });
 
   T('issues', 'suspend-to-RAM transitions and wake reasons are flagged', () => {
