@@ -1233,6 +1233,28 @@
     for (const g of GROUPS) ok(g.pattern.length > 3, 'each group has a non-trivial pattern');
   });
 
+  T('issues', 'issueScan masks snippets via the maskText option (mask before slice)', () => {
+    const mask = (t) => SRC.maskLine(String(t));
+    const found = SRC.issueScan(recs([
+      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed, credential rejected for driver.jung@lotus-tech.example',
+    ]), GROUPS, (id) => id, mask);
+    eq(found.length, 1, 'auth group matches');
+    ok(!found[0].snippet.includes('driver.jung@lotus-tech.example'), 'raw email never rendered');
+    ok(found[0].snippet.includes('d***@***.example'), 'masked email in snippet: ' + found[0].snippet);
+    // default (no maskText) keeps the legacy identity behavior
+    const plain = SRC.issueScan(recs([
+      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed for driver.jung@lotus-tech.example',
+    ]), GROUPS, (id) => id);
+    ok(plain[0].snippet.includes('driver.jung@'), 'identity default keeps snippet as-is');
+    // mask runs BEFORE the 110-char slice: an email starting at char 105 leaks nothing
+    const long = SRC.issueScan(recs([
+      'credential rejected ' + 'x'.repeat(84) + ' driver.jung@lotus-tech.example tail',
+    ]), GROUPS, (id) => id, mask);
+    eq(long.length, 1);
+    ok(!long[0].snippet.includes('driver'), 'no raw local-part fragment past the slice boundary');
+    ok(long[0].snippet.includes('d***'), 'masked form reaches into the slice');
+  });
+
   T('issues', 'suspend-to-RAM transitions and wake reasons are flagged', () => {
     const found = SRC.issueScan(recs([
       '09-11 22:14:01.100  1000  2000 I PowerManagerService: Going to sleep due to timeout (uid 1000)',
