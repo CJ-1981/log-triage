@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.45.0 (2026-09-23)
+- Merge pull request #40 from CJ-1981/feat/archive-streaming
+- docs: streaming archive export (FR-26 AC-6, ADR-0015)
+- feat: archive export streams zip/tar/tar.gz to disk, uncapped
+- feat: streaming archive writer (zip data descriptors, two-pass tar, tar.gz)
+
 ## 1.44.5 (2026-09-19)
 - Merge pull request #39 from CJ-1981/fix/census-scroll-samples-visible
 - fix: census card click scrolls sample rows into view, not just the summary
