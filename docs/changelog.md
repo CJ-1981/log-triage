@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.46.0 (2026-09-23)
+- Merge pull request #42 from CJ-1981/feat/encoding-tier1
+- feat: encoding awareness - strict UTF-8 sniff with enc? badge, CJK-safe board-dump extraction
+- test: pin BOM handling, non-UTF-8 flagging, CJK board-dump rescue
+
 ## 1.45.1 (2026-09-23)
 - Merge pull request #41 from CJ-1981/fix/archive-review-followups
 - fix: archive export honors per-file scope, single-flight guard, cancellable prepare
