@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.47.0 (2026-09-23)
+- Merge pull request #44 from CJ-1981/fix/ui-search-tokens
+- feat: inline search match marks, per-theme hit tint, unified control surfaces
+- test: pin search-hit tint token and inline match marking
+
 ## 1.46.1 (2026-09-23)
 - Merge pull request #43 from CJ-1981/fix/analysis-mask-bypass
 - fix: mask analysis surfaces - issue snippets and top message shapes honor mask toggle
