@@ -134,8 +134,12 @@
     let gen;
     if (format === 'zip') gen = zipChunks(entries);
     else if (format === 'tar') gen = tarChunks(entries);
-    else if (format === 'tar.gz') gen = gzipWrap(tarChunks(entries));
-    else throw new Error(format + ' is not streamable — use the buffered export for this format');
+    else if (format === 'tar.gz') {
+      if (typeof CompressionStream !== 'function') {
+        throw new Error('this browser cannot compress streams (no CompressionStream) — choose .zip or .tar instead');
+      }
+      gen = gzipWrap(tarChunks(entries));
+    } else throw new Error(format + ' is not streamable — use the buffered export for this format');
     let written = 0;
     for await (const block of gen) {
       if (signal && signal.aborted) throw new Error('export cancelled');

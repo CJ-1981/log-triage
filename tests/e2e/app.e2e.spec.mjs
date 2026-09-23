@@ -2094,6 +2094,78 @@ test('.7z full-scope export explains the buffered limit and streams zip instead'
   assert.match(note, /streamed/);
 });
 
+test('archive export honors per-file view scope', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'demo.log'),
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+  ]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52', null, { timeout: 8000 });
+  // switch to per-file view (clicking a file item selects it)
+  await page.evaluate(() => document.querySelectorAll('.file-item')[1].click());
+  await page.waitForFunction(() => document.getElementById('view-mode').value === 'file', null, { timeout: 5000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  await page.evaluate(() => {
+    const sel = document.getElementById('exp-archive-format');
+    sel.value = 'zip';
+    sel.dispatchEvent(new Event('change'));
+    window.__sink = [];
+    window.__sinkClosed = false;
+    window.showSaveFilePicker = async () => ({
+      createWritable: async () => ({
+        async write(b) { window.__sink.push(b); },
+        async close() { window.__sinkClosed = true; },
+        async abort() {},
+      }),
+    });
+  });
+  await click('exp-archive');
+  await page.waitForFunction(() => window.__sinkClosed === true, null, { timeout: 15000 });
+  const note = await page.evaluate(() => document.getElementById('exp-archive-note').textContent);
+  assert.match(note, /exported 1 file\(s\)/, 'per-file view exports one archive entry: ' + note);
+  // the zip central directory must list exactly one entry
+  const entryCount = await page.evaluate(() => {
+    const all = window.__sink.reduce((acc, b) => { const o = new Uint8Array(acc.length + b.length); o.set(acc); o.set(b, acc.length); return o; }, new Uint8Array(0));
+    return all[all.length - 12] | (all[all.length - 11] << 8);
+  });
+  assert.strictEqual(entryCount, 1, 'zip holds exactly one entry');
+});
+
+test('archive export ignores a second click while one is running', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  await page.evaluate(() => {
+    const sel = document.getElementById('exp-archive-format');
+    sel.value = 'zip';
+    sel.dispatchEvent(new Event('change'));
+    window.__pickerCalls = 0;
+    window.__sinkClosed = false;
+    // the picker blocks until the test releases it, keeping the export in flight
+    window.showSaveFilePicker = async () => {
+      window.__pickerCalls++;
+      await new Promise((res) => { window.__release = res; });
+      return {
+        createWritable: async () => ({
+          async write() {},
+          async close() { window.__sinkClosed = true; },
+          async abort() {},
+        }),
+      };
+    };
+  });
+  await click('exp-archive');
+  await page.waitForFunction(() => window.__pickerCalls === 1, null, { timeout: 8000 });
+  await click('exp-archive'); // second click while the first is awaiting the picker
+  await page.waitForTimeout(300);
+  assert.strictEqual(await page.evaluate(() => window.__pickerCalls), 1, 'second click did not start another export');
+  await page.evaluate(() => window.__release());
+  await page.waitForFunction(() => window.__sinkClosed === true, null, { timeout: 15000 });
+  const note = await page.evaluate(() => document.getElementById('exp-archive-note').textContent);
+  assert.match(note, /streamed/, 'first export completed normally: ' + note);
+});
+
 test('archive export streams a >32 MiB extract straight to the sink (uncapped zip)', async () => {
   await fresh();
   const osmod = await import('node:os');
