@@ -8,6 +8,9 @@
 
   /* ---------------- state ---------------- */
   const STATE_KEY = 'log_triage_state_v1';
+  // captured at load, before any boot-time saveState(): a fresh session must
+  // stay distinguishable from a restored one (narrow-boot wrap default)
+  const HAD_SAVED_STATE = !!localStorage.getItem(STATE_KEY);
   const defaults = () => ({
     theme: LT.DEFAULT_THEME || 'midnight',
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null, drawerOn: true,
@@ -2054,6 +2057,8 @@
     $('btn-wrap').classList.toggle('on', on);
     // nowrap keeps long lines on one scrollable row; wrap clips to the column
     viewer().classList.toggle('nowrap', !on);
+    // narrow screens get a right-edge fade while rows can overflow horizontally
+    $('viewer-wrap').classList.toggle('h-clip', !on);
     invalidateHeights(); saveState(); renderRows();
   }
   function setSearchWrap(on) {
@@ -2360,6 +2365,14 @@
       state.sideTouched = true;
       applySide(); saveState(); invalidateHeights(); renderRows();
     };
+    // narrow-screen files overlay: tap-outside (scrim) and the panel ✕ both close
+    $('side-scrim').onclick = () => { if (!state.sideHidden) $('btn-side').click(); };
+    $('side-close').onclick = () => { if (!state.sideHidden) $('btn-side').click(); };
+    // narrow-screen toolbar overflow: ⋯ reveals the secondary viewer controls
+    $('vtools-more').onclick = () => {
+      const open = document.body.classList.toggle('vtools-open');
+      $('vtools-more').setAttribute('aria-expanded', String(open));
+    };
     window.addEventListener('resize', () => {
       if (window.innerWidth <= 760 && !state.sideTouched) state.sideHidden = true;
       applySide(); invalidateHeights(); renderRows();
@@ -2597,6 +2610,9 @@
     $('view-mode').value = state.viewMode;
     if (state.bookmarks) bookmarksStore.fromJSON(state.bookmarks);
     setMask(state.maskOn);
+    // a fresh boot on a narrow viewport defaults Wrap ON — clipped lines with
+    // no horizontal-scroll cue are the worst mobile reading experience
+    if (!HAD_SAVED_STATE && window.innerWidth <= 560) state.wrapOn = true;
     setWrap(state.wrapOn);
     setFollow(state.follow);
     setSearchWrap(state.srWrapOn !== false);

@@ -144,12 +144,13 @@ Status: implemented (v1.0.0).
 
 ### FR-15 — Responsive/mobile layout
 
-Status: implemented (v1.3.0); extended in v1.12.1 (drawer as bottom sheet, 100dvh viewport height).
+Status: implemented (v1.3.0); extended in v1.12.1 (drawer as bottom sheet, 100dvh viewport height) and v1.48.0 (phone-width chrome compaction, files-overlay scrim).
 
 - AC-1: No page-level horizontal overflow at a 390 px viewport width.
 - AC-2: At ≤ 760 px the files panel becomes an overlay drawer (auto-collapsed on narrow screens until toggled); the header wraps and tabs scroll horizontally.
 - AC-3: Mask cards stack in a single column on narrow screens.
 - AC-4 (v1.12.1): The drawer renders as a bottom sheet on narrow screens, and the app fills the dynamic viewport height (100dvh).
+- AC-5 (v1.48.0): At ≤ 560 px the viewer toolbar collapses to one row — quick filter, Mask toggle, and a ⋯ overflow button (`aria-expanded`-synced) that reveals the secondary controls (go-to-line, wrap, follow, view mode, copy + prefix, zen, drawer); the level-chips row becomes a single horizontally scrollable line; the header hides the version tag; and the tab strip gains a right-edge fade as its scroll affordance. A fresh boot (no persisted state) at ≤ 560 px defaults Wrap ON, and while Wrap is off at ≤ 760 px the viewer shows a right-edge fade hinting horizontal overflow. The files overlay dims the content behind a tap-outside scrim and the panel header carries a ✕ close button; both close the overlay (restored sessions keep their persisted wrap choice at any width).
 
 ### FR-16 — Search-match display: wrap or scroll (per-tab preference)
 
