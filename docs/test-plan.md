@@ -95,7 +95,7 @@ Note: the G0–G8 records below are historical — they describe the design veri
 - **Browser:** `build.js` inlines the identical file into `log-triage.html`; opening it with `?selftest` executes the suite and reports pass/fail counts and failing case names.
 - **Guarantee:** any behavior change must be expressed as a case update, so Node CI and the in-browser self-test can never disagree.
 
-## E2e scope (Playwright — 83 specs: 75 app + 8 stress)
+## E2e scope (Playwright — 84 specs: 76 app + 8 stress)
 
 App suite (55 specs) — coverage includes:
 
@@ -150,6 +150,7 @@ App suite (55 specs) — coverage includes:
 42. Text encoding (v1.46.0, FR-2 AC-5): a BOM'd logcat file indexes with `utf8: true`, the BOM never reaches the parser (first record has its real timestamp, `firstLine` is clean), and a latin-1 file (0xE9 byte) flags `utf8: false` while lines still split and count (unit, `tests/paged.test.js`). E2e: the latin-1 file gets an `enc?` badge with an explanatory title in the files panel; a clean UTF-8 file loaded alongside gets none. `boardBinToText` keeps valid UTF-8 CJK runs (well-formed multi-byte sequences count toward the 80% printable bar) while runs with invalid high bytes are still rejected (unit, `tests/archive.test.js`).
 43. Analysis mask-toggle respect (v1.46.1, FR-9 AC-6): with Mask ON the demo analysis tab shows the masked email (d***@***.example) in issue-scan snippets and top-message shapes and the raw address nowhere in the tab; toggling Mask OFF and re-entering the tab shows the raw text (toggle honored, not always-masked); the shared self-test case pins issueScan maskText — including mask-before-slice for an email straddling the 110-char snippet boundary (no raw local-part fragment leaks).
 44. UI token pass (v1.47.0, ADR-0016): search hit rows wrap the exact matched term in an inline <mark> (computed on the displayed/masked text) and paint a per-theme --hit tint distinct from the viewer selection green (pinned for all six themes by a shared self-test case); disabled pager buttons render dimmed; .toggle checkboxes are custom 18px appearance:none controls; sidebar/text inputs are themed instead of browser-default white.
+45. Mobile pass (v1.48.0, FR-15 AC-5) at 390×844 with a fresh narrow boot: the first log row lands within the top 300px (toolbar collapsed to one row — quick filter, Mask, and a ⋯ overflow button with synced aria-expanded that reveals the secondary controls; chips on one scrollable line; version tag hidden), Wrap is ON by default (persisted sessions keep their choice), and the files overlay opens with a dimmed tap-outside scrim and a header ✕ — either closes it.
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 
