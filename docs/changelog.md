@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.49.1 (2026-09-24)
+- Merge pull request #47 from CJ-1981/fix/restore-version-tag
+- fix: keep the version tag visible next to the title at phone widths
+- test: pin version tag visibility at phone width
+
 ## 1.49.0 (2026-09-24)
 - Merge pull request #46 from CJ-1981/fix/ui-polish-sweep
 - feat: design-review polish sweep - selection ink, level-colored bars, RAW chip, zen HUD, AA tokens
