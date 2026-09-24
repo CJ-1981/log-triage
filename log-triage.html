@@ -332,9 +332,9 @@ table.rules { min-width: 620px; }
   #drawer { width: calc(100% - 16px); right: 8px; bottom: 8px; max-height: 72%; }
   .panel { padding: 10px; }
 }
-/* phone-width: one-row toolbar with ⋯ overflow, one-row chips, compact header (review #3) */
+/* phone-width: one-row toolbar with ⋯ overflow, one-row chips (review #3).
+   The version tag stays visible — it fits the compact header and users rely on it. */
 @media (max-width: 560px) {
-  header h1 #ver { display: none; }
   #chips-row { flex-wrap: nowrap; overflow-x: auto; }
   #chips-row .chip { flex: none; }
   #vtools .vt-sec { display: none; }
