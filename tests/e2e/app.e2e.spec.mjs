@@ -2431,6 +2431,12 @@ test('mobile pass: compact chrome, toolbar overflow, wrap default, files scrim',
   // compact chrome: the first log line lands high in the viewport (was ~350px of chrome)
   const rowTop = await page.evaluate(() => { const r = document.querySelector('.vrow'); return r ? Math.round(r.getBoundingClientRect().top) : 9999; });
   assert.ok(rowTop < 300, 'first log row within the top 300px at 390x844: ' + rowTop);
+  // the version tag stays visible even at phone width (user preference wins over compaction)
+  const verVisible = await page.evaluate(() => {
+    const el = document.getElementById('ver');
+    return getComputedStyle(el).display !== 'none' && el.textContent.trim().length > 0;
+  });
+  assert.ok(verVisible, 'version tag visible next to the title at 390px');
   // fresh narrow boot defaults wrap ON
   assert.ok(await page.evaluate(() => !!document.querySelector('.vrow.wrap')), 'wrap ON by default on a fresh narrow boot');
   // toolbar collapses: ⋯ visible, secondary controls hidden until ⋯ is clicked
