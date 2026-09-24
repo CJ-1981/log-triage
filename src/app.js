@@ -866,6 +866,7 @@
     if (bmCount) bmCount.textContent = bookmarksStore.all().length;
     $('st-trim').classList.add('hidden');
     updatePager();
+    updateZenHud();
   }
 
 
@@ -985,7 +986,7 @@
     const visual = LT.highlightText(mainLine, compiledHighlights);
     const mainHtml = highlightedHtml(mainLine, visual.spans) || esc(mainLine);
     d.innerHTML = '<h3>Line ' + rec.lineNo + ' — ' + esc(fileDisplayName(rec.fileId)) +
-      '<button onclick="document.getElementById(\'drawer\').className=\'\'">✕</button></h3>' +
+      '<button onclick="document.getElementById(\'drawer\').className=\'\'" title="close the detail drawer">✕</button></h3>' +
       '<dl>' +
       dv('ts', rec.ts) + dv('level', rec.level) + dv('tag', rec.tag) +
       dv('pid / tid', (rec.pid == null ? '—' : rec.pid) + ' / ' + (rec.tid == null ? '—' : rec.tid)) +
@@ -994,15 +995,16 @@
         ? '<button type="button" class="chev-toggle" aria-expanded="false" title="show raw line">▸ raw</button>'
         : '') +
       '</dt><dd>' + mainHtml + '</dd>' +
-      (hasMaskDiff ? '<dd class="raw-extra" hidden></dd>' : '') +
+      (hasMaskDiff ? '<dd class="raw-extra" hidden><span class="raw-chip">RAW — unmasked</span><span class="raw-text"></span></dd>' : '') +
       '</div>' +
       '</dl>';
     const chev = d.querySelector('.chev-toggle');
     if (chev) {
       const extra = d.querySelector('.raw-extra');
+      const extraText = extra.querySelector('.raw-text');
       chev.onclick = () => {
         // lazy: the raw text only enters the DOM while expanded
-        extra.textContent = extra.hidden ? rec.raw : '';
+        extraText.textContent = extra.hidden ? rec.raw : '';
         extra.hidden = !extra.hidden;
         chev.textContent = extra.hidden ? '▸ raw' : '▾ raw';
         chev.setAttribute('aria-expanded', String(!extra.hidden));
@@ -1205,6 +1207,10 @@
   function renderRules() {
     const tb = $('rule-rows');
     tb.innerHTML = '';
+    // a real empty state instead of bare column headers floating over whitespace
+    const none = state.rules.length === 0;
+    const table = $('rules-table'); if (table) table.style.display = none ? 'none' : '';
+    const emptyEl = $('rules-empty'); if (emptyEl) emptyEl.style.display = none ? '' : 'none';
     state.rules.forEach((r, i) => {
       const tr = document.createElement('tr');
       tr.innerHTML =
@@ -1442,11 +1448,11 @@
       '<div class="card-row">' + cards + '</div>' +
       '<div class="two-col"><div>' +
       '<h2>Levels (scanned lines)</h2>' +
-      levels.map((l) => '<div class="hbar"><span style="min-width:18px">' + (l.id === '__' ? '—' : l.id) + '</span><div class="bar" style="width:' + (l.count / maxL * 70) + '%"></div>' + l.count + '</div>').join('') +
+      levels.map((l) => '<div class="hbar"><span style="min-width:18px">' + (l.id === '__' ? '—' : l.id) + '</span><div class="bar" style="width:' + (l.count / maxL * 70) + '%;background:' + (l.id === '__' ? 'var(--muted)' : 'var(--lvl-' + l.id.toLowerCase() + ')') + '"></div>' + l.count + '</div>').join('') +
       '<h2>Time histogram (kept lines)</h2><canvas id="histo" width="600" height="120"></canvas>' +
       '</div><div>' +
       '<h2>Top tags</h2>' + (tags.length ? tags.map((t) => '<div class="hbar"><span style="min-width:120px">' + esc(t.k) + '</span><div class="bar" style="width:' + (t.n / tags[0].n * 50) + '%"></div>' + t.n + '</div>').join('') : '<span class="muted">none</span>') +
-      '<h2>Top message shapes</h2>' + (msgs.length ? msgs.map((t) => '<div class="hbar"><span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(t.k) + '</span><b>' + t.n + '</b></div>').join('') : '<span class="muted">none</span>') +
+      '<h2>Top message shapes</h2>' + (msgs.length ? msgs.map((t) => '<div class="hbar"><span style="flex:0 1 auto;max-width:min(560px,65%);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + esc(t.k) + '</span><b style="margin-left:8px">' + t.n + '</b></div>').join('') : '<span class="muted">none</span>') +
       '</div></div>' +
       '<h2>Issue scan</h2>' +
       '<details class="issue-config"><summary class="muted">How it works / configure rules</summary>' +
@@ -1643,7 +1649,7 @@
     let hover = -1;
     function draw() {
       ctx.clearRect(0, 0, W, H);
-      ctx.font = '10px sans-serif';
+      ctx.font = '11px sans-serif';
       ctx.textBaseline = 'middle';
       // y gridlines + tick labels (0 / half / max)
       for (let i = 0; i <= 2; i++) {
@@ -2047,7 +2053,7 @@
     $('btn-mask').textContent = 'Mask: ' + (on ? 'ON' : 'OFF');
     $('btn-mask').classList.toggle('on', on);
     displayCache = new Map();
-    saveState(); renderRows();
+    saveState(); renderRows(); updateZenHud();
     // analysis surfaces render masked text — keep a visible analysis tab in sync
     if ($('tab-analysis').classList.contains('active')) renderAnalysis();
   }
@@ -2071,6 +2077,13 @@
     saveState();
   }
   let zenHintTimer = null;
+  /** Zen HUD: the mask state + shown count stay visible while every other
+   * status surface is hidden — the invisible-mask case is most dangerous
+   * exactly when screen-sharing (design review #16). */
+  function updateZenHud() {
+    const hud = $('zen-hud');
+    if (hud) hud.textContent = 'Mask: ' + (state.maskOn ? 'ON' : 'OFF') + ' · ' + filteredCount + ' shown';
+  }
   function setZen(on) {
     // session-only focus mode: hides header, sidebar, chips, toolbar, pager
     // and status bar so the viewer fills the window. Not persisted — a
@@ -2088,6 +2101,7 @@
     } else {
       hint.classList.remove('show');
     }
+    updateZenHud();
     invalidateHeights();
     renderRows();
   }

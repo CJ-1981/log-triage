@@ -106,11 +106,15 @@ header h1 span { color: var(--accent); }
    Esc are the exits. */
 body.zen header, body.zen #sidebar, body.zen #chips-row, body.zen #vtools, body.zen #pager, body.zen #statusbar { display: none !important; }
 body.zen #viewer-wrap { position: fixed; inset: 0; z-index: 40; background: var(--bg); }
-#zen-fab { display: none; position: fixed; top: 10px; right: 12px; z-index: 70; opacity: .3; transition: opacity .15s ease; }
+#zen-fab { display: none; position: fixed; top: 10px; right: 12px; z-index: 70; opacity: .55; transition: opacity .15s ease; }
 #zen-fab:hover, #zen-fab:focus { opacity: 1; }
 body.zen #zen-fab { display: inline-block; }
 #zen-hint { position: fixed; top: 46px; right: 12px; z-index: 70; padding: 6px 10px; background: var(--surface); border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; color: var(--fg); opacity: 0; pointer-events: none; transition: opacity .25s ease; }
 #zen-hint.show { opacity: 1; }
+/* zen HUD: minimal persistent state chip (mask state + shown count) so the
+   dangerous invisible-mask situation never happens while screen-sharing */
+#zen-hud { display: none; position: fixed; left: 10px; bottom: 10px; z-index: 70; font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; opacity: .55; pointer-events: none; }
+body.zen #zen-hud { display: block; }
 #dropzone.drag { border-color: var(--accent); color: var(--accent); }
 #archive-progress { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 100; }
 #archive-progress.visible { display: flex; }
@@ -151,6 +155,9 @@ body.zen #zen-fab { display: inline-block; }
 .vrow.wrap .vcell.txt { flex: 1 1 auto; min-width: 0; white-space: pre-wrap; word-break: break-word; }
 .vrow:hover { background: var(--surface2); }
 .vrow.sel { background: var(--selection) !important; outline: 1px solid var(--accent); }
+/* selected rows neutralize cell colors to fg ink — level/file colors on the
+   selection tint fell below AA in the light themes (design review #4) */
+.vrow.sel .vcell { color: var(--fg); }
 .vrow.rule-highlight-row { background: var(--rule-row-color); }
 .vrow.rule-highlight-row:hover { filter: brightness(1.08); }
 .rule-highlight-text { border-radius: 2px; padding: 0 1px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
@@ -159,7 +166,7 @@ body.zen #zen-fab { display: inline-block; }
 .vrow.tint-f { background: var(--tint-f); } .vrow.tint-f:hover, .vrow.tint-f.sel { background: var(--tint-f); outline: 1px solid var(--lvl-f); }
 .vcell { padding: 0 6px; flex: none; color: var(--muted); }
 .vcell.ln { min-width: 56px; text-align: right; user-select: none; }
-.vcell.bm { min-width: 22px; text-align: center; cursor: pointer; user-select: none; }
+.vcell.bm { min-width: 28px; text-align: center; cursor: pointer; user-select: none; }
 .vcell.bm.marked { color: var(--warn); }
 .vcell.lv { min-width: 26px; text-align: center; font-weight: 700; }
 .vcell.fl { max-width: 140px; overflow: hidden; text-overflow: ellipsis; color: var(--accent); }
@@ -192,8 +199,9 @@ mark { background: var(--hl); color: var(--bg); border-radius: 2px; }
 #drawer dd { word-break: break-all; white-space: pre-wrap; }
 #drawer .chev-toggle { background: none; border: 1px solid var(--border); border-radius: 4px; color: var(--muted); cursor: pointer; font: inherit; font-size: 11px; margin-left: 2px; padding: 0 5px; }
 #drawer .chev-toggle:hover { color: var(--fg); border-color: var(--muted); }
-#drawer dd.raw-extra { border-top: 1px dashed var(--border); color: var(--muted); flex-basis: 100%; margin-top: 4px; padding-top: 4px; }
+#drawer dd.raw-extra { border-top: 1px dashed var(--border); border-left: 3px solid var(--warn); padding-left: 8px; color: var(--muted); flex-basis: 100%; margin-top: 4px; padding-top: 4px; }
 #drawer dd.raw-extra[hidden] { display: none; }
+#drawer .raw-chip { display: inline-block; color: var(--warn); border: 1px solid var(--warn); border-radius: 4px; font-size: 10px; font-weight: 700; letter-spacing: .04em; padding: 0 5px; margin: 0 0 4px; }
 
 /* ---------- panels ---------- */
 .panel { padding: 14px; overflow-y: auto; flex: 1; min-height: 0; }
@@ -204,6 +212,10 @@ table.rules { width: 100%; border-collapse: collapse; font-size: 13px; }
 table.rules th { text-align: left; color: var(--muted); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--border); }
 table.rules td { padding: 4px 6px; border-bottom: 1px solid var(--border); vertical-align: middle; }
 table.rules input[type=text] { width: 100%; font-family: var(--mono); font-size: 12px; }
+#rules-empty { padding: 12px 4px; font-size: 13px; }
+/* custom-rule form: persistent small labels above each input (review #10) */
+.cm-field { display: inline-flex; flex-direction: column; gap: 2px; font-size: 10.5px; color: var(--muted); }
+.cm-field input { font-size: 12px; width: 100%; box-sizing: border-box; }
 .rule-err { color: var(--err); font-size: 11px; }
 .count-pill { background: var(--surface2); border-radius: 8px; padding: 0 8px; font-size: 11px; color: var(--muted); }
 .card-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 8px 0; }
@@ -412,6 +424,7 @@ table.rules { min-width: 620px; }
         </div>
         <button id="zen-fab" title="Exit zen mode (Esc)">✕&nbsp;Zen</button>
         <div id="zen-hint" role="status" aria-live="polite"></div>
+        <div id="zen-hud" aria-hidden="true"></div>
         <div id="statusbar">
           <span>lines: <b id="st-total">0</b></span>
           <span>indexed: <b id="st-kept">0</b></span>
@@ -459,8 +472,9 @@ table.rules { min-width: 620px; }
           <div class="rowline"><button id="btn-add-rule" class="primary">+ Add rule</button><button id="btn-add-highlight">+ Add highlighter</button>
             <span class="muted">includes OR together · excludes subtract · highlights additive</span></div>
           <div class="rules-wrap">
-          <table class="rules"><thead><tr><th>on</th><th>name</th><th>pattern</th><th>case</th><th>action</th><th>match</th><th>target</th><th>color</th><th>hits</th><th></th></tr></thead>
+          <table class="rules" id="rules-table"><thead><tr><th>on</th><th>name</th><th>pattern</th><th>case</th><th>action</th><th>match</th><th>target</th><th>color</th><th>hits</th><th></th></tr></thead>
             <tbody id="rule-rows"></tbody></table>
+          <div id="rules-empty" class="muted" style="display:none">No filter rules yet — rules include / exclude / highlight lines by regex across every loaded file. Add one with <b>+ Add rule</b> below.</div>
           </div>
           <h2>Time range <small class="muted">(inclusive, e.g. 08-24 15:37)</small></h2>
           <div class="rowline">
@@ -473,8 +487,8 @@ table.rules { min-width: 620px; }
             <button id="btn-preset-save">Save current…</button>
             <button id="btn-preset-load">Load</button>
             <button id="btn-preset-del">Delete</button>
-            <button id="btn-preset-export">Export .json</button>
-            <button id="btn-preset-import">Import .json</button>
+            <button id="btn-preset-export" title="download all presets as one .json file">Export presets</button>
+            <button id="btn-preset-import" title="merge presets from a .json file">Import presets</button>
             <input type="file" id="preset-file" accept=".json" class="hidden">
           </div>
         </div>
@@ -488,9 +502,9 @@ table.rules { min-width: 620px; }
           <div class="mask-grid" id="mask-grid"></div>
           <h2>Custom rules</h2>
           <div class="rowline">
-            <input type="text" id="cm-name" placeholder="name" style="width:120px">
-            <input type="text" id="cm-pattern" placeholder="regex" style="flex:1;font-family:var(--mono)">
-            <input type="text" id="cm-repl" placeholder="replacement ($1…)" style="flex:1;font-family:var(--mono)">
+            <label class="cm-field"><span>name</span><input type="text" id="cm-name" placeholder="e.g. ticket IDs" style="width:120px"></label>
+            <label class="cm-field" style="flex:1"><span>regex</span><input type="text" id="cm-pattern" placeholder="[A-Z]+-\d+" style="font-family:var(--mono)"></label>
+            <label class="cm-field" style="flex:1"><span>replacement ($1…)</span><input type="text" id="cm-repl" placeholder="[$1]" style="font-family:var(--mono)"></label>
             <button id="btn-add-cm" class="primary">Add</button>
           </div>
           <div id="cm-list"></div>
