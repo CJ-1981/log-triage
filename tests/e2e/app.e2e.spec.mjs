@@ -2418,3 +2418,38 @@ test('search rows mark matches inline; UI token pass (hit tint, disabled pager, 
   const op = await page.evaluate(() => getComputedStyle(document.getElementById('page-first')).opacity);
   assert.ok(parseFloat(op) < 1, 'disabled pager button dimmed: ' + op);
 });
+
+test('mobile pass: compact chrome, toolbar overflow, wrap default, files scrim', async () => {
+  await fresh();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.evaluate(() => localStorage.removeItem('log_triage_state_v1'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 15000 });
+  // compact chrome: the first log line lands high in the viewport (was ~350px of chrome)
+  const rowTop = await page.evaluate(() => { const r = document.querySelector('.vrow'); return r ? Math.round(r.getBoundingClientRect().top) : 9999; });
+  assert.ok(rowTop < 300, 'first log row within the top 300px at 390x844: ' + rowTop);
+  // fresh narrow boot defaults wrap ON
+  assert.ok(await page.evaluate(() => !!document.querySelector('.vrow.wrap')), 'wrap ON by default on a fresh narrow boot');
+  // toolbar collapses: ⋯ visible, secondary controls hidden until ⋯ is clicked
+  const tb = await page.evaluate(() => ({
+    more: getComputedStyle(document.getElementById('vtools-more')).display !== 'none',
+    wrap: getComputedStyle(document.getElementById('btn-wrap')).display !== 'none',
+  }));
+  assert.ok(tb.more, '⋯ overflow button visible at 390px');
+  assert.ok(!tb.wrap, 'Wrap control hidden behind ⋯');
+  await page.evaluate(() => document.getElementById('vtools-more').click());
+  assert.ok(await page.evaluate(() => getComputedStyle(document.getElementById('btn-wrap')).display !== 'none'), '⋯ reveals the secondary controls');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('vtools-more').getAttribute('aria-expanded')), 'true', 'aria-expanded synced');
+  // files overlay: open → scrim visible → tap scrim closes
+  await page.evaluate(() => document.getElementById('btn-side').click());
+  await page.waitForFunction(() => getComputedStyle(document.getElementById('side-scrim')).display !== 'none', null, { timeout: 3000 });
+  await page.evaluate(() => document.getElementById('side-scrim').click());
+  await page.waitForFunction(() => document.getElementById('main').classList.contains('side-hidden'), null, { timeout: 3000 });
+  // ✕ close button in the panel header also closes
+  await page.evaluate(() => document.getElementById('btn-side').click());
+  await page.waitForFunction(() => !document.getElementById('main').classList.contains('side-hidden'), null, { timeout: 3000 });
+  await page.evaluate(() => document.getElementById('side-close').click());
+  await page.waitForFunction(() => document.getElementById('main').classList.contains('side-hidden'), null, { timeout: 3000 });
+  await page.setViewportSize({ width: 1440, height: 900 });
+});
