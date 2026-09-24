@@ -1914,6 +1914,8 @@ test('drawer: pid/tid on one line, masked label with chevron-gated raw', async (
   await page.waitForTimeout(150);
   text = await page.evaluate(() => document.getElementById('drawer').textContent);
   assert.ok(text.includes('YV4AB9CD12EF34567'), 'raw VIN visible after expand');
+  const chip = await page.evaluate(() => { const c = document.querySelector('#drawer .raw-chip'); return c ? c.textContent : null; });
+  assert.ok(chip && /raw/i.test(chip), 'expanded raw block carries a RAW warning chip: ' + chip);
   // chevron collapses again: raw line leaves the DOM
   await page.evaluate(() => document.querySelector('#drawer .chev-toggle').click());
   await page.waitForTimeout(150);
@@ -2452,4 +2454,76 @@ test('mobile pass: compact chrome, toolbar overflow, wrap default, files scrim',
   await page.evaluate(() => document.getElementById('side-close').click());
   await page.waitForFunction(() => document.getElementById('main').classList.contains('side-hidden'), null, { timeout: 3000 });
   await page.setViewportSize({ width: 1440, height: 900 });
+});
+
+test('polish sweep: empty state, level-bar colors, count adjacency, cm labels, preset verbs, zen HUD, selection ink', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  // #7 filters empty state on a fresh boot (no rules)
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await page.waitForTimeout(200);
+  const emptyState = await page.evaluate(() => {
+    const es = document.getElementById('rules-empty');
+    return !!(es && getComputedStyle(es).display !== 'none' && es.textContent.length > 10);
+  });
+  assert.ok(emptyState, 'filters shows a real empty state when there are no rules');
+  // #17 preset verbs say what they carry
+  const presetLabel = await page.evaluate(() => document.getElementById('btn-preset-export').textContent);
+  assert.match(presetLabel, /presets/i, 'Filters preset export is labeled presets: ' + presetLabel);
+  // #11 analysis level bars carry per-level color tokens
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
+  await page.waitForFunction(() => document.querySelector('#tab-analysis .hbar .bar'), null, { timeout: 10000 });
+  const bars = await page.evaluate(() => Array.from(document.querySelectorAll('#tab-analysis .hbar .bar')).map((b) => b.getAttribute('style') || ''));
+  assert.ok(bars.filter((s) => s.includes('--lvl-')).length >= 3, 'level bars use per-level color tokens: ' + JSON.stringify(bars.slice(0, 4)));
+  // #18 top-message counts sit right after the shape text
+  const shape = await page.evaluate(() => {
+    const h2s = Array.from(document.querySelectorAll('#tab-analysis h2'));
+    const h = h2s.find((x) => x.textContent.includes('Top message shapes'));
+    const row = h && h.nextElementSibling;
+    if (!row || !row.querySelector('b')) return null;
+    const span = row.querySelector('span');
+    const b = row.querySelector('b');
+    return { grow: getComputedStyle(span).flexGrow, gap: Math.round(b.getBoundingClientRect().left - span.getBoundingClientRect().right) };
+  });
+  assert.ok(shape, 'top message shape row found');
+  assert.strictEqual(shape.grow, '0', 'shape span no longer stretches the full width');
+  assert.ok(shape.gap < 40, 'count sits next to the shape text: gap=' + shape.gap);
+  // #10 persistent labels on the custom-rule inputs
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
+  await page.waitForTimeout(200);
+  const cmLabels = await page.evaluate(() => document.querySelectorAll('.cm-field > span').length);
+  assert.ok(cmLabels >= 3, 'custom-rule inputs have persistent labels: ' + cmLabels);
+  // #9 bookmark gutter hit area widened
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForTimeout(200);
+  const bmW = await page.evaluate(() => parseFloat(getComputedStyle(document.querySelector('.vcell.bm')).minWidth));
+  assert.ok(bmW >= 26, 'bookmark gutter hit area >= 26px: ' + bmW);
+  // #16 zen HUD reports the mask state while zen is active
+  await page.click('#btn-zen');
+  await page.waitForFunction(() => {
+    const hud = document.getElementById('zen-hud');
+    return hud && getComputedStyle(hud).display !== 'none' && /Mask: (ON|OFF)/.test(hud.textContent);
+  }, null, { timeout: 5000 });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  // #4 Paper theme: the selected row's level ink is the fg color, not level-green on green
+  await page.evaluate(() => {
+    document.getElementById('theme-btn').click();
+    const opt = Array.from(document.querySelectorAll('#theme-menu *')).find((e) => e.textContent.includes('Paper'));
+    if (opt) opt.click();
+  });
+  await page.waitForTimeout(200);
+  await page.evaluate(() => {
+    const row = document.querySelector('.vrow');
+    if (row) row.querySelector('.txt').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+  await page.waitForFunction(() => document.querySelector('.vrow.sel .vcell.lv'), null, { timeout: 5000 });
+  const ink = await page.evaluate(() => getComputedStyle(document.querySelector('.vrow.sel .vcell.lv')).color);
+  assert.ok(!ink.includes('30, 127'), 'selected-row level ink is not paper level-green (' + ink + ')');
+  await page.evaluate(() => {
+    document.getElementById('theme-btn').click();
+    const opt = Array.from(document.querySelectorAll('#theme-menu *')).find((e) => e.textContent.includes('Midnight'));
+    if (opt) opt.click();
+  });
 });
