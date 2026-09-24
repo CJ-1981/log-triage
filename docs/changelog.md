@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.49.0 (2026-09-24)
+- Merge pull request #46 from CJ-1981/fix/ui-polish-sweep
+- feat: design-review polish sweep - selection ink, level-colored bars, RAW chip, zen HUD, AA tokens
+- test: pin polish sweep - RAW chip, empty state, level-bar colors, zen HUD, selection ink
+
 ## 1.48.0 (2026-09-24)
 - Merge pull request #45 from CJ-1981/fix/mobile-pass
 - feat: phone-width chrome compaction, wrap default, files overlay scrim
