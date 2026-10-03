@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.51.1 (2026-10-03)
+- Merge pull request #53 from CJ-1981/fix/sall-wrap-mobile
+- test: await the IDB cache entry before reloading (file-cache race on slow CI)
+- fix: search-all rows follow the viewer wrap toggle; mobile panel capped so the viewer stays visible
+- test: pin search-all wrap-follows-viewer and mobile panel geometry
+
 ## 1.51.0 (2026-10-03)
 - Merge pull request #52 from CJ-1981/feat/search-all
 - feat: viewer Search all bottom panel (scoped quick-filter match list); rename Search tab to Multifile search
