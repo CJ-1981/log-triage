@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.49.2 (2026-10-03)
+- Merge pull request #49 from CJ-1981/fix/history-enter-hijack
+- fix: history dropdown opens unfocused; Enter no longer re-picks the first entry
+- test: pin history-dropdown keyboard contract - Enter commits the typed term
+- Merge pull request #48 from CJ-1981/chore/gitignore-test-results
+- chore: ignore playwright test-results directory
+
 ## 1.49.1 (2026-09-24)
 - Merge pull request #47 from CJ-1981/fix/restore-version-tag
 - fix: keep the version tag visible next to the title at phone widths
