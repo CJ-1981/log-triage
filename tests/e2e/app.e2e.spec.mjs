@@ -2601,6 +2601,70 @@ test('quick filter auto-expands while typing; line-number field stays compact', 
   assert.ok(gl <= 70, 'line-number field is compact: ' + gl);
 });
 
+test('viewer Search all: scoped match list in a bottom panel; Search tab renamed to Multifile search', async () => {
+  await fresh();
+  // the search tab is renamed (multifile = every loaded file; the viewer's
+  // Search all is the scoped counterpart)
+  const label = await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').textContent);
+  assert.strictEqual(label, 'Multifile search');
+
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'demo.log'),
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+  ]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '52');
+
+  // empty quick filter: the button explains itself and the panel stays closed
+  await click('btn-sall');
+  assert.ok(await page.evaluate(() => document.getElementById('sall').classList.contains('hidden')), 'panel closed without a pattern');
+
+  // merged scope: 'fail' matches 2 demo + 2 syslog lines
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = 'fail';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4');
+  await click('btn-sall');
+  await page.waitForFunction(() => /4 match\(es\) for \/fail\/ in all files/.test(document.getElementById('sall-note').textContent));
+  const open = await page.evaluate(() => ({
+    hidden: document.getElementById('sall').classList.contains('hidden'),
+    expanded: document.getElementById('btn-sall').getAttribute('aria-expanded'),
+    rows: Array.from(document.querySelectorAll('#sall-rows .sr-row')).map((r) => ({ file: r.dataset.file, ln: r.dataset.ln })),
+    marks: document.querySelectorAll('#sall-rows mark').length,
+  }));
+  assert.ok(!open.hidden, 'panel visible');
+  assert.strictEqual(open.expanded, 'true');
+  assert.strictEqual(open.rows.length, 4, 'every match listed: ' + JSON.stringify(open.rows));
+  assert.strictEqual(new Set(open.rows.map((r) => r.file)).size, 2, 'rows carry both files');
+  assert.ok(open.marks >= 4, 'match terms marked: ' + open.marks);
+
+  // clicking a row jumps the viewer to that line
+  await page.evaluate(() => document.querySelector('#sall-rows .sr-row').click());
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '1');
+  const jumped = await page.evaluate(() => {
+    const row = document.querySelector('#sall-rows .sr-row');
+    return document.getElementById('drawer').textContent.includes(row.dataset.ln);
+  });
+  assert.ok(jumped, 'drawer shows the jumped line');
+
+  // per-file scope narrows to the displayed file (demo.log first loaded)
+  await page.selectOption('#view-mode', 'file');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '2');
+  await click('btn-sall'); // panel still open -> toggles shut
+  assert.ok(await page.evaluate(() => document.getElementById('sall').classList.contains('hidden')), 'toggle closes');
+  await click('btn-sall'); // and re-runs scoped
+  await page.waitForFunction(() => /2 match\(es\) for \/fail\/ in demo\.log/.test(document.getElementById('sall-note').textContent));
+  const scopedRows = await page.evaluate(() => Array.from(document.querySelectorAll('#sall-rows .sr-row')).map((r) => r.dataset.file));
+  assert.strictEqual(scopedRows.length, 2);
+  assert.ok(scopedRows.every((f) => f === 'demo.log'), 'only the displayed file listed');
+
+  // Esc closes the panel
+  await page.keyboard.press('Escape');
+  assert.ok(await page.evaluate(() => document.getElementById('sall').classList.contains('hidden')), 'Esc closes');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('btn-sall').getAttribute('aria-expanded')), 'false');
+});
+
 test('history records committed terms, not per-character prefixes', async () => {
   await fresh();
   await click('btn-demo');
