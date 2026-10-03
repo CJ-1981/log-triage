@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.51.0 (2026-10-03)
+- Merge pull request #52 from CJ-1981/feat/search-all
+- feat: viewer Search all bottom panel (scoped quick-filter match list); rename Search tab to Multifile search
+- test: pin viewer search-all scoped match list and the multifile-search tab rename
+
 ## 1.50.1 (2026-10-03)
 - Merge pull request #51 from CJ-1981/fix/history-prefix-entries
 - fix: search history records committed terms, not typing prefixes
