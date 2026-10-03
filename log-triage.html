@@ -291,6 +291,15 @@ details.sr-group > summary.sr-file .count-pill { margin-left: 8px; }
 #search-results.nowrap .sr-row .srx { flex: none; }
 #search-progress { padding: 4px 10px; color: var(--muted); font-size: 12px; }
 
+/* viewer search-all bottom panel — rows reuse the .sr-row styles above */
+#sall { display: flex; flex-direction: column; height: 240px; border-top: 2px solid var(--border); background: var(--surface); }
+#sall-head { display: flex; align-items: center; gap: 10px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+#sall-title { font-weight: 600; flex: none; }
+#sall-note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+#sall-rows { flex: 1; min-height: 0; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
+body.zen #sall { display: none !important; }
+@media (max-width: 760px) { #sall { height: 40vh; } }
+
 /* masks */
 .mask-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px; }
 .mask-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface); }
@@ -350,7 +359,7 @@ table.rules { min-width: 620px; }
     <h1>Log Triage <span id="ver">v1.50.1</span></h1>
     <div id="tabs">
       <button data-tab="viewer" class="active">Viewer</button>
-      <button data-tab="search">Search</button>
+      <button data-tab="search" title="ripgrep-style search across EVERY loaded file — instant results over the analysis sample, deep scan over the complete files">Multifile search</button>
       <button data-tab="filters">Filters</button>
       <button data-tab="masks">Masks</button>
       <button data-tab="pii">PII</button>
@@ -408,6 +417,7 @@ table.rules { min-width: 620px; }
         <div id="vtools">
           <input type="text" id="quick" placeholder="quick filter (live)…">
           <input type="text" id="goto-ln" class="vt-sec" placeholder="line #" title="go to line — type a line number and press Enter" style="width:66px;min-width:0">
+          <button id="btn-sall" class="vt-sec" aria-expanded="false" aria-controls="sall" title="Search all — list EVERY line matching the quick filter across the current file(s) (merged view: all loaded files; per-file view: the displayed file) in a bottom panel">Search all</button>
           <button id="btn-mask" title="toggle masking (M)">Mask: ON</button>
           <button id="vtools-more" title="more viewer controls" aria-expanded="false" aria-controls="vtools">⋯</button>
           <button id="btn-wrap" class="vt-sec" title="wrap long lines (W)">Wrap: OFF</button>
@@ -422,6 +432,10 @@ table.rules { min-width: 620px; }
           <div id="viewer"><div id="vspacer"></div></div>
           <div id="viewer-busy" role="status" aria-live="polite"><span id="viewer-busy-text"></span><button id="viewer-cancel">Cancel</button></div>
           <div id="drawer"></div>
+        </div>
+        <div id="sall" class="hidden" role="region" aria-label="Search all matches in the current scope">
+          <div id="sall-head"><span id="sall-title">Search all</span><span id="sall-note" class="muted"></span><button id="sall-close" title="close the search-all panel (Esc)">✕</button></div>
+          <div id="sall-rows"></div>
         </div>
         <div id="pager" aria-label="Log pages">
           <button id="page-first" title="First page">First</button><button id="page-prev" title="Previous page">Previous</button>
@@ -6198,6 +6212,82 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     await jumpToRecord({ fileId: f.id, lineNo: target });
   }
 
+  /* ---------------- viewer Search all ---------------- */
+  const SALL_PAGE = 500;         // worker page size for lazy row loading
+  const SALL_RENDER_CAP = 10000; // DOM cap — beyond this the note asks to refine
+  const sall = { token: 0, total: 0, loaded: 0, searcher: null, busy: false };
+
+  function sallIsOpen() { return !$('sall').classList.contains('hidden'); }
+
+  function sallClose() {
+    sall.token++; // invalidate any in-flight search/page of this run
+    $('sall').classList.add('hidden');
+    $('btn-sall').setAttribute('aria-expanded', 'false');
+  }
+
+  function sallNote(t) { $('sall-note').textContent = t; }
+
+  /** Append one worker page of search results; false when the run went stale. */
+  async function sallAppend(start) {
+    const myToken = sall.token;
+    const res = await paging.request('page', { start, size: SALL_PAGE, search: true });
+    if (myToken !== sall.token) return false;
+    const wrap = document.createElement('div');
+    wrap.className = 'sr-inner';
+    wrap.innerHTML = res.rows.map((rec) =>
+      srRow(fileDisplayName(rec.fileId), rec.lineNo, rec.ts, displayText(rec), true, rec.fileId, sall.searcher)).join('');
+    $('sall-rows').append(wrap);
+    sall.loaded += res.rows.length;
+    return true;
+  }
+
+  /** List EVERY line matching the quick-filter pattern across the viewer's
+   * current scope in a bottom panel (merged view: all loaded files; per-file
+   * view: the displayed file). Runs through the worker's full-file search —
+   * complete indexed files, not the analysis sample — and reuses the search
+   * tab's row markup so clicks jump exactly like search-tab results. */
+  async function runSearchAll() {
+    if (sallIsOpen()) { sallClose(); return; } // second click toggles the panel shut
+    const pattern = $('quick').value;
+    if (!pattern) { flash('Type a pattern in the quick filter first'); return; }
+    // same semantics as the live quick filter: case-insensitive regex on raw text
+    const searcher = LT.buildSearcher(pattern, { fixed: false, word: false, invert: false, caseMode: 'insensitive' });
+    if (!searcher.ok) { flash('Bad pattern: ' + searcher.error); return; }
+    const scopeFile = state.viewMode === 'file' ? state.activeFile : null;
+    const scopeName = scopeFile ? fileDisplayName(scopeFile) : 'all files';
+    const token = ++sall.token;
+    sall.total = 0; sall.loaded = 0; sall.searcher = searcher;
+    $('sall-rows').innerHTML = '';
+    $('sall').classList.remove('hidden');
+    $('btn-sall').setAttribute('aria-expanded', 'true');
+    sallNote('searching /' + pattern + '/ in ' + scopeName + '…');
+    let res;
+    try {
+      res = await paging.request('search',
+        { spec: { pattern, options: searcher.opts, fileId: scopeFile || undefined } },
+        (p) => { if (p.progress && token === sall.token) sallNote('searching /' + pattern + '/ in ' + scopeName + ' — ' + p.progress); });
+    } catch (e) { if (token === sall.token) sallNote(e.message); return; }
+    if (res.cancelled || token !== sall.token) return;
+    if (res.errors && res.errors.length) { sallNote(res.errors[0].error); return; }
+    sall.total = res.total;
+    const capped = sall.total > SALL_RENDER_CAP ? ' — showing the first ' + SALL_RENDER_CAP + ', refine the pattern to narrow' : '';
+    sallNote(sall.total + ' match(es) for /' + pattern + '/ in ' + scopeName + capped);
+    if (sall.total > 0) await sallAppend(0);
+  }
+
+  /** Lazy load more result pages as the panel scrolls towards its bottom. */
+  async function sallOnScroll() {
+    const el = $('sall-rows');
+    if (sall.busy || !sallIsOpen()) return;
+    const limit = Math.min(sall.total, SALL_RENDER_CAP);
+    if (sall.loaded >= limit) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 240) return;
+    sall.busy = true;
+    try { await sallAppend(sall.loaded); }
+    catch (e) { sallNote(e.message || String(e)); }
+    finally { sall.busy = false; }
+  }
+
   function switchTab(name) {
     document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + name));
@@ -6718,6 +6808,14 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       const row = e.target.closest('.sr-row');
       if (row) jumpFromSearch(row);
     });
+    // viewer Search all: same click-to-jump rows, plus lazy pages on scroll
+    $('btn-sall').onclick = () => { runSearchAll().catch(pagingError); };
+    $('sall-close').onclick = sallClose;
+    $('sall-rows').addEventListener('click', (e) => {
+      const row = e.target.closest('.sr-row');
+      if (row) jumpFromSearch(row);
+    });
+    $('sall-rows').addEventListener('scroll', () => { sallOnScroll().catch(pagingError); });
     $('goto-ln').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { goToLine(); e.preventDefault(); }
     });
@@ -6829,6 +6927,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       else if (e.key === 'w' || e.key === 'W') setWrap(!state.wrapOn);
       else if (e.key === 'b' || e.key === 'B') { if (view.length) toggleBookmark(selection.count ? selection.indices()[0] : Number((viewer().querySelector('.vrow') || { dataset: { idx: 0 } }).dataset.idx || 0)); }
       else if (e.key === 'Escape' && state.zenOn) { setZen(false); e.preventDefault(); }
+      else if (e.key === 'Escape' && sallIsOpen()) { sallClose(); e.preventDefault(); }
       else if (e.key === 'Escape') { selection.clear(); $('drawer').className = ''; renderRows(); updateStatus(); }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c')) { if (selection.count) { copySelection(); e.preventDefault(); } }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'a')) { selection.selectAll(view.length); renderRows(); updateStatus(); e.preventDefault(); }

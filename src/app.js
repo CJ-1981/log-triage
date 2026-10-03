@@ -2049,6 +2049,82 @@
     await jumpToRecord({ fileId: f.id, lineNo: target });
   }
 
+  /* ---------------- viewer Search all ---------------- */
+  const SALL_PAGE = 500;         // worker page size for lazy row loading
+  const SALL_RENDER_CAP = 10000; // DOM cap — beyond this the note asks to refine
+  const sall = { token: 0, total: 0, loaded: 0, searcher: null, busy: false };
+
+  function sallIsOpen() { return !$('sall').classList.contains('hidden'); }
+
+  function sallClose() {
+    sall.token++; // invalidate any in-flight search/page of this run
+    $('sall').classList.add('hidden');
+    $('btn-sall').setAttribute('aria-expanded', 'false');
+  }
+
+  function sallNote(t) { $('sall-note').textContent = t; }
+
+  /** Append one worker page of search results; false when the run went stale. */
+  async function sallAppend(start) {
+    const myToken = sall.token;
+    const res = await paging.request('page', { start, size: SALL_PAGE, search: true });
+    if (myToken !== sall.token) return false;
+    const wrap = document.createElement('div');
+    wrap.className = 'sr-inner';
+    wrap.innerHTML = res.rows.map((rec) =>
+      srRow(fileDisplayName(rec.fileId), rec.lineNo, rec.ts, displayText(rec), true, rec.fileId, sall.searcher)).join('');
+    $('sall-rows').append(wrap);
+    sall.loaded += res.rows.length;
+    return true;
+  }
+
+  /** List EVERY line matching the quick-filter pattern across the viewer's
+   * current scope in a bottom panel (merged view: all loaded files; per-file
+   * view: the displayed file). Runs through the worker's full-file search —
+   * complete indexed files, not the analysis sample — and reuses the search
+   * tab's row markup so clicks jump exactly like search-tab results. */
+  async function runSearchAll() {
+    if (sallIsOpen()) { sallClose(); return; } // second click toggles the panel shut
+    const pattern = $('quick').value;
+    if (!pattern) { flash('Type a pattern in the quick filter first'); return; }
+    // same semantics as the live quick filter: case-insensitive regex on raw text
+    const searcher = LT.buildSearcher(pattern, { fixed: false, word: false, invert: false, caseMode: 'insensitive' });
+    if (!searcher.ok) { flash('Bad pattern: ' + searcher.error); return; }
+    const scopeFile = state.viewMode === 'file' ? state.activeFile : null;
+    const scopeName = scopeFile ? fileDisplayName(scopeFile) : 'all files';
+    const token = ++sall.token;
+    sall.total = 0; sall.loaded = 0; sall.searcher = searcher;
+    $('sall-rows').innerHTML = '';
+    $('sall').classList.remove('hidden');
+    $('btn-sall').setAttribute('aria-expanded', 'true');
+    sallNote('searching /' + pattern + '/ in ' + scopeName + '…');
+    let res;
+    try {
+      res = await paging.request('search',
+        { spec: { pattern, options: searcher.opts, fileId: scopeFile || undefined } },
+        (p) => { if (p.progress && token === sall.token) sallNote('searching /' + pattern + '/ in ' + scopeName + ' — ' + p.progress); });
+    } catch (e) { if (token === sall.token) sallNote(e.message); return; }
+    if (res.cancelled || token !== sall.token) return;
+    if (res.errors && res.errors.length) { sallNote(res.errors[0].error); return; }
+    sall.total = res.total;
+    const capped = sall.total > SALL_RENDER_CAP ? ' — showing the first ' + SALL_RENDER_CAP + ', refine the pattern to narrow' : '';
+    sallNote(sall.total + ' match(es) for /' + pattern + '/ in ' + scopeName + capped);
+    if (sall.total > 0) await sallAppend(0);
+  }
+
+  /** Lazy load more result pages as the panel scrolls towards its bottom. */
+  async function sallOnScroll() {
+    const el = $('sall-rows');
+    if (sall.busy || !sallIsOpen()) return;
+    const limit = Math.min(sall.total, SALL_RENDER_CAP);
+    if (sall.loaded >= limit) return;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight > 240) return;
+    sall.busy = true;
+    try { await sallAppend(sall.loaded); }
+    catch (e) { sallNote(e.message || String(e)); }
+    finally { sall.busy = false; }
+  }
+
   function switchTab(name) {
     document.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('active', b.dataset.tab === name));
     document.querySelectorAll('.tab').forEach((t) => t.classList.toggle('active', t.id === 'tab-' + name));
@@ -2569,6 +2645,14 @@
       const row = e.target.closest('.sr-row');
       if (row) jumpFromSearch(row);
     });
+    // viewer Search all: same click-to-jump rows, plus lazy pages on scroll
+    $('btn-sall').onclick = () => { runSearchAll().catch(pagingError); };
+    $('sall-close').onclick = sallClose;
+    $('sall-rows').addEventListener('click', (e) => {
+      const row = e.target.closest('.sr-row');
+      if (row) jumpFromSearch(row);
+    });
+    $('sall-rows').addEventListener('scroll', () => { sallOnScroll().catch(pagingError); });
     $('goto-ln').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { goToLine(); e.preventDefault(); }
     });
@@ -2680,6 +2764,7 @@
       else if (e.key === 'w' || e.key === 'W') setWrap(!state.wrapOn);
       else if (e.key === 'b' || e.key === 'B') { if (view.length) toggleBookmark(selection.count ? selection.indices()[0] : Number((viewer().querySelector('.vrow') || { dataset: { idx: 0 } }).dataset.idx || 0)); }
       else if (e.key === 'Escape' && state.zenOn) { setZen(false); e.preventDefault(); }
+      else if (e.key === 'Escape' && sallIsOpen()) { sallClose(); e.preventDefault(); }
       else if (e.key === 'Escape') { selection.clear(); $('drawer').className = ''; renderRows(); updateStatus(); }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c')) { if (selection.count) { copySelection(); e.preventDefault(); } }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'a')) { selection.selectAll(view.length); renderRows(); updateStatus(); e.preventDefault(); }
