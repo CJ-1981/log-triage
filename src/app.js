@@ -553,6 +553,14 @@
     input.addEventListener('blur', () => setTimeout(close, 120));
   }
 
+  /** The quick filter grows with its typed content (ch-based — the field is
+   * monospace): 24ch base, +1ch per character plus caret room, 80ch cap.
+   * flex-shrink still clamps it to the toolbar row on narrow screens. */
+  function autosizeQuick() {
+    const el = $('quick');
+    el.style.width = Math.min(80, Math.max(24, el.value.length + 4)) + 'ch';
+  }
+
   let view = [];            // current visible records
   let exportLock = false;   // blocks mutating UI while an export streams
   let exportAbort = null;   // AbortController.abort() for the running export
@@ -1306,7 +1314,7 @@
     state.maskEnabled = p.maskEnabled || {};
     state.customMasks = p.customMasks || [];
     state.rg = Object.assign({ fixed: false, word: false, invert: false, caseMode: 'smart', before: 0, after: 0 }, p.rg || {});
-    syncMasksFromState(); syncRgFromState(); applyFilters(); renderMasks(); $('quick').value = state.quick;
+    syncMasksFromState(); syncRgFromState(); applyFilters(); renderMasks(); $('quick').value = state.quick; autosizeQuick();
   }
   function renderPresets() {
     const sel = $('preset-sel');
@@ -2013,7 +2021,7 @@
     let located = await paging.request('locate', { fileId: rec.fileId, lineNo: rec.lineNo });
     if (located.at < 0) {
       state.activeFile = rec.fileId; state.viewMode = 'file'; $('view-mode').value = 'file';
-      state.showOnlyBookmarked = false; state.quick = ''; $('quick').value = ''; filter.quick = null; filter.compileQuick();
+      state.showOnlyBookmarked = false; state.quick = ''; $('quick').value = ''; autosizeQuick(); filter.quick = null; filter.compileQuick();
       state.levels = []; filter.setLevels([]); state.timeFrom = state.timeTo = filter.timeFrom = filter.timeTo = ''; $('time-from').value = $('time-to').value = '';
       state.rules = state.rules.map((r) => Object.assign({}, r, { enabled: false })); filter.setRules(state.rules); saveState();
       await rebuildView();
@@ -2184,9 +2192,12 @@
     input.before(wrap);
     wrap.append(input);
     // preserve row layout: a CSS/inline flex on the input must move to the
-    // wrapper, which is now the flex child of the row
+    // wrapper, which is now the flex child of the row. '1 1 auto' is just the
+    // .clr-wrap>input default — not a sizing intent — and transferring it made
+    // every wrapped input's wrapper grow into leftover row space (the 66px
+    // line-number field rendered ~107px+)
     const cs = getComputedStyle(input);
-    if (cs.flex && cs.flex !== '0 1 auto') {
+    if (cs.flex && cs.flex !== '0 1 auto' && cs.flex !== '1 1 auto') {
       wrap.style.flex = cs.flex;
       if (cs.minWidth && cs.minWidth !== 'auto') wrap.style.minWidth = cs.minWidth;
       if (cs.maxWidth && cs.maxWidth !== 'none') wrap.style.maxWidth = cs.maxWidth;
@@ -2465,6 +2476,7 @@
     let quickTimer = null;
     $('quick').oninput = () => {
       state.quick = $('quick').value;
+      autosizeQuick();
       if (quickTimer) clearTimeout(quickTimer);
       quickTimer = setTimeout(() => {
         if (state.quick.trim()) state.quickHistory = pushTerm(state.quickHistory, state.quick);
@@ -2625,6 +2637,7 @@
 
     // restore UI state
     $('quick').value = state.quick || '';
+    autosizeQuick();
     $('time-from').value = state.timeFrom || '';
     $('time-to').value = state.timeTo || '';
     $('view-mode').value = state.viewMode;

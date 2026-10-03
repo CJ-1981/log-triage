@@ -134,7 +134,7 @@ body.zen #zen-hud { display: block; }
 .chip.sel { border-color: var(--accent); color: var(--accent); }
 .chip .n { color: var(--muted); font-weight: 400; margin-left: 4px; }
 #vtools { display: flex; gap: 6px; align-items: center; padding: 6px 10px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-#quick { flex: 1; min-width: 200px; max-width: 480px; font-family: var(--mono); font-size: 12.5px; }
+#quick { flex: 0 1 auto; width: 24ch; min-width: 200px; max-width: 100%; font-family: var(--mono); font-size: 12.5px; }
 /* narrow-screen extras: hidden until the media queries activate them */
 #vtools-more { display: none; }
 #side-scrim { display: none; }
@@ -401,7 +401,7 @@ table.rules { min-width: 620px; }
         <div id="chips-row"><span class="muted" id="chips-hint">Level chips appear after loading</span></div>
         <div id="vtools">
           <input type="text" id="quick" placeholder="quick filter (live)…">
-          <input type="text" id="goto-ln" class="vt-sec" placeholder="line #⏎" title="go to line — type a line number and press Enter" style="width:80px">
+          <input type="text" id="goto-ln" class="vt-sec" placeholder="line #" title="go to line — type a line number and press Enter" style="width:66px;min-width:0">
           <button id="btn-mask" title="toggle masking (M)">Mask: ON</button>
           <button id="vtools-more" title="more viewer controls" aria-expanded="false" aria-controls="vtools">⋯</button>
           <button id="btn-wrap" class="vt-sec" title="wrap long lines (W)">Wrap: OFF</button>

@@ -2572,3 +2572,30 @@ test('quick filter: Enter commits the typed term, history dropdown has no defaul
   await page.waitForTimeout(300);
   assert.strictEqual(await page.evaluate(() => document.getElementById('quick').value), 'Proce', 'Enter after exiting the list keeps the typed term');
 });
+
+test('quick filter auto-expands while typing; line-number field stays compact', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  const w = (id) => page.evaluate((i) => document.getElementById(i).getBoundingClientRect().width, id);
+  const w0 = await w('quick');
+  // a medium pattern grows the field beyond its empty baseline
+  await page.fill('#quick', 'x'.repeat(35));
+  await page.waitForTimeout(100);
+  const w1 = await w('quick');
+  assert.ok(w1 > w0 + 20, 'field grows as the user types: ' + w0 + ' -> ' + w1);
+  // a long pattern keeps growing but stays capped
+  await page.fill('#quick', 'y'.repeat(120));
+  await page.waitForTimeout(100);
+  const w2 = await w('quick');
+  assert.ok(w2 > w1, 'keeps growing for long patterns: ' + w1 + ' -> ' + w2);
+  assert.ok(w2 < 900, 'growth is capped: ' + w2);
+  // clearing shrinks it back to the baseline
+  await page.fill('#quick', '');
+  await page.waitForTimeout(100);
+  const w3 = await w('quick');
+  assert.ok(w3 <= w0 + 2, 'shrinks back when cleared: ' + w0 + ' -> ' + w3);
+  // the line-number field is compact
+  const gl = await w('goto-ln');
+  assert.ok(gl <= 70, 'line-number field is compact: ' + gl);
+});
