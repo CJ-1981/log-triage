@@ -2665,6 +2665,42 @@ test('viewer Search all: scoped match list in a bottom panel; Search tab renamed
   assert.strictEqual(await page.evaluate(() => document.getElementById('btn-sall').getAttribute('aria-expanded')), 'false');
 });
 
+test('search-all rows follow the viewer Wrap toggle; mobile keeps the viewer visible', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = 'heartbeat';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4');
+  await click('btn-sall');
+  await page.waitForFunction(() => document.querySelectorAll('#sall-rows .sr-row').length === 4);
+  // desktop default Wrap: OFF — panel rows are one scrollable line per match
+  let ws = await page.evaluate(() => getComputedStyle(document.querySelector('#sall-rows .sr-row')).whiteSpace);
+  assert.strictEqual(ws, 'pre', 'viewer Wrap OFF -> panel rows nowrap: ' + ws);
+  // the VIEWER's toggle drives the panel (the panel has no control of its own)
+  await click('btn-wrap');
+  ws = await page.evaluate(() => getComputedStyle(document.querySelector('#sall-rows .sr-row')).whiteSpace);
+  assert.strictEqual(ws, 'pre-wrap', 'viewer Wrap ON -> panel rows wrap: ' + ws);
+  await click('btn-wrap');
+
+  // mobile 390x844: the panel takes a bounded share and the viewer stays usable
+  await page.setViewportSize({ width: 390, height: 844 });
+  await click('btn-sall'); // toggle shut…
+  await click('vtools-more'); // …reveal the secondary toolbar (Search all is vt-sec)
+  await click('btn-sall'); // …and reopen on mobile
+  await page.waitForFunction(() => !document.getElementById('sall').classList.contains('hidden'));
+  const geo = await page.evaluate(() => {
+    const h = (id) => Math.round(document.getElementById(id).getBoundingClientRect().height);
+    return { viewer: h('viewer'), sall: h('sall'), vh: window.innerHeight, scrollH: document.documentElement.scrollHeight };
+  });
+  assert.ok(geo.sall <= 310, 'panel capped on mobile: ' + JSON.stringify(geo));
+  assert.ok(geo.viewer >= 160, 'viewer keeps a usable floor: ' + JSON.stringify(geo));
+  assert.ok(geo.scrollH <= geo.vh + 1, 'no page overflow with the panel open: ' + JSON.stringify(geo));
+});
+
 test('history records committed terms, not per-character prefixes', async () => {
   await fresh();
   await click('btn-demo');
