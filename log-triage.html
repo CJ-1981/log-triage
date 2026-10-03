@@ -6621,18 +6621,29 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       handleDrop(e.dataTransfer);
     });
 
-    // debounced: start matching only after typing pauses
-    let quickTimer = null;
+    // debounced: start matching only after typing pauses. History is committed
+    // separately (Enter / blur / pagehide / 900ms dwell): pushing from the
+    // filter debounce recorded every intermediate prefix whenever a keystroke
+    // gap exceeded the debounce ("h", "he", "hea"…).
+    let quickTimer = null, quickHistTimer = null;
+    const commitQuickHistory = () => {
+      if (quickHistTimer) { clearTimeout(quickHistTimer); quickHistTimer = null; }
+      const v = $('quick').value;
+      if (v.trim()) { state.quickHistory = pushTerm(state.quickHistory, v); saveState(); }
+    };
     $('quick').oninput = () => {
       state.quick = $('quick').value;
       autosizeQuick();
       if (quickTimer) clearTimeout(quickTimer);
       quickTimer = setTimeout(() => {
-        if (state.quick.trim()) state.quickHistory = pushTerm(state.quickHistory, state.quick);
         filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null; filter.compileQuick();
         saveState(); rebuildView();
       }, 200);
+      if (quickHistTimer) clearTimeout(quickHistTimer);
+      quickHistTimer = setTimeout(commitQuickHistory, 900);
     };
+    $('quick').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) commitQuickHistory(); });
+    $('quick').addEventListener('blur', commitQuickHistory);
     attachHistory($('rg-pattern'), 'searchHistory');
     attachHistory($('quick'), 'quickHistory');
     $('btn-sr-wrap').onclick = () => setSearchWrap(!state.srWrapOn);
@@ -6669,20 +6680,26 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     });
     $('clear-bookmarks').onclick = clearAllBookmarks;
 
-    // debounced: start matching only after typing pauses
-    let rgTimer = null;
+    // debounced: start matching only after typing pauses; history commits
+    // separately (Enter / blur / pagehide / 900ms dwell) — same as the quick filter
+    let rgTimer = null, rgHistTimer = null;
+    const commitSearchHistory = () => {
+      if (rgHistTimer) { clearTimeout(rgHistTimer); rgHistTimer = null; }
+      const v = $('rg-pattern').value;
+      if (v.trim()) { state.searchHistory = pushTerm(state.searchHistory, v); saveState(); }
+    };
     $('rg-pattern').oninput = () => {
       state.rgPattern = $('rg-pattern').value;
       $('search-progress').textContent = '…';
       if (rgTimer) clearTimeout(rgTimer);
-      rgTimer = setTimeout(() => {
-        if (state.rgPattern.trim()) {
-          state.searchHistory = pushTerm(state.searchHistory, state.rgPattern);
-          saveState();
-        }
-        runInstantSearch();
-      }, 250);
+      rgTimer = setTimeout(() => { runInstantSearch(); }, 250);
+      if (rgHistTimer) clearTimeout(rgHistTimer);
+      rgHistTimer = setTimeout(commitSearchHistory, 900);
     };
+    $('rg-pattern').addEventListener('keydown', (e) => { if (e.key === 'Enter' && !e.isComposing) commitSearchHistory(); });
+    $('rg-pattern').addEventListener('blur', commitSearchHistory);
+    // reload/navigation during the dwell must not lose the typed term
+    window.addEventListener('pagehide', () => { commitQuickHistory(); commitSearchHistory(); });
     ;['rg-fixed', 'rg-word', 'rg-invert', 'rg-case'].forEach((id) => {
       $(id).onchange = () => {
         state.rg = rgOpts();
