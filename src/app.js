@@ -2054,6 +2054,19 @@
   const SALL_RENDER_CAP = 10000; // DOM cap — beyond this the note asks to refine
   const sall = { token: 0, total: 0, loaded: 0, searcher: null, busy: false };
 
+  let findHintTimer = null;
+  function hideFindHint() { clearTimeout(findHintTimer); $('find-hint').classList.add('hidden'); }
+  /** Ctrl+F guard: the browser's find bar only sees the rendered page of the
+   * virtualized viewer, so a quick find silently misses most of the log. The
+   * intent is redirected into the quick filter (full-scope live matching) and
+   * this floating explanation offers Search all for the complete match list. */
+  function showFindHint() {
+    const el = $('find-hint');
+    el.classList.remove('hidden');
+    clearTimeout(findHintTimer);
+    findHintTimer = setTimeout(hideFindHint, 9000);
+  }
+
   function sallIsOpen() { return !$('sall').classList.contains('hidden'); }
 
   function sallClose() {
@@ -2655,6 +2668,8 @@
       if (row) jumpFromSearch(row);
     });
     $('sall-rows').addEventListener('scroll', () => { sallOnScroll().catch(pagingError); });
+    $('find-hint-close').onclick = hideFindHint;
+    $('find-hint-all').onclick = () => { hideFindHint(); runSearchAll().catch(pagingError); };
     $('goto-ln').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { goToLine(); e.preventDefault(); }
     });
@@ -2770,6 +2785,14 @@
       else if (e.key === 'Escape') { selection.clear(); $('drawer').className = ''; renderRows(); updateStatus(); }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c')) { if (selection.count) { copySelection(); e.preventDefault(); } }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'a')) { selection.selectAll(view.length); renderRows(); updateStatus(); e.preventDefault(); }
+      // browser find sees only the rendered page of the virtualized viewer —
+      // redirect Ctrl+F into the quick filter and explain (only with a log
+      // loaded and while the viewer tab is the active one)
+      else if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F') && files.length && $('tab-viewer').classList.contains('active')) {
+        e.preventDefault();
+        const q = $('quick'); q.focus(); q.select();
+        showFindHint();
+      }
     });
   }
 

@@ -121,6 +121,15 @@ body.zen #zen-fab { display: inline-block; }
    dangerous invisible-mask situation never happens while screen-sharing */
 #zen-hud { display: none; position: fixed; left: 10px; bottom: 10px; z-index: 70; font-family: var(--mono); font-size: 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--border); border-radius: 6px; padding: 3px 9px; opacity: .55; pointer-events: none; }
 body.zen #zen-hud { display: block; }
+
+/* Ctrl+F interception hint: the browser's find bar can only see the rendered
+ * page of the virtualized viewer — float an explanation instead of a silent
+ * partial match, with a jump-off point to Search all (FR-10 AC-7) */
+#find-hint { position: fixed; right: 16px; bottom: 46px; z-index: 80; max-width: 440px; display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; background: var(--surface); color: var(--fg); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 8px; box-shadow: 0 6px 24px rgba(0,0,0,.35); font-size: 12.5px; }
+#find-hint p { margin: 4px 0 0; color: var(--muted); }
+#find-hint .fh-actions { display: flex; gap: 6px; margin-top: 8px; }
+#find-hint #find-hint-close { flex: none; border: none; background: none; color: var(--muted); cursor: pointer; padding: 0 2px; }
+@media (max-width: 760px) { #find-hint { left: 10px; right: 10px; max-width: none; bottom: 54px; } }
 #dropzone.drag { border-color: var(--accent); color: var(--accent); }
 #archive-progress { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 100; }
 #archive-progress.visible { display: flex; }
@@ -450,6 +459,14 @@ table.rules { min-width: 620px; }
         <button id="zen-fab" title="Exit zen mode (Esc)">✕&nbsp;Zen</button>
         <div id="zen-hint" role="status" aria-live="polite"></div>
         <div id="zen-hud" aria-hidden="true"></div>
+        <div id="find-hint" class="hidden" role="status" aria-live="polite">
+          <div>
+            <b>Browser find only scans the current page.</b>
+            <p>The viewer is virtualized — the browser's find bar cannot see beyond the rendered rows. The quick filter (now focused) matches every line in scope live; Search all lists every match with jump links.</p>
+            <div class="fh-actions"><button id="find-hint-all" type="button" title="list every match in the current scope">Search all…</button></div>
+          </div>
+          <button id="find-hint-close" type="button" title="dismiss">✕</button>
+        </div>
         <div id="statusbar">
           <span>lines: <b id="st-total">0</b></span>
           <span>indexed: <b id="st-kept">0</b></span>
@@ -6222,6 +6239,19 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   const SALL_RENDER_CAP = 10000; // DOM cap — beyond this the note asks to refine
   const sall = { token: 0, total: 0, loaded: 0, searcher: null, busy: false };
 
+  let findHintTimer = null;
+  function hideFindHint() { clearTimeout(findHintTimer); $('find-hint').classList.add('hidden'); }
+  /** Ctrl+F guard: the browser's find bar only sees the rendered page of the
+   * virtualized viewer, so a quick find silently misses most of the log. The
+   * intent is redirected into the quick filter (full-scope live matching) and
+   * this floating explanation offers Search all for the complete match list. */
+  function showFindHint() {
+    const el = $('find-hint');
+    el.classList.remove('hidden');
+    clearTimeout(findHintTimer);
+    findHintTimer = setTimeout(hideFindHint, 9000);
+  }
+
   function sallIsOpen() { return !$('sall').classList.contains('hidden'); }
 
   function sallClose() {
@@ -6823,6 +6853,8 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       if (row) jumpFromSearch(row);
     });
     $('sall-rows').addEventListener('scroll', () => { sallOnScroll().catch(pagingError); });
+    $('find-hint-close').onclick = hideFindHint;
+    $('find-hint-all').onclick = () => { hideFindHint(); runSearchAll().catch(pagingError); };
     $('goto-ln').addEventListener('keydown', (e) => {
       if (e.key === 'Enter') { goToLine(); e.preventDefault(); }
     });
@@ -6938,6 +6970,14 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       else if (e.key === 'Escape') { selection.clear(); $('drawer').className = ''; renderRows(); updateStatus(); }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c')) { if (selection.count) { copySelection(); e.preventDefault(); } }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'a')) { selection.selectAll(view.length); renderRows(); updateStatus(); e.preventDefault(); }
+      // browser find sees only the rendered page of the virtualized viewer —
+      // redirect Ctrl+F into the quick filter and explain (only with a log
+      // loaded and while the viewer tab is the active one)
+      else if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F') && files.length && $('tab-viewer').classList.contains('active')) {
+        e.preventDefault();
+        const q = $('quick'); q.focus(); q.select();
+        showFindHint();
+      }
     });
   }
 
