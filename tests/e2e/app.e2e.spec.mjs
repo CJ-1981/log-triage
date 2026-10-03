@@ -2538,9 +2538,10 @@ test('quick filter: Enter commits the typed term, history dropdown has no defaul
   await fresh();
   await click('btn-demo');
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
-  // seed the history with 'Process'
+  // seed the history with 'Process' (Enter commits the term — v1.50.1 semantics)
   await page.fill('#quick', 'Process');
   await page.waitForFunction(() => document.getElementById('st-shown').textContent !== '44', null, { timeout: 5000 });
+  await page.keyboard.press('Enter');
   await page.fill('#quick', '');
   await page.waitForTimeout(350);
   // a new typed prefix lists the history match — but nothing may be pre-focused
@@ -2598,4 +2599,28 @@ test('quick filter auto-expands while typing; line-number field stays compact', 
   // the line-number field is compact
   const gl = await w('goto-ln');
   assert.ok(gl <= 70, 'line-number field is compact: ' + gl);
+});
+
+test('history records committed terms, not per-character prefixes', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  const hist = (key) => page.evaluate((k) => JSON.parse(localStorage.getItem('log_triage_state_v1') || '{}')[k] || [], key);
+  // type slowly — every inter-key gap exceeds the 200ms filter debounce, the
+  // old trigger that recorded each intermediate prefix as its own entry
+  await page.click('#quick');
+  await page.keyboard.type('heartbeat', { delay: 250 });
+  await page.waitForTimeout(400);
+  // Enter commits the typed term immediately — exactly one entry
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(150);
+  assert.deepStrictEqual(await hist('quickHistory'), ['heartbeat'], 'Enter records exactly the full term, no prefixes');
+  // rg field: slow typing then blur — one entry, not four prefixes
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
+  await page.click('#rg-pattern');
+  await page.keyboard.type('VHal', { delay: 300 });
+  await page.waitForTimeout(150);
+  await page.evaluate(() => document.getElementById('rg-pattern').blur()); // blur commits
+  await page.waitForTimeout(150);
+  assert.deepStrictEqual(await hist('searchHistory'), ['VHal'], 'blur records exactly the full term, no prefixes');
 });
