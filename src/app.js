@@ -2153,6 +2153,8 @@
     $('btn-wrap').classList.toggle('on', on);
     // nowrap keeps long lines on one scrollable row; wrap clips to the column
     viewer().classList.toggle('nowrap', !on);
+    // the search-all panel has no wrap control of its own — it follows the viewer
+    $('sall-rows').classList.toggle('nowrap', !on);
     // narrow screens get a right-edge fade while rows can overflow horizontally
     $('viewer-wrap').classList.toggle('h-clip', !on);
     invalidateHeights(); saveState(); renderRows();

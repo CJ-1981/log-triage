@@ -139,7 +139,7 @@ body.zen #zen-hud { display: block; }
 #vtools-more { display: none; }
 #side-scrim { display: none; }
 #side-close { display: none; }
-#viewer-wrap { flex: 1; min-height: 0; position: relative; background: var(--bg); }
+#viewer-wrap { flex: 1; min-height: 160px; position: relative; background: var(--bg); }
 #viewer { position: absolute; inset: 0; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
 #vspacer { position: relative; width: 100%; min-width: 0; }
 #viewer.nowrap #vspacer { width: max-content; min-width: 100%; }
@@ -285,14 +285,19 @@ details.sr-group > summary.sr-file .count-pill { margin-left: 8px; }
 #search-results.nowrap .sr-row .srx { flex: none; }
 #search-progress { padding: 4px 10px; color: var(--muted); font-size: 12px; }
 
-/* viewer search-all bottom panel — rows reuse the .sr-row styles above */
-#sall { display: flex; flex-direction: column; height: 240px; border-top: 2px solid var(--border); background: var(--surface); }
+/* viewer search-all bottom panel — rows reuse the .sr-row styles above and
+ * follow the VIEWER's Wrap toggle (no separate control). The panel shrinks
+ * (flex-shrink) before the viewer drops below its min-height floor. */
+#sall { display: flex; flex-direction: column; flex: 0 1 auto; height: 240px; min-height: 96px; border-top: 2px solid var(--border); background: var(--surface); }
 #sall-head { display: flex; align-items: center; gap: 10px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
 #sall-title { font-weight: 600; flex: none; }
 #sall-note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
 #sall-rows { flex: 1; min-height: 0; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
+#sall-rows.nowrap .sr-inner { width: max-content; }
+#sall-rows.nowrap .sr-row { white-space: pre; width: max-content; min-width: 100%; }
+#sall-rows.nowrap .sr-row .srx { flex: none; }
 body.zen #sall { display: none !important; }
-@media (max-width: 760px) { #sall { height: 40vh; } }
+@media (max-width: 760px) { #sall { height: min(240px, 34vh); } }
 
 /* masks */
 .mask-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px; }
