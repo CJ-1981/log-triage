@@ -507,8 +507,10 @@
       if (!items.length) return;
       dd = document.createElement('div');
       dd.className = 'history-dd';
-      dd.innerHTML = items.map((h, i) => '<div class="history-item' + (i === 0 ? ' active' : '') + '" data-i="' + i + '">' + esc(h) + '</div>').join('');
-      active = 0;
+      dd.innerHTML = items.map((h, i) => '<div class="history-item" data-i="' + i + '">' + esc(h) + '</div>').join('');
+      // nothing highlighted by default: Enter must commit the TYPED term —
+      // pre-focusing item 0 made Enter re-pick an old entry by accident
+      active = -1;
       dd.addEventListener('mousedown', (e) => {
         e.preventDefault(); // keep input focus: blur-close must not win
         const item = e.target.closest('.history-item');
@@ -533,11 +535,15 @@
       if (!dd) return;
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
-        active = e.key === 'ArrowDown' ? Math.min(items.length - 1, active + 1) : Math.max(0, active - 1);
+        // -1 means "nothing highlighted" (the typed term owns Enter); ArrowUp
+        // from the first item steps back out of the list
+        active = e.key === 'ArrowDown' ? Math.min(items.length - 1, active + 1) : Math.max(-1, active - 1);
         Array.from(dd.children).forEach((c, i) => c.classList.toggle('active', i === active));
       } else if (e.key === 'Enter' && active >= 0) {
         e.preventDefault(); e.stopPropagation();
         pick(active);
+      } else if (e.key === 'Enter') {
+        close(); // commit the typed term; the input's own Enter handling proceeds
       } else if (e.key === 'Escape') {
         close();
       }
