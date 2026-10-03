@@ -167,7 +167,7 @@ Status: debounce implemented (v1.3.0); history dropdown implemented (v1.33.0).
 
 - AC-1: Instant-search matching is debounced 250 ms and runs after typing pauses.
 - AC-2: The viewer quick filter is debounced 200 ms.
-- AC-3: Both fields keep a search-term history shown as a dropdown on focus/typing: substring-filtered, most recent first, capped at 20, deduped case-insensitively, persisted in localStorage. Picking an entry (click or ↑/↓ + Enter) fills the input and re-runs the search. Terms are recorded only when a search executes with a non-empty value; the active filters themselves stay transient (ADR-0012).
+- AC-3: Both fields keep a search-term history shown as a dropdown on focus/typing: substring-filtered, most recent first, capped at 20, deduped case-insensitively, persisted in localStorage. Picking an entry (click or ↑/↓ + Enter) fills the input and re-runs the search. Terms are recorded only when a search executes with a non-empty value; the active filters themselves stay transient (ADR-0012). v1.49.2: the dropdown opens with NO entry highlighted — Enter always commits the typed term and closes the list unless an entry was explicitly reached with ↑/↓, and ArrowUp past the first entry returns to the typed term (the original default-focus behavior made Enter re-pick an old entry by accident).
 
 ### FR-18 — Go-to-line and search-result click-to-jump
 

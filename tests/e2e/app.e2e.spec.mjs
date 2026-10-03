@@ -2533,3 +2533,42 @@ test('polish sweep: empty state, level-bar colors, count adjacency, cm labels, p
     if (opt) opt.click();
   });
 });
+
+test('quick filter: Enter commits the typed term, history dropdown has no default focus', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  // seed the history with 'Process'
+  await page.fill('#quick', 'Process');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent !== '44', null, { timeout: 5000 });
+  await page.fill('#quick', '');
+  await page.waitForTimeout(350);
+  // a new typed prefix lists the history match — but nothing may be pre-focused
+  await page.fill('#quick', 'Proc');
+  await page.waitForFunction(() => document.querySelector('.history-dd .history-item'), null, { timeout: 5000 });
+  assert.ok(await page.evaluate(() => !document.querySelector('.history-item.active')), 'no history item is focused by default');
+  // Enter commits the typed term and closes the dropdown
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  assert.strictEqual(await page.evaluate(() => document.getElementById('quick').value), 'Proc', 'Enter keeps the typed term');
+  assert.ok(await page.evaluate(() => !document.querySelector('.history-dd')), 'dropdown closed after Enter');
+  // explicit arrow navigation still picks the highlighted entry
+  await page.fill('#quick', '');
+  await page.fill('#quick', 'Proce');
+  await page.waitForFunction(() => document.querySelector('.history-dd .history-item'), null, { timeout: 5000 });
+  await page.keyboard.press('ArrowDown');
+  assert.ok(await page.evaluate(() => document.querySelector('.history-item.active')), 'ArrowDown activates the first item');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  assert.strictEqual(await page.evaluate(() => document.getElementById('quick').value), 'Process', 'Enter after explicit navigation picks the item');
+  // ArrowUp from the first item exits back to the typed text
+  await page.fill('#quick', '');
+  await page.fill('#quick', 'Proce');
+  await page.waitForFunction(() => document.querySelector('.history-dd .history-item'), null, { timeout: 5000 });
+  await page.keyboard.press('ArrowDown');
+  await page.keyboard.press('ArrowUp');
+  assert.ok(await page.evaluate(() => !document.querySelector('.history-item.active')), 'ArrowUp past the first item clears the highlight');
+  await page.keyboard.press('Enter');
+  await page.waitForTimeout(300);
+  assert.strictEqual(await page.evaluate(() => document.getElementById('quick').value), 'Proce', 'Enter after exiting the list keeps the typed term');
+});
