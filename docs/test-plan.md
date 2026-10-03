@@ -97,7 +97,7 @@ Note: the G0–G8 records below are historical — they describe the design veri
 
 ## E2e scope (Playwright — 87 specs: 79 app + 8 stress)
 
-App suite (55 specs) — coverage includes:
+App suite (79 specs) — coverage includes:
 
 1. `?selftest` page runs and reports green.
 2. Demo load: format detection, level chips, and masking indications correct.
