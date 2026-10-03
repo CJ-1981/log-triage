@@ -1,5 +1,6 @@
 node_modules/
 tests/tmp/
+test-results/
 *.log.big
 npm-debug.log*
 .DS_Store
