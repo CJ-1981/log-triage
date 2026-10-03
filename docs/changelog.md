@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.50.1 (2026-10-03)
+- Merge pull request #51 from CJ-1981/fix/history-prefix-entries
+- fix: search history records committed terms, not typing prefixes
+- test: pin committed-term history recording (no per-character prefixes)
+
 ## 1.50.0 (2026-10-03)
 - Merge pull request #50 from CJ-1981/feat/quick-autosize
 - docs: fix stale app-suite spec count in test plan
