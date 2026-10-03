@@ -2705,6 +2705,37 @@ test('search-all rows follow the viewer Wrap toggle; mobile keeps the viewer vis
   assert.ok(geo.scrollH <= geo.vh + 1, 'no page overflow with the panel open: ' + JSON.stringify(geo));
 });
 
+test('Ctrl+F in the viewer focuses the quick filter and explains the page-only browser find', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  // Ctrl+F with nothing focused: the native find is replaced by the app's find
+  await page.keyboard.press('Control+f');
+  const st = await page.evaluate(() => ({
+    focused: document.activeElement ? document.activeElement.id : '',
+    hintVisible: !document.getElementById('find-hint').classList.contains('hidden'),
+    text: document.getElementById('find-hint').textContent,
+  }));
+  assert.strictEqual(st.focused, 'quick', 'quick filter focused');
+  assert.ok(st.hintVisible, 'floating hint visible');
+  assert.match(st.text, /current page/);
+  assert.match(st.text, /Search all/);
+  // typing goes straight into the live full-scope filter
+  await page.keyboard.type('heartbeat');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4');
+  // the hint's Search all button runs the scoped search-all panel
+  await page.evaluate(() => document.getElementById('find-hint-all').click());
+  await page.waitForFunction(() => !document.getElementById('sall').classList.contains('hidden'));
+  await page.waitForFunction(() => /4 match/.test(document.getElementById('sall-note').textContent));
+  // ✕ dismisses the hint
+  await page.evaluate(() => document.getElementById('find-hint-close').click());
+  assert.ok(await page.evaluate(() => document.getElementById('find-hint').classList.contains('hidden')), '✕ dismisses');
+  // outside the viewer tab the native browser find is left alone (no hint)
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
+  await page.keyboard.press('Control+f');
+  assert.ok(await page.evaluate(() => document.getElementById('find-hint').classList.contains('hidden')), 'no interception off the viewer tab');
+});
+
 test('history records committed terms, not per-character prefixes', async () => {
   await fresh();
   await click('btn-demo');
