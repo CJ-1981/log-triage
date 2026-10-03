@@ -1132,6 +1132,10 @@ test('file cache: previous session is listed after reload, cached file reloads, 
   await fresh();
   await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  // the UI updates before the async IDB cache write completes — await the
+  // entry itself (durable: cachePut resolves on transaction commit), or the
+  // reload below races the put and the cached listing never appears (CI #53)
+  await page.waitForFunction(() => LT.cacheGetAll().then((es) => es.some((e) => e.name === 'demo.log' && e.data)), null, { timeout: 8000 });
   // reopen the app: the cache lists the previous file as restorable
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 1, null, { timeout: 20000 });
