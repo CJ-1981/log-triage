@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+## 1.50.0 (2026-10-03)
+- Merge pull request #50 from CJ-1981/feat/quick-autosize
+- docs: fix stale app-suite spec count in test plan
+- feat: quick filter auto-expands while typing; clear-wrapper no longer stretches fields
+- test: pin quick-filter autosize and compact line-number field
+
 ## 1.49.2 (2026-10-03)
 - Merge pull request #49 from CJ-1981/fix/history-enter-hijack
 - fix: history dropdown opens unfocused; Enter no longer re-picks the first entry
