@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.52.0 (2026-10-03)
+- Merge pull request #54 from CJ-1981/feat/find-hint
+- feat: intercept Ctrl+F in the viewer - floating alert explains the page-only browser find, points to Search all
+- test: pin Ctrl+F interception - quick filter focus, floating page-only alert, Search-all jump
+
 ## 1.51.1 (2026-10-03)
 - Merge pull request #53 from CJ-1981/fix/sall-wrap-mobile
 - test: await the IDB cache entry before reloading (file-cache race on slow CI)
