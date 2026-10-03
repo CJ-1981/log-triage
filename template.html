@@ -285,6 +285,15 @@ details.sr-group > summary.sr-file .count-pill { margin-left: 8px; }
 #search-results.nowrap .sr-row .srx { flex: none; }
 #search-progress { padding: 4px 10px; color: var(--muted); font-size: 12px; }
 
+/* viewer search-all bottom panel — rows reuse the .sr-row styles above */
+#sall { display: flex; flex-direction: column; height: 240px; border-top: 2px solid var(--border); background: var(--surface); }
+#sall-head { display: flex; align-items: center; gap: 10px; padding: 4px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+#sall-title { font-weight: 600; flex: none; }
+#sall-note { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
+#sall-rows { flex: 1; min-height: 0; overflow: auto; font-family: var(--mono); font-size: 12.5px; }
+body.zen #sall { display: none !important; }
+@media (max-width: 760px) { #sall { height: 40vh; } }
+
 /* masks */
 .mask-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 8px; }
 .mask-card { border: 1px solid var(--border); border-radius: 8px; padding: 8px 10px; background: var(--surface); }
@@ -344,7 +353,7 @@ table.rules { min-width: 620px; }
     <h1>Log Triage <span id="ver">v__LT_VERSION__</span></h1>
     <div id="tabs">
       <button data-tab="viewer" class="active">Viewer</button>
-      <button data-tab="search">Search</button>
+      <button data-tab="search" title="ripgrep-style search across EVERY loaded file — instant results over the analysis sample, deep scan over the complete files">Multifile search</button>
       <button data-tab="filters">Filters</button>
       <button data-tab="masks">Masks</button>
       <button data-tab="pii">PII</button>
@@ -402,6 +411,7 @@ table.rules { min-width: 620px; }
         <div id="vtools">
           <input type="text" id="quick" placeholder="quick filter (live)…">
           <input type="text" id="goto-ln" class="vt-sec" placeholder="line #" title="go to line — type a line number and press Enter" style="width:66px;min-width:0">
+          <button id="btn-sall" class="vt-sec" aria-expanded="false" aria-controls="sall" title="Search all — list EVERY line matching the quick filter across the current file(s) (merged view: all loaded files; per-file view: the displayed file) in a bottom panel">Search all</button>
           <button id="btn-mask" title="toggle masking (M)">Mask: ON</button>
           <button id="vtools-more" title="more viewer controls" aria-expanded="false" aria-controls="vtools">⋯</button>
           <button id="btn-wrap" class="vt-sec" title="wrap long lines (W)">Wrap: OFF</button>
@@ -416,6 +426,10 @@ table.rules { min-width: 620px; }
           <div id="viewer"><div id="vspacer"></div></div>
           <div id="viewer-busy" role="status" aria-live="polite"><span id="viewer-busy-text"></span><button id="viewer-cancel">Cancel</button></div>
           <div id="drawer"></div>
+        </div>
+        <div id="sall" class="hidden" role="region" aria-label="Search all matches in the current scope">
+          <div id="sall-head"><span id="sall-title">Search all</span><span id="sall-note" class="muted"></span><button id="sall-close" title="close the search-all panel (Esc)">✕</button></div>
+          <div id="sall-rows"></div>
         </div>
         <div id="pager" aria-label="Log pages">
           <button id="page-first" title="First page">First</button><button id="page-prev" title="Previous page">Previous</button>
