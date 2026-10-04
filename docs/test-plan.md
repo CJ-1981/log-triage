@@ -95,9 +95,9 @@ Note: the G0–G8 records below are historical — they describe the design veri
 - **Browser:** `build.js` inlines the identical file into `log-triage.html`; opening it with `?selftest` executes the suite and reports pass/fail counts and failing case names.
 - **Guarantee:** any behavior change must be expressed as a case update, so Node CI and the in-browser self-test can never disagree.
 
-## E2e scope (Playwright — 92 specs: 84 app + 8 stress)
+## E2e scope (Playwright — 93 specs: 85 app + 8 stress)
 
-App suite (84 specs) — coverage includes:
+App suite (85 specs) — coverage includes:
 
 1. `?selftest` page runs and reports green.
 2. Demo load: format detection, level chips, and masking indications correct.
@@ -156,6 +156,7 @@ App suite (84 specs) — coverage includes:
 48. Viewer Search all + tab rename (v1.51.0, FR-17 AC-5 / FR-3 AC-4): the Search tab is labeled "Multifile search"; with demo.log + syslog.log loaded and quick filter `fail`, the viewer Search-all button lists all 4 matches (2 per file, rows carrying file + line + <mark> terms) in the bottom panel with an "all files" scope note, a row click jumps the viewer (selection + drawer), switching to per-file view re-runs scoped to demo.log only (2 matches, note names the file), a second button click toggles the panel shut, Esc closes it (aria-expanded follows), and an empty quick filter leaves the panel closed with an explanatory flash. v1.51.1: panel rows follow the VIEWER's Wrap toggle (computed white-space pre with Wrap OFF, pre-wrap with ON — no separate panel control), and at 390×844 with the toolbar overflow open the panel stays ≤ ~34vh (≤310px) while the viewer keeps ≥160px and the page does not overflow.
 49. Ctrl+F interception (v1.52.0, FR-10 AC-7): with a demo log loaded and focus outside text fields, Ctrl+F focuses-and-selects the quick filter and floats the explanation alert ("current page" limitation + Search all pointer); typing immediately live-filters the whole scope (heartbeat → 4 shown); the alert's "Search all…" button opens the panel (4 matches); ✕ dismisses; and on another tab (Masks) Ctrl+F leaves the native browser find untouched — no alert appears.
 50. Search-all regression + resize pass (v1.52.1, FR-10 AC-7 / FR-17 AC-5): a SECOND Ctrl+F while the quick field already has focus still select-alls — typing 'fail' after 'heartbeat' replaces (field value pinned, 2 shown) instead of appending into a 0-match garbage pattern (the "quick filter stopped filtering" report); a Search-all click with the panel open RE-RUNS with the new pattern (4 matches for heartbeat, panel stays open — the old toggle-shut read as "works only once"); Esc layers — first press closes an open quick-history dropdown only (stopPropagation; panel survives), the second closes the panel from field focus; and the panel's top grip drag-resizes the height (style height === measured layout, no silent flex shrink; persisted across close/reopen via state.sallH; double-click resets to the default).
+51. History dropdown interaction pass (v1.52.2, FR-17 AC-3): with 14 committed terms the capped 12-item list overflows its 240px max-height (scrollbar present) and scrolling INSIDE it keeps it open with a real scrollTop change (the capture-phase page-scroll closer used to kill the list on its own scroll), while a page scroll behind it still closes it; a closed dropdown reopens from the field with ↓ (nothing highlighted, matching a fresh open) or ↑ (last entry pre-highlighted); the inline ✕ clears the field to all-44-lines WITHOUT reopening the list and focus leaves the field (the dropdown renders only while its field has focus).
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 

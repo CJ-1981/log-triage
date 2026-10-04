@@ -493,15 +493,22 @@
    * fills the input and fires its normal 'input' handling (debounced). */
   function attachHistory(input, key) {
     let dd = null, items = [], active = -1;
+    const markActive = () => Array.from((dd || {}).children || []).forEach((c, i) => c.classList.toggle('active', i === active));
     const close = () => {
       if (dd) { dd.remove(); dd = null; }
       items = []; active = -1;
       input.removeEventListener('keydown', navKey, true);
-      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('scroll', scrollClose, true);
       window.removeEventListener('resize', close);
     };
-    const render = () => {
+    // wheel-scrolling INSIDE the dropdown must not close it — only scrolls of
+    // the page behind it do (the scroll event targets the scrolling element)
+    const scrollClose = (e) => { if (!dd || !dd.contains(e.target)) close(); };
+    const render = (initialActive = -1) => {
       close();
+      // a dropdown for an unfocused field is noise: programmatic clears (the
+      // inline ✕) dispatch input events without the user focusing the field
+      if (document.activeElement !== input) return;
       const term = input.value.trim().toLowerCase();
       items = (state[key] || []).filter((h) => !term || h.toLowerCase().includes(term)).slice(0, 12);
       if (!items.length) return;
@@ -510,7 +517,8 @@
       dd.innerHTML = items.map((h, i) => '<div class="history-item" data-i="' + i + '">' + esc(h) + '</div>').join('');
       // nothing highlighted by default: Enter must commit the TYPED term —
       // pre-focusing item 0 made Enter re-pick an old entry by accident
-      active = -1;
+      active = initialActive;
+      markActive();
       dd.addEventListener('mousedown', (e) => {
         e.preventDefault(); // keep input focus: blur-close must not win
         const item = e.target.closest('.history-item');
@@ -522,7 +530,7 @@
       dd.style.top = (r.bottom + 2) + 'px';
       dd.style.width = Math.max(r.width, 220) + 'px';
       input.addEventListener('keydown', navKey, true);
-      window.addEventListener('scroll', close, true);
+      window.addEventListener('scroll', scrollClose, true);
       window.addEventListener('resize', close);
     };
     const pick = (i) => {
@@ -538,7 +546,7 @@
         // -1 means "nothing highlighted" (the typed term owns Enter); ArrowUp
         // from the first item steps back out of the list
         active = e.key === 'ArrowDown' ? Math.min(items.length - 1, active + 1) : Math.max(-1, active - 1);
-        Array.from(dd.children).forEach((c, i) => c.classList.toggle('active', i === active));
+        markActive();
       } else if (e.key === 'Enter' && active >= 0) {
         e.preventDefault(); e.stopPropagation();
         pick(active);
@@ -551,8 +559,17 @@
         e.stopPropagation();
       }
     };
-    input.addEventListener('focus', render);
-    input.addEventListener('input', render);
+    // a closed dropdown reopens from the field with ↓ (nothing highlighted,
+    // matching a fresh open) or ↑ (last entry pre-highlighted); without this
+    // the list could only be brought back by blurring and refocusing
+    input.addEventListener('keydown', (e) => {
+      if (dd || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+      if (!(state[key] || []).length) return;
+      e.preventDefault();
+      render(e.key === 'ArrowUp' ? Math.min(11, state[key].length - 1) : -1);
+    }, true);
+    input.addEventListener('focus', () => render());
+    input.addEventListener('input', () => render());
     input.addEventListener('blur', () => setTimeout(close, 120));
   }
 
@@ -2358,7 +2375,9 @@
       sync();
       input.dispatchEvent(new Event('input', { bubbles: true }));
       input.dispatchEvent(new Event('change', { bubbles: true }));
-      input.focus();
+      // no refocus: keeping focus used to pop the history dropdown open over
+      // the just-cleared field; the user asked for focus to leave instead
+      input.blur();
     });
     sync();
     // Dynamically rendered fields are decorated on their first focusin. Moving
