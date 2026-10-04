@@ -2655,9 +2655,7 @@ test('viewer Search all: scoped match list in a bottom panel; Search tab renamed
   // per-file scope narrows to the displayed file (demo.log first loaded)
   await page.selectOption('#view-mode', 'file');
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '2');
-  await click('btn-sall'); // panel still open -> toggles shut
-  assert.ok(await page.evaluate(() => document.getElementById('sall').classList.contains('hidden')), 'toggle closes');
-  await click('btn-sall'); // and re-runs scoped
+  await click('btn-sall'); // re-runs scoped while open — refresh, not a toggle
   await page.waitForFunction(() => /2 match\(es\) for \/fail\/ in demo\.log/.test(document.getElementById('sall-note').textContent));
   const scopedRows = await page.evaluate(() => Array.from(document.querySelectorAll('#sall-rows .sr-row')).map((r) => r.dataset.file));
   assert.strictEqual(scopedRows.length, 2);
@@ -2692,9 +2690,8 @@ test('search-all rows follow the viewer Wrap toggle; mobile keeps the viewer vis
 
   // mobile 390x844: the panel takes a bounded share and the viewer stays usable
   await page.setViewportSize({ width: 390, height: 844 });
-  await click('btn-sall'); // toggle shut…
-  await click('vtools-more'); // …reveal the secondary toolbar (Search all is vt-sec)
-  await click('btn-sall'); // …and reopen on mobile
+  await click('vtools-more'); // reveal the secondary toolbar (worst-case height)
+  await click('btn-sall'); // re-runs on mobile (the panel stays open — no toggle)
   await page.waitForFunction(() => !document.getElementById('sall').classList.contains('hidden'));
   const geo = await page.evaluate(() => {
     const h = (id) => Math.round(document.getElementById(id).getBoundingClientRect().height);
@@ -2734,6 +2731,75 @@ test('Ctrl+F in the viewer focuses the quick filter and explains the page-only b
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
   await page.keyboard.press('Control+f');
   assert.ok(await page.evaluate(() => document.getElementById('find-hint').classList.contains('hidden')), 'no interception off the viewer tab');
+});
+
+test('regressions: Ctrl+F always select-alls, search-all re-runs and Esc works from fields; panel resizes via grip', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+
+  // Ctrl+F while focus is ALREADY in the quick field must still select-all:
+  // typing used to append to the stale pattern (heartbeat+fail -> 0 matches)
+  // and the filter appeared to "stop filtering" (v1.52.0 regression)
+  await page.keyboard.press('Control+f');
+  await page.keyboard.type('heartbeat');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4');
+  await page.keyboard.press('Control+f'); // second press — focus is in the field
+  await page.keyboard.type('fail');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '2');
+  const fieldVal = await page.evaluate(() => document.getElementById('quick').value);
+  assert.strictEqual(fieldVal, 'fail', 'Ctrl+F select-all replaced the pattern: ' + fieldVal);
+
+  // search-all: a click while the panel is open RE-RUNS (refresh), not toggles
+  await click('btn-sall');
+  await page.waitForFunction(() => /2 match\(es\)/.test(document.getElementById('sall-note').textContent));
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = 'heartbeat';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4');
+  await click('btn-sall'); // panel open -> must refresh to the new pattern
+  await page.waitForFunction(() => /4 match\(es\) for \/heartbeat\//.test(document.getElementById('sall-note').textContent));
+  assert.ok(!(await page.evaluate(() => document.getElementById('sall').classList.contains('hidden'))), 're-run keeps the panel open');
+
+  // Esc layering: with the quick field focused the history dropdown opens —
+  // the first Esc closes ONLY the dropdown, the second closes the panel
+  await page.waitForTimeout(1100); // let the typing dwell-commit record a history term
+  await page.evaluate(() => { if (document.activeElement) document.activeElement.blur(); }); // refocus must re-fire focus
+  await page.click('#quick');
+  const ddOpen = await page.evaluate(() => !!document.querySelector('.history-dd'));
+  assert.ok(ddOpen, 'history dropdown open on field focus');
+  await page.keyboard.press('Escape');
+  assert.ok(await page.evaluate(() => !document.querySelector('.history-dd')), 'Esc #1 closes the dropdown only');
+  assert.ok(!(await page.evaluate(() => document.getElementById('sall').classList.contains('hidden'))), 'panel survives Esc #1');
+  await page.keyboard.press('Escape');
+  assert.ok(await page.evaluate(() => document.getElementById('sall').classList.contains('hidden')), 'Esc #2 closes the panel from field focus');
+
+  // resize: dragging the grip up grows the panel (clamped to the space left
+  // beside the other chrome while the viewer keeps its 160px floor); the
+  // height persists across close/reopen, and a double-click resets it
+  await click('btn-sall');
+  await page.waitForFunction(() => document.querySelectorAll('#sall-rows .sr-row').length === 4);
+  const h = () => page.evaluate(() => Math.round(document.getElementById('sall').getBoundingClientRect().height));
+  const h0 = await h();
+  const grip = await page.locator('#sall-grip').boundingBox();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(grip.x + grip.width / 2, grip.y - 76, { steps: 8 });
+  await page.mouse.up();
+  const h1 = await h();
+  assert.ok(h1 >= h0 + 70, 'drag grows the panel: ' + h0 + ' -> ' + h1);
+  const styleH = await page.evaluate(() => parseInt(document.getElementById('sall').style.height, 10));
+  assert.ok(Math.abs(styleH - h1) <= 1, 'style height matches layout (no silent flex shrink): ' + styleH + ' vs ' + h1);
+  await page.keyboard.press('Escape');
+  await click('btn-sall');
+  await page.waitForFunction(() => document.querySelectorAll('#sall-rows .sr-row').length === 4);
+  const h2 = await h();
+  assert.ok(Math.abs(h2 - h1) <= 2, 'resized height persists across close/reopen: ' + h1 + ' -> ' + h2);
+  await page.locator('#sall-grip').dblclick();
+  const h3 = await h();
+  assert.ok(Math.abs(h3 - h0) <= 2, 'double-click resets to the default: ' + h1 + ' -> ' + h3);
 });
 
 test('history records committed terms, not per-character prefixes', async () => {

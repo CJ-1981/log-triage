@@ -16,7 +16,7 @@
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null, drawerOn: true,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
     timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200, issueGroups: null,
-    cap: 100000,
+    cap: 100000, sallH: null,
     pii: {
       active: 'local',
       presidio: { url: 'http://127.0.0.1:3000', path: '/analyze', language: 'en', threshold: 0.5, entities: '', timeoutMs: 10000 },
@@ -546,6 +546,9 @@
         close(); // commit the typed term; the input's own Enter handling proceeds
       } else if (e.key === 'Escape') {
         close();
+        // the open dropdown owns this Esc; panels behind it keep theirs for a
+        // second press (without this, one Esc closed dropdown AND search-all)
+        e.stopPropagation();
       }
     };
     input.addEventListener('focus', render);
@@ -2097,7 +2100,9 @@
    * complete indexed files, not the analysis sample — and reuses the search
    * tab's row markup so clicks jump exactly like search-tab results. */
   async function runSearchAll() {
-    if (sallIsOpen()) { sallClose(); return; } // second click toggles the panel shut
+    // every click RE-RUNS with the current quick-filter pattern — the former
+    // "second click toggles the panel shut" behavior read as "it stopped
+    // working"; closing is the ✕ / Esc job
     const pattern = $('quick').value;
     if (!pattern) { flash('Type a pattern in the quick filter first'); return; }
     // same semantics as the live quick filter: case-insensitive regex on raw text
@@ -2109,6 +2114,7 @@
     sall.total = 0; sall.loaded = 0; sall.searcher = searcher;
     $('sall-rows').innerHTML = '';
     $('sall').classList.remove('hidden');
+    if (state.sallH) sallApplyHeight(state.sallH); else $('sall').style.height = '';
     $('btn-sall').setAttribute('aria-expanded', 'true');
     sallNote('searching /' + pattern + '/ in ' + scopeName + '…');
     let res;
@@ -2136,6 +2142,51 @@
     try { await sallAppend(sall.loaded); }
     catch (e) { sallNote(e.message || String(e)); }
     finally { sall.busy = false; }
+  }
+
+  /* Panel resize: the grip on the top edge drags the height (96px floor); the
+   * ceiling is the space actually left beside the other chrome rows while the
+   * viewer keeps its 160px floor (a style height above that would just be
+   * flex-shrunk back down). The size persists in the session state and a
+   * double-click resets to the CSS default. */
+  function sallApplyHeight(px) {
+    const tab = $('tab-viewer');
+    const chrome = Array.from(tab.children)
+      .filter((el) => el.id !== 'sall' && el.id !== 'viewer-wrap')
+      // fixed overlays (find hint, zen HUD…) and hidden elements claim no row
+      .filter((el) => { const cs = getComputedStyle(el); return cs.display !== 'none' && cs.position !== 'fixed'; })
+      .reduce((n, el) => n + el.getBoundingClientRect().height, 0);
+    const max = Math.max(160, Math.floor(tab.getBoundingClientRect().height - chrome - 160));
+    $('sall').style.height = Math.min(max, Math.max(96, Math.round(px))) + 'px';
+  }
+
+  function bindSallResize() {
+    const grip = $('sall-grip');
+    let startY = 0, startH = 0, dragging = false;
+    grip.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      dragging = true;
+      startY = e.clientY;
+      startH = $('sall').getBoundingClientRect().height;
+      grip.setPointerCapture(e.pointerId);
+      document.body.classList.add('sall-resizing');
+      e.preventDefault();
+    });
+    grip.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      sallApplyHeight(startH + (startY - e.clientY)); // drag up = taller
+    });
+    const end = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      grip.releasePointerCapture(e.pointerId);
+      document.body.classList.remove('sall-resizing');
+      state.sallH = Math.round($('sall').getBoundingClientRect().height);
+      saveState();
+    };
+    grip.addEventListener('pointerup', end);
+    grip.addEventListener('pointercancel', end);
+    grip.addEventListener('dblclick', () => { $('sall').style.height = ''; state.sallH = null; saveState(); });
   }
 
   function switchTab(name) {
@@ -2668,6 +2719,7 @@
       if (row) jumpFromSearch(row);
     });
     $('sall-rows').addEventListener('scroll', () => { sallOnScroll().catch(pagingError); });
+    bindSallResize();
     $('find-hint-close').onclick = hideFindHint;
     $('find-hint-all').onclick = () => { hideFindHint(); runSearchAll().catch(pagingError); };
     $('goto-ln').addEventListener('keydown', (e) => {
@@ -2776,23 +2828,30 @@
 
     // keyboard
     document.addEventListener('keydown', (e) => {
+      // Ctrl+F must reach the app's find even while a text field has focus:
+      // without the focus+SELECT-ALL the next typing APPENDS to the stale
+      // pattern ("heartbeat"+"fail" → 0 matches — the quick filter "stopped
+      // filtering"), and the native bar cannot see past the rendered page of
+      // the virtualized viewer anyway (FR-10 AC-7)
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F') && files.length && $('tab-viewer').classList.contains('active')) {
+        e.preventDefault();
+        const q = $('quick'); q.focus(); q.select();
+        showFindHint();
+        return;
+      }
+      // Esc exits zen first, then closes the search-all panel — from ANY
+      // focus: with focus in the quick field the INPUT early-return below
+      // used to swallow the keystroke and the panel could not be dismissed
+      // (the history dropdown layers in front via stopPropagation when open)
+      if (e.key === 'Escape' && state.zenOn) { setZen(false); e.preventDefault(); return; }
+      if (e.key === 'Escape' && sallIsOpen()) { sallClose(); e.preventDefault(); return; }
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       if (e.key === 'm' || e.key === 'M') setMask(!state.maskOn);
       else if (e.key === 'w' || e.key === 'W') setWrap(!state.wrapOn);
       else if (e.key === 'b' || e.key === 'B') { if (view.length) toggleBookmark(selection.count ? selection.indices()[0] : Number((viewer().querySelector('.vrow') || { dataset: { idx: 0 } }).dataset.idx || 0)); }
-      else if (e.key === 'Escape' && state.zenOn) { setZen(false); e.preventDefault(); }
-      else if (e.key === 'Escape' && sallIsOpen()) { sallClose(); e.preventDefault(); }
       else if (e.key === 'Escape') { selection.clear(); $('drawer').className = ''; renderRows(); updateStatus(); }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'c')) { if (selection.count) { copySelection(); e.preventDefault(); } }
       else if ((e.ctrlKey || e.metaKey) && (e.key === 'a')) { selection.selectAll(view.length); renderRows(); updateStatus(); e.preventDefault(); }
-      // browser find sees only the rendered page of the virtualized viewer —
-      // redirect Ctrl+F into the quick filter and explain (only with a log
-      // loaded and while the viewer tab is the active one)
-      else if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F') && files.length && $('tab-viewer').classList.contains('active')) {
-        e.preventDefault();
-        const q = $('quick'); q.focus(); q.select();
-        showFindHint();
-      }
     });
   }
 
