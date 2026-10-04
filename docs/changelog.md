@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 1.52.2 (2026-10-04)
+- Merge pull request #57 from CJ-1981/fix/history-dropdown
+- fix: history dropdown survives its own scrolling, reopens via arrow keys, and the x-clear blurs instead of refocusing
+- test: pin history dropdown internal scroll, arrow reopen, and x-clear without reopen
+- Merge pull request #56 from CJ-1981/docs/version-refs
+- docs: correct release version annotations to v1.52.1 (CI classified the fix-prefixed commit as patch)
+
 ## 1.52.1 (2026-10-04)
 - Merge pull request #55 from CJ-1981/fix/quick-filter-regressions
 - fix: Ctrl+F select-all from any focus (pattern append bug); search-all re-runs and Esc closes from fields; feat: drag-resizable panel
