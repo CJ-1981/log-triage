@@ -429,7 +429,7 @@ table.rules { min-width: 620px; }
         <div id="vtools">
           <input type="text" id="quick" placeholder="quick filter (live)…">
           <input type="text" id="goto-ln" class="vt-sec" placeholder="line #" title="go to line — type a line number and press Enter" style="width:66px;min-width:0">
-          <button id="btn-sall" class="vt-sec" aria-expanded="false" aria-controls="sall" title="Search all — list EVERY line matching the quick filter across the current file(s) (merged view: all loaded files; per-file view: the displayed file) in a bottom panel">Search all</button>
+          <button id="btn-sall" class="vt-sec" aria-expanded="false" aria-controls="sall" title="Search all — list EVERY line matching the quick filter across the current file(s) (merged view: all loaded files; per-file view: the displayed file) in a bottom panel — shortcut: Ctrl+Enter">Search all</button>
           <button id="btn-mask" title="toggle masking (M)">Mask: ON</button>
           <button id="vtools-more" title="more viewer controls" aria-expanded="false" aria-controls="vtools">⋯</button>
           <button id="btn-wrap" class="vt-sec" title="wrap long lines (W)">Wrap: OFF</button>
@@ -461,7 +461,7 @@ table.rules { min-width: 620px; }
         <div id="find-hint" class="hidden" role="status" aria-live="polite">
           <div>
             <b>Browser find only scans the current page.</b>
-            <p>The viewer is virtualized — the browser's find bar cannot see beyond the rendered rows. The quick filter (now focused) matches every line in scope live; Search all lists every match with jump links.</p>
+            <p>The viewer is virtualized — the browser's find bar cannot see beyond the rendered rows. The quick filter (now focused) matches every line in scope live; Search all (Ctrl+Enter) lists every match with jump links.</p>
             <div class="fh-actions"><button id="find-hint-all" type="button" title="list every match in the current scope">Search all…</button></div>
           </div>
           <button id="find-hint-close" type="button" title="dismiss">✕</button>

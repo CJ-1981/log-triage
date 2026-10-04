@@ -2847,6 +2847,14 @@
 
     // keyboard
     document.addEventListener('keydown', (e) => {
+      // Ctrl+Enter runs Search all from anywhere in the viewer tab — most
+      // useful with the cursor still in the quick filter (type a pattern,
+      // Ctrl+Enter). Skipped in zen, where the panel is hidden.
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && files.length && !state.zenOn && $('tab-viewer').classList.contains('active')) {
+        e.preventDefault();
+        runSearchAll().catch(pagingError);
+        return;
+      }
       // Ctrl+F must reach the app's find even while a text field has focus:
       // without the focus+SELECT-ALL the next typing APPENDS to the stale
       // pattern ("heartbeat"+"fail" → 0 matches — the quick filter "stopped
