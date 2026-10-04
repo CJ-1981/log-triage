@@ -1142,6 +1142,17 @@
     ok(css.includes('body[data-theme="only"]'));
   });
 
+  // mark ink: color:var(--bg) painted WHITE text on the yellow highlight in
+  // the light themes (Paper/Solarized-Light) — unreadable. Every theme must
+  // define a dedicated ink: dark themes keep the page background as ink,
+  // light themes use their dark foreground.
+  T('themes', 'mark ink stays readable on the highlight in every theme', () => {
+    for (const n of SRC.themeNames()) {
+      const t = SRC.THEMES[n];
+      eq(t.vars['--hl-ink'], t.dark ? t.vars['--bg'] : t.vars['--fg'], n + ' --hl-ink');
+    }
+  });
+
   T('detect', 'logcat beats mmdd on tie (specificity order pinned)', () => {
     const lines = [
       '08-24 15:37:01.123  1234  5678 I Tag: x',
