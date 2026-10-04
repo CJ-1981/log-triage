@@ -2869,6 +2869,48 @@ test('history dropdown: internal scrolling stays open, arrows reopen it, ✕ cle
   assert.strictEqual(after.shown, '44', 'view reset to all lines');
 });
 
+test('Ctrl+Enter runs Search all — from the quick filter and from body focus', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  // the natural flow: type a pattern, press Ctrl+Enter with the cursor still
+  // in the quick filter (the shortcut must fire despite the INPUT focus)
+  await page.fill('#quick', 'heartbeat');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4');
+  await page.keyboard.press('Control+Enter');
+  await page.waitForFunction(() => !document.getElementById('sall').classList.contains('hidden'));
+  await page.waitForFunction(() => /4 match\(es\) for \/heartbeat\//.test(document.getElementById('sall-note').textContent));
+  // from body focus it RE-RUNS with the current pattern (refresh semantics)
+  await page.evaluate(() => { if (document.activeElement) document.activeElement.blur(); });
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = 'fail';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '2');
+  await page.keyboard.press('Control+Enter');
+  await page.waitForFunction(() => /2 match\(es\) for \/fail\//.test(document.getElementById('sall-note').textContent));
+  // the button tooltip advertises the shortcut
+  const title = await page.evaluate(() => document.getElementById('btn-sall').title);
+  assert.match(title, /Ctrl\+Enter/);
+  // an empty pattern keeps the panel closed with the explanatory flash
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.getElementById('sall').classList.contains('hidden'));
+  await page.fill('#quick', '');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44');
+  await page.keyboard.press('Control+Enter');
+  await page.waitForFunction(() => /Type a pattern/.test(document.getElementById('st-progress').textContent));
+  assert.ok(await page.evaluate(() => document.getElementById('sall').classList.contains('hidden')), 'no panel without a pattern');
+  // off the viewer tab the shortcut does nothing (no re-run of a stale scope)
+  await page.fill('#quick', 'heartbeat');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
+  await page.keyboard.press('Control+Enter');
+  const note = await page.evaluate(() => document.getElementById('sall-note').textContent);
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  assert.strictEqual(await page.evaluate(() => document.getElementById('sall-note').textContent), note, 'no re-run off the viewer tab');
+});
+
 test('history records committed terms, not per-character prefixes', async () => {
   await fresh();
   await click('btn-demo');
