@@ -2939,6 +2939,37 @@ test('Ctrl+Enter runs Search all — from the quick filter and from body focus',
   assert.strictEqual(await page.evaluate(() => document.getElementById('sall-note').textContent), note, 'no re-run off the viewer tab');
 });
 
+test('light themes render match marks with dark ink (readable on the yellow highlight)', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  await page.fill('#quick', 'heartbeat'); // quick-filter marks in the viewer rows
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4');
+  await page.waitForFunction(() => !!document.querySelector('#viewer mark'));
+  const markInk = () => page.evaluate(() => {
+    const m = document.querySelector('#viewer mark');
+    const cs = getComputedStyle(m);
+    const rgb = (cs.color.match(/\d+/g) || []).map(Number);
+    return { color: cs.color, avg: Math.round((rgb[0] + rgb[1] + rgb[2]) / 3), bg: cs.backgroundColor };
+  });
+  const setTheme = (name) => page.evaluate((n) => {
+    document.getElementById('theme-btn').click();
+    const opt = Array.from(document.querySelectorAll('#theme-menu .theme-opt')).find((o) => o.dataset.value === n);
+    opt.click();
+  }, name);
+  // the light themes used to paint the page background (near-white) as ink on
+  // the yellow highlight — the regression this spec pins
+  for (const t of ['paper', 'solarized-light']) {
+    await setTheme(t);
+    const ink = await markInk();
+    assert.ok(ink.avg < 96, t + ': mark ink is dark on the highlight: ' + JSON.stringify(ink));
+  }
+  // a dark theme keeps the same dark-ink rendering as before
+  await setTheme('midnight');
+  const dark = await markInk();
+  assert.ok(dark.avg < 96, 'midnight: mark ink stays dark: ' + JSON.stringify(dark));
+});
+
 test('history records committed terms, not per-character prefixes', async () => {
   await fresh();
   await click('btn-demo');
