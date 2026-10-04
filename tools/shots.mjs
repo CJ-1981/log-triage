@@ -1,7 +1,9 @@
 #!/usr/bin/env node
 'use strict';
 /* Captures review screenshots of the built app with headless Chromium.
- * Usage: node tools/shots.mjs  (serves the repo itself on :8902) */
+ * Usage: node tools/shots.mjs  (serves the repo itself on :8902)
+ * Set SHOTS_DIR to override the output directory (default tests/tmp/shots;
+ * README images are regenerated with SHOTS_DIR=docs/img). */
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { mkdirSync } from 'node:fs';
@@ -29,6 +31,13 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 const base = 'http://127.0.0.1:8902/log-triage.html';
 
 const shot = (name) => page.screenshot({ path: join(shotsDir, name) });
+// themes are switched through the header 🎨 dropdown (the old inline
+// #theme-sel was removed in v1.4x — driving it silently kept the wrong theme)
+const setTheme = (name) => page.evaluate((n) => {
+  document.getElementById('theme-btn').click();
+  const opt = Array.from(document.querySelectorAll('#theme-menu .theme-opt')).find((o) => o.dataset.value === n);
+  if (opt) opt.click();
+}, name);
 
 await page.goto(base + '?v=' + Date.now(), { waitUntil: 'domcontentloaded' });
 await page.evaluate(() => localStorage.removeItem('log_triage_state_v1'));
@@ -47,16 +56,14 @@ await shot('1-viewer-midnight.png');
 // 2: paper theme, unfiltered
 await page.evaluate(() => {
   const q = document.getElementById('quick'); q.value = ''; q.dispatchEvent(new Event('input'));
-  const s = document.getElementById('theme-sel'); s.value = 'paper'; s.dispatchEvent(new Event('change'));
 });
+await setTheme('paper');
 await page.waitForTimeout(250);
 await shot('2-viewer-paper.png');
 
 // 3: masks panel (midnight)
-await page.evaluate(() => {
-  const s = document.getElementById('theme-sel'); s.value = 'midnight'; s.dispatchEvent(new Event('change'));
-  document.querySelector('#tabs button[data-tab=masks]').click();
-});
+await setTheme('midnight');
+await page.evaluate(() => document.querySelector('#tabs button[data-tab=masks]').click());
 await page.waitForTimeout(250);
 await shot('3-masks.png');
 
@@ -65,13 +72,24 @@ await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis
 await page.waitForTimeout(300);
 await shot('4-analysis.png');
 
-// 5: search with instant results + selection copy bar
+// 5: multifile search with instant results
 await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
 await page.evaluate(() => {
   const q = document.getElementById('rg-pattern'); q.value = 'heartbeat ecu=tcam'; q.dispatchEvent(new Event('input'));
 });
 await page.waitForTimeout(250);
 await shot('5-search.png');
+
+// 6: viewer Search all — every quick-filter match in the bottom panel
+await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+await page.evaluate(() => {
+  const q = document.getElementById('quick'); q.value = 'heartbeat'; q.dispatchEvent(new Event('input'));
+});
+await page.waitForTimeout(300);
+await page.evaluate(() => document.getElementById('btn-sall').click());
+await page.waitForFunction(() => document.querySelectorAll('#sall-rows .sr-row').length === 4);
+await page.waitForTimeout(150);
+await shot('6-search-all.png');
 
 await browser.close();
 server.close();
