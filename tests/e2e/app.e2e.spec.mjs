@@ -2802,6 +2802,73 @@ test('regressions: Ctrl+F always select-alls, search-all re-runs and Esc works f
   assert.ok(Math.abs(h3 - h0) <= 2, 'double-click resets to the default: ' + h1 + ' -> ' + h3);
 });
 
+test('history dropdown: internal scrolling stays open, arrows reopen it, ✕ clear never reopens', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  // seed 14 committed terms (Enter commits; the list renders at most 12 -> scrollbar)
+  for (let i = 0; i < 14; i++) {
+    await page.fill('#quick', 'term' + i);
+    await page.keyboard.press('Enter');
+  }
+  await page.waitForFunction(() => {
+    const h = (JSON.parse(localStorage.getItem('log_triage_state_v1') || '{}')).quickHistory || [];
+    return h.length >= 12;
+  });
+  // focus with an empty field lists the full (capped) history with a scrollbar
+  await page.fill('#quick', '');
+  await page.click('#quick');
+  await page.waitForFunction(() => document.querySelectorAll('.history-dd .history-item').length === 12);
+  const geom = await page.evaluate(() => {
+    const dd = document.querySelector('.history-dd');
+    return { scrollable: dd.scrollHeight > dd.clientHeight + 1 };
+  });
+  assert.ok(geom.scrollable, 'capped list overflows (scrollbar present)');
+  // scrolling INSIDE the dropdown must not close it (the capture-phase
+  // page-scroll closer used to kill the list on its own scroll)
+  const scrolled = await page.evaluate(() => {
+    const dd = document.querySelector('.history-dd');
+    dd.scrollTop = 80;
+    dd.dispatchEvent(new Event('scroll'));
+    return { open: !!document.querySelector('.history-dd'), top: dd.scrollTop };
+  });
+  assert.ok(scrolled.open, 'dropdown survives its own scroll');
+  assert.ok(scrolled.top > 0, 'list actually scrolled: ' + scrolled.top);
+  // a scroll of the PAGE behind it still closes
+  await page.evaluate(() => document.getElementById('viewer').dispatchEvent(new Event('scroll')));
+  await page.waitForFunction(() => !document.querySelector('.history-dd'));
+  // a closed dropdown reopens from the field: ↓ = fresh open (nothing active)
+  await page.keyboard.press('ArrowDown');
+  await page.waitForFunction(() => !!document.querySelector('.history-dd'));
+  assert.strictEqual(await page.evaluate(() => document.querySelectorAll('.history-dd .history-item.active').length), 0, '↓ reopens with nothing highlighted');
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('.history-dd'));
+  // ↑ reopens with the LAST entry pre-highlighted
+  await page.keyboard.press('ArrowUp');
+  await page.waitForFunction(() => !!document.querySelector('.history-dd'));
+  const upState = await page.evaluate(() => {
+    const items = Array.from(document.querySelectorAll('.history-dd .history-item'));
+    const activeIdx = items.findIndex((el) => el.classList.contains('active'));
+    return { count: items.length, activeIdx, isLast: activeIdx === items.length - 1 };
+  });
+  assert.ok(upState.activeIdx >= 0 && upState.isLast, '↑ reopens with the last entry highlighted: ' + JSON.stringify(upState));
+  // the inline ✕ clears the field WITHOUT reopening the list, and focus leaves
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('.history-dd'));
+  await page.fill('#quick', 'term1');
+  await page.locator('.clr-wrap:has(#quick) .clr-btn').click();
+  const after = await page.evaluate(() => ({
+    val: document.getElementById('quick').value,
+    dd: !!document.querySelector('.history-dd'),
+    focused: document.activeElement ? document.activeElement.id || document.activeElement.tagName : '',
+    shown: document.getElementById('st-shown').textContent,
+  }));
+  assert.strictEqual(after.val, '', 'field cleared');
+  assert.ok(!after.dd, 'no dropdown after ✕ clear');
+  assert.notStrictEqual(after.focused, 'quick', 'focus left the field: ' + after.focused);
+  assert.strictEqual(after.shown, '44', 'view reset to all lines');
+});
+
 test('history records committed terms, not per-character prefixes', async () => {
   await fresh();
   await click('btn-demo');
