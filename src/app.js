@@ -493,7 +493,18 @@
    * fills the input and fires its normal 'input' handling (debounced). */
   function attachHistory(input, key) {
     let dd = null, items = [], active = -1;
-    const markActive = () => Array.from((dd || {}).children || []).forEach((c, i) => c.classList.toggle('active', i === active));
+    const markActive = () => {
+      if (!dd) return;
+      let activeEl = null;
+      Array.from(dd.children).forEach((c, i) => {
+        const on = i === active;
+        c.classList.toggle('active', on);
+        if (on) activeEl = c;
+      });
+      // walk the highlight past the fold with ↓/↑ and the entry must come
+      // along: without this the keyboard highlight scrolled out of view
+      if (activeEl) activeEl.scrollIntoView({ block: 'nearest' });
+    };
     const close = () => {
       if (dd) { dd.remove(); dd = null; }
       items = []; active = -1;
@@ -518,7 +529,6 @@
       // nothing highlighted by default: Enter must commit the TYPED term —
       // pre-focusing item 0 made Enter re-pick an old entry by accident
       active = initialActive;
-      markActive();
       dd.addEventListener('mousedown', (e) => {
         e.preventDefault(); // keep input focus: blur-close must not win
         const item = e.target.closest('.history-item');
@@ -529,6 +539,10 @@
       dd.style.left = r.left + 'px';
       dd.style.top = (r.bottom + 2) + 'px';
       dd.style.width = Math.max(r.width, 220) + 'px';
+      // highlight AFTER the dropdown is in the layout: scrollIntoView on a
+      // detached element is a no-op, and reopening with ↑ pre-highlights a
+      // below-fold entry that must arrive scrolled into view
+      markActive();
       input.addEventListener('keydown', navKey, true);
       window.addEventListener('scroll', scrollClose, true);
       window.addEventListener('resize', close);
