@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.52.1 (2026-10-04)
+- Merge pull request #55 from CJ-1981/fix/quick-filter-regressions
+- fix: Ctrl+F select-all from any focus (pattern append bug); search-all re-runs and Esc closes from fields; feat: drag-resizable panel
+- test: pin Ctrl+F select-all, search-all re-run/Esc layering, grip resize
+
 ## 1.52.0 (2026-10-03)
 - Merge pull request #54 from CJ-1981/feat/find-hint
 - feat: intercept Ctrl+F in the viewer - floating alert explains the page-only browser find, points to Search all
