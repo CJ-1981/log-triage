@@ -2852,6 +2852,34 @@ test('history dropdown: internal scrolling stays open, arrows reopen it, ✕ cle
     return { count: items.length, activeIdx, isLast: activeIdx === items.length - 1 };
   });
   assert.ok(upState.activeIdx >= 0 && upState.isLast, '↑ reopens with the last entry highlighted: ' + JSON.stringify(upState));
+  // the keyboard-highlighted entry must be scrolled INTO VIEW: reopening with
+  // ↑ lands on the (below-fold) last entry, so the list must have scrolled
+  const upVis = await page.evaluate(() => {
+    const dd = document.querySelector('.history-dd');
+    const el = dd.querySelector('.history-item.active');
+    return {
+      top: dd.scrollTop,
+      visible: !!el && el.offsetTop >= dd.scrollTop - 1 && el.offsetTop + el.offsetHeight <= dd.scrollTop + dd.clientHeight + 1,
+    };
+  });
+  assert.ok(upVis.top > 0 && upVis.visible, '↑-highlighted last entry scrolled into view: ' + JSON.stringify(upVis));
+  // walking ↓ through the whole list keeps the highlight visible at the bottom
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => !document.querySelector('.history-dd'));
+  await page.keyboard.press('ArrowDown');
+  await page.waitForFunction(() => !!document.querySelector('.history-dd'));
+  for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowDown');
+  const walkVis = await page.evaluate(() => {
+    const dd = document.querySelector('.history-dd');
+    const el = dd.querySelector('.history-item.active');
+    return {
+      idx: Array.from(dd.children).indexOf(el),
+      top: dd.scrollTop,
+      visible: !!el && el.offsetTop >= dd.scrollTop - 1 && el.offsetTop + el.offsetHeight <= dd.scrollTop + dd.clientHeight + 1,
+    };
+  });
+  assert.strictEqual(walkVis.idx, 11, '11x ↓ lands on the last entry');
+  assert.ok(walkVis.top > 0 && walkVis.visible, 'walking ↓ keeps the highlight scrolled into view: ' + JSON.stringify(walkVis));
   // the inline ✕ clears the field WITHOUT reopening the list, and focus leaves
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.querySelector('.history-dd'));
