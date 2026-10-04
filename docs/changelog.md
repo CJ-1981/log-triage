@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.53.2 (2026-10-04)
+- Merge pull request #60 from CJ-1981/fix/light-theme-mark-contrast
+- fix: light themes render match marks with dark ink (--hl-ink token)
+- test: pin readable mark ink on the highlight for every theme
+
 ## 1.53.1 (2026-10-04)
 - Merge pull request #59 from CJ-1981/fix/history-kbd-scroll
 - fix: history dropdown scrolls the keyboard-highlighted entry into view
