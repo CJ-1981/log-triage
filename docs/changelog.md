@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.53.1 (2026-10-04)
+- Merge pull request #59 from CJ-1981/fix/history-kbd-scroll
+- fix: history dropdown scrolls the keyboard-highlighted entry into view
+- test: pin keyboard-highlight scrolling in the history dropdown
+
 ## 1.53.0 (2026-10-04)
 - Merge pull request #58 from CJ-1981/feat/sall-shortcut
 - feat: Ctrl+Enter runs Search all from anywhere in the viewer tab
