@@ -95,9 +95,9 @@ Note: the G0–G8 records below are historical — they describe the design veri
 - **Browser:** `build.js` inlines the identical file into `log-triage.html`; opening it with `?selftest` executes the suite and reports pass/fail counts and failing case names.
 - **Guarantee:** any behavior change must be expressed as a case update, so Node CI and the in-browser self-test can never disagree.
 
-## E2e scope (Playwright — 93 specs: 85 app + 8 stress)
+## E2e scope (Playwright — 94 specs: 86 app + 8 stress)
 
-App suite (85 specs) — coverage includes:
+App suite (86 specs) — coverage includes:
 
 1. `?selftest` page runs and reports green.
 2. Demo load: format detection, level chips, and masking indications correct.
@@ -157,6 +157,7 @@ App suite (85 specs) — coverage includes:
 49. Ctrl+F interception (v1.52.0, FR-10 AC-7): with a demo log loaded and focus outside text fields, Ctrl+F focuses-and-selects the quick filter and floats the explanation alert ("current page" limitation + Search all pointer); typing immediately live-filters the whole scope (heartbeat → 4 shown); the alert's "Search all…" button opens the panel (4 matches); ✕ dismisses; and on another tab (Masks) Ctrl+F leaves the native browser find untouched — no alert appears.
 50. Search-all regression + resize pass (v1.52.1, FR-10 AC-7 / FR-17 AC-5): a SECOND Ctrl+F while the quick field already has focus still select-alls — typing 'fail' after 'heartbeat' replaces (field value pinned, 2 shown) instead of appending into a 0-match garbage pattern (the "quick filter stopped filtering" report); a Search-all click with the panel open RE-RUNS with the new pattern (4 matches for heartbeat, panel stays open — the old toggle-shut read as "works only once"); Esc layers — first press closes an open quick-history dropdown only (stopPropagation; panel survives), the second closes the panel from field focus; and the panel's top grip drag-resizes the height (style height === measured layout, no silent flex shrink; persisted across close/reopen via state.sallH; double-click resets to the default).
 51. History dropdown interaction pass (v1.52.2, FR-17 AC-3): with 14 committed terms the capped 12-item list overflows its 240px max-height (scrollbar present) and scrolling INSIDE it keeps it open with a real scrollTop change (the capture-phase page-scroll closer used to kill the list on its own scroll), while a page scroll behind it still closes it; a closed dropdown reopens from the field with ↓ (nothing highlighted, matching a fresh open) or ↑ (last entry pre-highlighted); the inline ✕ clears the field to all-44-lines WITHOUT reopening the list and focus leaves the field (the dropdown renders only while its field has focus).
+52. Search-all shortcut (v1.53.0, FR-17 AC-5): Ctrl+Enter fires with the cursor still in the quick filter (type 'heartbeat', shortcut → panel with 4 matches — the INPUT focus must not swallow it), from body focus RE-RUNS with the current pattern ('fail' → 2 matches), the button tooltip advertises the shortcut, an empty pattern keeps the panel closed with the "Type a pattern" flash, and the shortcut is inert off the viewer tab (no re-run while Masks is shown).
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 
