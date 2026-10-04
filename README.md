@@ -26,9 +26,13 @@ The same viewer in the light **Paper** theme:
 
 ![Analysis dashboard](docs/img/4-analysis.png)
 
-**Search** — ripgrep-style flags, instant results grouped by file as `file:lineNo:`, deep scan from disk, and click-to-jump:
+**Multifile search** — ripgrep-style flags, instant results grouped by file as `file:lineNo:`, deep scan from disk, and click-to-jump (the tab is named Multifile search because it always covers every loaded file):
 
 ![Ripgrep-style search](docs/img/5-search.png)
+
+**Viewer Search all** — every quick-filter match across the current file(s) listed in a bottom drawer panel with click-to-jump rows; also triggered by Ctrl+Enter:
+
+![Viewer Search all panel](docs/img/6-search-all.png)
 
 ## Quick start
 
@@ -71,12 +75,13 @@ Highlighters are additive presentation rules: they never remove lines or change 
 - **File cache / session restore** — every successfully loaded file is cached in IndexedDB (`log-triage-cache`); reopening the app lists previous files — clicking a cached entry reloads it, and a **Reload** button left of Clear restores *all* pending cached files in one click (visible only while restorable cached files exist). Entries whose content is missing render greyed out with a "file not found" badge and a removable ✕.
 - **Config tab** — export/import the current filter rules, time range, PII mask setup, and issue-scan rules as one JSON file, with validation, per-section application, a status line, and current-setup cards. The tab also sets the per-file **analysis sample limit** (default 100,000 lines; applies from the next file load) that bounds the analysis tab — viewing, filtering, search, and paging always cover every indexed line regardless of this limit.
 - **Responsive mobile layout** — header wraps with horizontally scrollable tabs (edge-fade scroll hint), the files panel becomes an overlay drawer with a tap-outside scrim and ✕ close, the mask grid stacks to a single column, and at phone width the viewer toolbar collapses to one row behind a ⋯ overflow button with Wrap defaulting ON on fresh boots.
-- **Debounced search and quick-filter inputs** — matching starts after typing pauses (search 250 ms, quick filter 200 ms). Both fields keep a **search history**: focusing (or typing in) the field opens a dropdown of previous terms (substring-filtered, most recent first, capped at 20, persisted in localStorage) — click an entry or pick it with ↑/↓ + Enter to re-run it. Search results have their own **Wrap: ON/OFF** toggle (independent of the viewer's): ON wraps long matched lines inside the panel, OFF shows one scrollable line per match.
+- **Debounced search and quick-filter inputs** — matching starts after typing pauses (search 250 ms, quick filter 200 ms). The quick filter auto-expands as you type (24–80ch, monospace) so long regex patterns stay visible. Both fields keep a **search history**: focusing (or typing in) the field opens a dropdown of previous terms (substring-filtered, most recent first, capped at 20, persisted in localStorage) — click an entry or pick it with ↑/↓ + Enter to re-run it; a closed dropdown reopens with ↓/↑ (↑ pre-highlights the newest entry), the list scrolls with the keyboard highlight, and the inline ✕ clear leaves focus without re-popping the list. Search results have their own **Wrap: ON/OFF** toggle (independent of the viewer's): ON wraps long matched lines inside the panel, OFF shows one scrollable line per match.
+- **Viewer Search all** — the toolbar button (or **Ctrl+Enter**) lists EVERY line matching the quick-filter pattern across the current file(s) in a bottom drawer panel: merged view searches all loaded files, per-file view the displayed file, always over the complete indexed files (never the analysis sample). Rows carry file, line number, timestamp, and masked text with the matched terms marked, and click-jump to the line; result pages load lazily on scroll, the panel height drags via a top grip (persisted, double-click resets), and the rows follow the viewer's Wrap toggle. Because the viewer is virtualized, the browser's own Ctrl+F only sees the rendered page — Ctrl+F is intercepted to focus the quick filter and show a floating alert explaining the limitation, pointing at Search all.
 - **Navigation** — click a search result, sidebar bookmark, or issue-scan entry to jump to the line (the viewer loads the page containing it and opens the detail drawer): the per-file selection auto-switches to the matched file and transient filters that would hide the target (quick search, level chips, time range, ★ only-bookmarks) are auto-cleared; a go-to-line box in the viewer toolbar takes a line number + Enter and reaches any indexed line, in files of any size.
 - **Files panel filter & sort** — a text box filters the list by file name (live files and cached entries, case-insensitive substring) and a dropdown sorts it by load order, name, size, or line count (ascending/descending); with an active filter that matches nothing, the panel says so. The panel mirrors what the viewer shows: in **merged timeline** every loaded file is highlighted, in **per-file** mode only the file on screen is — and a newly loaded file becomes the displayed one in per-file mode, so new content is never hidden.
 - **Collapsible files panel** — toggle via the header "☰ Files" button (state persisted; auto-collapsed on narrow screens).
 - **Horizontal scrolling in nowrap mode** — the scroll range is sized from the longest line in the view, so long lines are fully reachable instead of ellipsis-truncated.
-- **Self-test** — `?selftest` runs the same 131-case suite in the browser that `node --test` executes (`tests/core-cases.js`).
+- **Self-test** — `?selftest` runs the same 153-case suite in the browser that `node --test` executes (`tests/core-cases.js`).
 
 ## Privacy and security
 
@@ -93,7 +98,7 @@ Requirements: Node.js 22.
 npm test          # Unit + bump suites (node:test)
 npm run test:gate # Unit tests + coverage gate (>=90% line / >=85% branch on core src modules)
 npm run build     # Build log-triage.html from src/
-npm run e2e       # Playwright end-to-end tests (63 specs: 55 app + 8 stress)
+npm run e2e       # Playwright end-to-end tests (95 specs: 87 app + 8 stress)
 npm run e2e:stress # Stress suite only (generated big fixture)
 npm run bump      # Semver bump from conventional commits (CI runs this automatically on main)
 ```
