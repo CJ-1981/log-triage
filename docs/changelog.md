@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.53.0 (2026-10-04)
+- Merge pull request #58 from CJ-1981/feat/sall-shortcut
+- feat: Ctrl+Enter runs Search all from anywhere in the viewer tab
+- test: pin Ctrl+Enter search-all shortcut
+
 ## 1.52.2 (2026-10-04)
 - Merge pull request #57 from CJ-1981/fix/history-dropdown
 - fix: history dropdown survives its own scrolling, reopens via arrow keys, and the x-clear blurs instead of refocusing
