@@ -3001,3 +3001,375 @@ test('history records committed terms, not per-character prefixes', async () => 
   await page.waitForTimeout(150);
   assert.deepStrictEqual(await hist('searchHistory'), ['VHal'], 'blur records exactly the full term, no prefixes');
 });
+
+/* ---------- SPEC-VIEWER-001: continuous scroll window, selection
+   persistence, shortcut hint (wheel-driven scenarios) ---------- */
+
+// loads an n-line fixture whose lines read "line <i> of <n>" so quick
+// filters can target exactly one line ("line 2 of" cannot match "line 20 of").
+// Timestamps strictly increase with i so the merged timeline order equals the
+// line order (paging windows then hold the expected line ranges).
+async function loadLineFixture(n) {
+  // pin the desktop viewport: a fresh context starts at Playwright's 1280x720
+  // default when the file is run with a name filter (do not rely on the
+  // afterEach reset of a previous test)
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await fresh();
+  // short file name: a long name wraps in the file-name cell under wrap mode,
+  // doubling row heights against the wrap height estimates (see R2 note)
+  const big = join(os.tmpdir(), 'lt.log');
+  const out = [];
+  for (let i = 1; i <= n; i++) {
+    const ts = '09-11 22:' + String(14 + Math.floor((i - 1) / 6000)).padStart(2, '0') + ':' +
+      String(Math.floor(((i - 1) % 6000) / 1000)).padStart(2, '0') + '.' + String((i - 1) % 1000).padStart(3, '0');
+    out.push(ts + '  1000  2000 I VHal: line ' + i + ' of ' + n);
+  }
+  fs.writeFileSync(big, out.join('\n') + '\n');
+  await page.setInputFiles('#file-input', [big]);
+  await page.waitForFunction((x) => document.getElementById('st-total').textContent === String(x), n, { timeout: 15000 });
+}
+
+const vw = () => page.evaluate(`JSON.stringify({
+  scrollTop: document.getElementById('viewer').scrollTop,
+  spacerRows: Math.round(parseFloat(document.getElementById('vspacer').style.height || '0') / 22),
+  firstLn: Number((document.querySelector('.vrow .ln') || { textContent: 0 }).textContent),
+  rows: document.querySelectorAll('.vrow').length,
+  selRows: document.querySelectorAll('.vrow.sel').length,
+  selCount: document.getElementById('st-sel').textContent,
+  pageNo: document.getElementById('page-number').value,
+  startMark: !!document.querySelector('.vmark.start'),
+  endMark: !!document.querySelector('.vmark.end')
+})`).then(JSON.parse);
+
+async function jumpToPage(n) {
+  await page.evaluate((p) => {
+    const el = document.getElementById('page-number');
+    el.value = String(p);
+    el.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  }, n);
+  // wait for the LOAD to complete, not the injected input value: the first
+  // rendered line of page n is (n-1)*500+1 with the ordered fixture
+  await page.waitForFunction((p) => Number((document.querySelector('.vrow .ln') || { textContent: 0 }).textContent) === (p - 1) * 500 + 1,
+    n, { timeout: 8000 });
+}
+
+// first row at/below the viewport top (the drawn slice includes a 5-row
+// overscan above the visible area, so the first .vrow is not "first visible")
+const firstVisibleLn = () => page.evaluate(() => {
+  const vr = document.getElementById('viewer').getBoundingClientRect();
+  for (const row of document.querySelectorAll('.vrow')) {
+    if (row.getBoundingClientRect().bottom >= vr.top + 2) return Number(row.querySelector('.ln').textContent);
+  }
+  return 0;
+});
+
+// wheels over the viewer until the predicate holds, checking BEFORE each
+// wheel; each step waits past the 150ms paging cooldown
+async function wheelUntil(dirY, predicate, max = 40) {
+  const box = await page.evaluate(() => {
+    const r = document.getElementById('viewer-wrap').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.mouse.move(box.x, box.y);
+  for (let i = 0; i < max; i++) {
+    if (await predicate()) return i;
+    await page.mouse.wheel(0, dirY);
+    await page.waitForTimeout(170);
+  }
+  assert.ok(await predicate(), 'condition not reached after ' + max + ' wheel steps');
+  return max;
+}
+
+async function mousedownRow(selector, opts) {
+  await page.evaluate(({ sel, o }) => {
+    const el = document.querySelector(sel);
+    el.dispatchEvent(new MouseEvent('mousedown', Object.assign({ bubbles: true }, o)));
+  }, { sel: selector, o: opts || {} });
+}
+
+test('continuous scroll: wheel appends the next page without scroll reset or pager move', async () => {
+  await loadLineFixture(3000);
+  await mousedownRow('.vrow .txt'); // select the first row
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '1', null, { timeout: 5000 });
+  await wheelUntil(4000, async () => (await vw()).spacerRows >= 990, 20); // at least one append
+  const s = await vw();
+  assert.ok(s.scrollTop > 0, 'scroll position was not reset by the append');
+  assert.strictEqual(s.pageNo, '1', 'pager keeps the anchor page');
+  assert.ok(s.startMark && !s.endMark, 'window still begins at global line 1 and does not end at the last line');
+  assert.strictEqual(s.selCount, '1', 'selection survives the append');
+  // scroll back to the anchor row: the highlight re-renders from the stored seq
+  await page.evaluate(() => { document.getElementById('viewer').scrollTop = 0; });
+  await page.waitForTimeout(200);
+  const sel = await page.evaluate(() => Array.from(document.querySelectorAll('.vrow.sel .ln')).map((x) => Number(x.textContent)));
+  assert.deepStrictEqual(sel, [1], 'selected row stays highlighted at its remapped position');
+});
+
+test('continuous scroll: prepend keeps the first visible line anchored (nowrap and wrap)', async () => {
+  await loadLineFixture(3000);
+  await jumpToPage(2);
+  const before = await firstVisibleLn();
+  await wheelUntil(-4000, async () => (await vw()).startMark, 10); // prepend reaches global line 1
+  const after = await vw();
+  assert.strictEqual(await firstVisibleLn(), before, 'nowrap: first visible line unchanged by the prepend');
+  assert.strictEqual(after.pageNo, '2', 'pager anchor unchanged');
+  assert.ok(after.spacerRows >= 990, 'window now spans two pages');
+  // wrap mode: heights are re-measured (prefix sums) BEFORE compensation
+  await page.evaluate(() => document.getElementById('btn-wrap').click());
+  await page.waitForTimeout(300);
+  await jumpToPage(2);
+  const beforeWrap = await firstVisibleLn();
+  await wheelUntil(-4000, async () => (await vw()).startMark, 10);
+  await page.waitForTimeout(200);
+  const afterWrap = await vw();
+  assert.strictEqual(await firstVisibleLn(), beforeWrap, 'wrap: first visible line unchanged by the prepend');
+  assert.ok(afterWrap.startMark, 'wrap prepend also reached global line 1');
+  await page.evaluate(() => document.getElementById('btn-wrap').click());
+});
+
+test('continuous scroll: eviction caps the window at 5 pages and marks track global bounds', async () => {
+  await loadLineFixture(4000);
+  await jumpToPage(3); // 3000 remaining lines: the cap must force an eviction
+  const box = await page.evaluate(() => {
+    const r = document.getElementById('viewer-wrap').getBoundingClientRect();
+    return { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  });
+  await page.mouse.move(box.x, box.y);
+  let maxRows = 0, prevFirst = 0, ok = true;
+  for (let i = 0; i < 40; i++) {
+    const s = await vw();
+    maxRows = Math.max(maxRows, s.spacerRows);
+    if (s.firstLn < prevFirst) ok = false;
+    prevFirst = s.firstLn;
+    if (s.endMark) break;
+    await page.mouse.wheel(0, 4000);
+    await page.waitForTimeout(170);
+  }
+  const s = await vw();
+  assert.ok(s.endMark, 'reached the global end of the view');
+  assert.ok(ok, 'first visible line never moves backward across appends/evictions');
+  assert.ok(maxRows <= 2503, 'window never exceeds 5 pages (max sampled ' + maxRows + ' rows)');
+  assert.strictEqual(s.pageNo, '3', 'pager stays on the anchor page');
+  assert.ok(!s.startMark, 'start mark absent mid-window (evicted past global line 1)');
+});
+
+test('extended window collapses via loadPage on filter change and pagination jump', async () => {
+  await loadLineFixture(3000);
+  await wheelUntil(4000, async () => (await vw()).spacerRows >= 990, 20); // extend the window
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = 'line 7 of';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '1', null, { timeout: 8000 });
+  let s = await vw();
+  assert.ok(s.spacerRows < 100, 'filter change collapses the window to the anchor page (got ' + s.spacerRows + ' rows)');
+  assert.ok(s.startMark && s.endMark, 'single match shows both global boundary marks');
+  // clear the filter, then jump: exactly the requested page, no bands
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = '';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '3000', null, { timeout: 8000 });
+  await jumpToPage(3);
+  s = await vw();
+  assert.ok(s.spacerRows <= 505, 'pagination jump loads exactly one page');
+  assert.ok(!s.startMark && !s.endMark, 'middle page shows no boundary marks');
+  await page.evaluate(() => document.getElementById('page-last').click());
+  await page.waitForFunction(() => document.querySelector('.vmark.end') !== null, null, { timeout: 5000 });
+});
+
+test('off-window selection goes inert, restores on re-entry, and Esc clears everything', async () => {
+  await loadLineFixture(3000);
+  await mousedownRow('.vrow .txt');
+  await mousedownRow('.vrow:nth-child(2) .txt', { shiftKey: true });
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '2', null, { timeout: 5000 });
+  await jumpToPage(3); // selected rows are now off-window
+  let s = await vw();
+  assert.strictEqual(s.selCount, '0', 'off-window selection is excluded from the status count');
+  assert.strictEqual(s.selRows, 0, 'off-window rows show no highlight');
+  await jumpToPage(1); // page back: rows re-enter the window
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '2', null, { timeout: 8000 });
+  s = await vw();
+  assert.strictEqual(s.selRows, 2, 'highlights restored automatically from the stored global ids');
+  // Esc clears the entire selection including any off-window entries
+  await jumpToPage(2);
+  await page.evaluate(() => document.getElementById('viewer').focus());
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '0', null, { timeout: 5000 });
+  await jumpToPage(1);
+  await page.waitForTimeout(400);
+  s = await vw();
+  assert.strictEqual(s.selCount, '0', 'Esc removed even the entries that were off-window');
+  assert.strictEqual(s.selRows, 0, 'no stale highlights remain');
+});
+
+test('copy and selection export exclude off-window rows without error', async () => {
+  await loadLineFixture(3000);
+  // the Ctrl+C path awaits navigator.clipboard.writeText, whose promise never
+  // settles in headless chromium — stub it: the behavior under test is the
+  // app's windowing/status logic, not the browser clipboard
+  await page.evaluate(() => {
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText: async () => {} },
+      configurable: true,
+    });
+  });
+  await mousedownRow('.vrow .txt');
+  await mousedownRow('.vrow:nth-child(2) .txt', { shiftKey: true });
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '2', null, { timeout: 5000 });
+  await jumpToPage(3); // both selected rows off-window
+  await page.evaluate(() => document.getElementById('viewer').focus());
+  await page.keyboard.press('Control+c');
+  await page.waitForTimeout(300);
+  assert.strictEqual(await page.evaluate(() => document.getElementById('st-progress').textContent), '',
+    'copy with only off-window rows selected copies nothing');
+  await jumpToPage(1); // both rows back in-window
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '2', null, { timeout: 8000 });
+  await page.evaluate(() => document.getElementById('viewer').focus());
+  await page.evaluate(() => {
+    window.__keys = [];
+    document.addEventListener('keydown', (e) => window.__keys.push({ key: e.key, ctrl: e.ctrlKey, target: e.target.tagName }), true);
+  });
+  await page.keyboard.press('Control+c');
+  await page.waitForFunction(() => document.getElementById('st-progress').textContent === 'copied 2 line(s)', null, { timeout: 5000 });
+});
+
+test('selection persists across a pagination round-trip; shift and ctrl store global ids', async () => {
+  await loadLineFixture(3000);
+  // shift range: rows 1..10 selected by window indices, stored as global ids
+  await mousedownRow('.vrow .txt');
+  await page.evaluate(() => {
+    const rows = document.querySelectorAll('.vrow');
+    rows[9].querySelector('.txt').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, shiftKey: true }));
+  });
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '10', null, { timeout: 5000 });
+  await jumpToPage(2);
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '0', null, { timeout: 5000 });
+  await jumpToPage(1);
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '10', null, { timeout: 5000 });
+  const lns = await page.evaluate(() => Array.from(document.querySelectorAll('.vrow.sel .ln')).map((x) => Number(x.textContent)));
+  assert.deepStrictEqual(lns, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], 'the same global lines re-highlight after the round-trip');
+  // ctrl-click toggles single global ids
+  await page.keyboard.press('Escape');
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '0', null, { timeout: 5000 });
+  await mousedownRow('.vrow .txt', { ctrlKey: true });
+  await page.evaluate(() => {
+    const rows = document.querySelectorAll('.vrow');
+    rows[9].querySelector('.txt').dispatchEvent(new MouseEvent('mousedown', { bubbles: true, ctrlKey: true }));
+  });
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '2', null, { timeout: 5000 });
+  const picked = await page.evaluate(() => Array.from(document.querySelectorAll('.vrow.sel .ln')).map((x) => Number(x.textContent)));
+  assert.deepStrictEqual(picked, [1, 10], 'ctrl-click selects exactly the two toggled rows');
+});
+
+test('filter change keeps matching selections highlighted and restores the rest on clear', async () => {
+  await loadLineFixture(3000);
+  await mousedownRow('.vrow .txt');
+  await mousedownRow('.vrow:nth-child(2) .txt', { shiftKey: true });
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '2', null, { timeout: 5000 });
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = 'line 2 of';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '1', null, { timeout: 8000 });
+  let s = await vw();
+  assert.strictEqual(s.selCount, '1', 'only the matching selected line is counted');
+  assert.deepStrictEqual(await page.evaluate(() => Array.from(document.querySelectorAll('.vrow.sel .ln')).map((x) => Number(x.textContent))), [2],
+    'the matching selected line keeps its highlight');
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = '';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '3000', null, { timeout: 8000 });
+  s = await vw();
+  assert.strictEqual(s.selCount, '2', 'clearing the filter restores the inert selection');
+  assert.strictEqual(s.selRows, 2, 'both highlights return');
+});
+
+test('selected page evicted by prepending is restored when scrolling back down', async () => {
+  await loadLineFixture(4000);
+  await jumpToPage(6); // 1500 remaining below, 2500 above: prepends must evict
+  await wheelUntil(-4000, async () => (await vw()).spacerRows >= 2490, 20); // window at cap
+  // park the viewport at the window bottom and select the last row: it sits
+  // in the page that the next prepend (at cap) evicts from the bottom
+  await page.evaluate(() => { document.getElementById('viewer').scrollTop = document.getElementById('viewer').scrollHeight; });
+  await page.waitForTimeout(200);
+  const selLn = await page.evaluate(() => {
+    const lns = document.querySelectorAll('.vrow .ln');
+    return Number(lns[lns.length - 1].textContent);
+  });
+  await page.evaluate(() => {
+    const rows = document.querySelectorAll('.vrow');
+    rows[rows.length - 1].querySelector('.txt').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '1', null, { timeout: 5000 });
+  // wheel up: the native scroll reaches the top edge, the prepend pushes the
+  // window start to the global head and the bottom page (with the selection)
+  // is evicted
+  await wheelUntil(-4000, () => page.evaluate(() => document.getElementById('st-sel').textContent === '0'), 25);
+  let s = await vw();
+  assert.ok(s.startMark && !s.endMark, 'window now starts at the global head and no longer ends at the selection page');
+  assert.ok(s.spacerRows <= 2503, 'cap still holds after prepend eviction');
+  // scroll back down: the append re-fetches the page (selection in-window
+  // again), then keep scrolling to the window bottom so the row is drawn
+  // and the highlight re-renders from the stored global id
+  await wheelUntil(4000, () => page.evaluate(() => document.getElementById('st-sel').textContent === '1'), 30);
+  await wheelUntil(4000, async () => {
+    const cur = await page.evaluate(() => Array.from(document.querySelectorAll('.vrow.sel .ln')).map((x) => Number(x.textContent)));
+    return cur.includes(selLn);
+  }, 12);
+  const restored = await page.evaluate(() => Array.from(document.querySelectorAll('.vrow.sel .ln')).map((x) => Number(x.textContent)));
+  assert.ok(restored.includes(selLn), 'highlight restored on line ' + selLn + ' after eviction and re-fetch');
+});
+
+/* ---------- SPEC-VIEWER-001: Search all shortcut hint (M5) ---------- */
+
+test('Search all hint matches the detected platform, keeps the tooltip, hides on narrow viewports', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  const expected = await page.evaluate(() => {
+    const p = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    return /mac|ipad/i.test(p) ? '⌘Enter' : 'Ctrl+Enter';
+  });
+  assert.strictEqual(await page.evaluate(() => document.getElementById('sall-kbd').textContent), expected,
+    'hint text matches one-time platform detection');
+  assert.match(await page.evaluate(() => document.getElementById('btn-sall').title), /Ctrl\+Enter/, 'title tooltip unchanged');
+  // 560px and narrower: the button (hint inside it) hides; ⋯ brings both back
+  await page.setViewportSize({ width: 480, height: 800 });
+  assert.strictEqual(await page.evaluate(() => getComputedStyle(document.getElementById('btn-sall')).display), 'none');
+  await page.evaluate(() => document.getElementById('vtools-more').click());
+  assert.notStrictEqual(await page.evaluate(() => getComputedStyle(document.getElementById('btn-sall')).display), 'none',
+    'expanding vtools shows the button again');
+  assert.strictEqual(await page.evaluate(() => getComputedStyle(document.getElementById('sall-kbd')).display), 'inline');
+  await page.setViewportSize({ width: 1440, height: 900 });
+});
+
+test('Search all hint shows the Mac glyph when the platform resolves to macOS', async () => {
+  const ctx = await browser.newContext();
+  await ctx.addInitScript(() => {
+    Object.defineProperty(navigator, 'userAgentData', { get: () => undefined });
+    Object.defineProperty(navigator, 'platform', { get: () => 'MacIntel' });
+  });
+  const p = await ctx.newPage();
+  const errs = [];
+  p.on('pageerror', (e) => errs.push(String(e)));
+  await p.goto(url() + '?svw-mac-hint', { waitUntil: 'domcontentloaded' });
+  assert.strictEqual(await p.evaluate(() => document.getElementById('sall-kbd').textContent), '⌘Enter');
+  assert.deepStrictEqual(errs, [], 'no errors during platform detection');
+  await ctx.close();
+});
+
+test('Meta+Enter runs Search all while the hint is visible', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  assert.match(await page.evaluate(() => document.getElementById('sall-kbd').textContent), /Enter$/);
+  await page.click('#quick');
+  await page.keyboard.type('VHal');
+  await page.keyboard.press('Meta+Enter');
+  await page.waitForFunction(() => document.getElementById('btn-sall').getAttribute('aria-expanded') === 'true', null, { timeout: 5000 });
+});
