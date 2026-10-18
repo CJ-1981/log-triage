@@ -17,9 +17,10 @@ export function parseBumpType(commits) {
   for (const msg of commits || []) {
     const text = String(msg);
     const breakingFooter = /(^|\n)BREAKING CHANGE[:(]/.test(text);
-    const m = /^(\w+)(!)?(?::|\s)/.exec(text);
+    // type[!]: subject, optionally scoped: feat, feat!, feat(ui), feat(ui)!
+    const m = /^(\w+)(\([^)]*\))?(!)?(?::|\s)/.exec(text);
     let t = null;
-    if (breakingFooter || (m && m[2] === '!')) t = 'major';
+    if (breakingFooter || (m && m[3] === '!')) t = 'major';
     else if (m) {
       const w = m[1].toLowerCase();
       if (w === 'feat' || w === 'feature') t = 'minor';
@@ -47,6 +48,16 @@ export function commitsSince(tag, runGit) {
   const range = commitRange(tag, runGit);
   const out = git(`git log --format=%s ${range}`);
   return out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean);
+}
+
+// Full commit bodies (%B) for classification: BREAKING CHANGE footers only
+// exist in the body, never in the subject. Commits are delimited by \x1e so
+// blank lines inside bodies cannot split records.
+export function bodiesSince(tag, runGit) {
+  const git = runGit || ((cmd) => execSync(cmd, { encoding: 'utf8' }));
+  const range = commitRange(tag, runGit);
+  const out = git(`git log --format=%x1e%B ${range}`);
+  return out.split('\x1e').map((s) => s.trim()).filter(Boolean);
 }
 
 export function updateReadme(text, version) {
@@ -100,7 +111,8 @@ function main() {
   const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
   const tag = lastTag();
   const commits = commitsSince(tag);
-  const next = nextVersion(pkg.version, commits);
+  const bodies = bodiesSince(tag);
+  const next = nextVersion(pkg.version, bodies);
   if (!next) {
     console.log(`bump: no release-worthy commits since ${tag || 'start'} — keeping ${pkg.version}`);
     return;
@@ -119,7 +131,7 @@ function main() {
     const old = readFileSync(changelogPath, 'utf8');
     writeFileSync(changelogPath, updateChangelog(old, changelogEntry(next, today, commits)));
   }
-  console.log(`bump: ${prev} -> ${next} (${parseBumpType(commits)}) from ${commits.length} commit(s) since ${tag || 'start'}`);
+  console.log(`bump: ${prev} -> ${next} (${parseBumpType(bodies)}) from ${commits.length} commit(s) since ${tag || 'start'}`);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) main();

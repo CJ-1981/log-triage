@@ -1,7 +1,7 @@
 'use strict';
 const { test } = require('node:test');
 const assert = require('node:assert');
-const { parseBumpType, nextVersion, updateReadme, changelogEntry, commitsSince, updateChangelog } = require('../tools/bump.mjs');
+const { parseBumpType, nextVersion, updateReadme, changelogEntry, commitsSince, bodiesSince, updateChangelog } = require('../tools/bump.mjs');
 
 test('parseBumpType: feat minor, fix patch, breaking major, chore none', () => {
   assert.strictEqual(parseBumpType(['feat: add x']), 'minor');
@@ -65,6 +65,25 @@ test('updateChangelog folds Unreleased bullets into the new release, exactly one
   assert.ok(out.includes('## 1.1.0 (2026-09-12)'));
   assert.strictEqual(out.split('# Changelog').length - 1, 1, 'exactly one file header');
   assert.match(out, /## 1\.2\.0[\s\S]*## 1\.1\.0/, 'newest section first');
+});
+
+test('parseBumpType: scoped subjects resolve bump type', () => {
+  assert.strictEqual(parseBumpType(['feat(viewer): add x']), 'minor');
+  assert.strictEqual(parseBumpType(['fix(viewer): repair y']), 'patch');
+  assert.strictEqual(parseBumpType(['feat(ui)!: new api']), 'major');
+  assert.strictEqual(parseBumpType(['chore(release): tidy']), null);
+});
+
+test('parseBumpType: BREAKING CHANGE footer inside a full commit body means major', () => {
+  assert.strictEqual(parseBumpType(['feat(api): shrink payload\n\nBREAKING CHANGE: drops the v1 endpoint']), 'major');
+  assert.strictEqual(parseBumpType(['fix(core): tweak flags\n\nsome prose\n\nBREAKING CHANGE: removed --legacy']), 'major');
+  // a body that merely mentions the phrase mid-line must not count
+  assert.strictEqual(parseBumpType(['fix(core): tweak\n\nsee BREAKING CHANGE: docs']), 'patch');
+});
+
+test('bodiesSince returns full commit bodies split on the record separator', () => {
+  const out = bodiesSince('v1.0.0', () => '\x1efeat(viewer): one\n\nbody one\n\x1efix: two\n');
+  assert.deepStrictEqual(out, ['feat(viewer): one\n\nbody one', 'fix: two']);
 });
 
 test('commitsSince uses the injected git runner', () => {
