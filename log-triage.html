@@ -435,7 +435,7 @@ table.rules { min-width: 620px; }
         <div id="vtools">
           <input type="text" id="quick" placeholder="quick filter (live)…">
           <input type="text" id="goto-ln" class="vt-sec" placeholder="line #" title="go to line — type a line number and press Enter" style="width:66px;min-width:0">
-          <button id="btn-sall" class="vt-sec" aria-expanded="false" aria-controls="sall" title="Search all — list EVERY line matching the quick filter across the current file(s) (merged view: all loaded files; per-file view: the displayed file) in a bottom panel — shortcut: Ctrl+Enter">Search all</button>
+          <button id="btn-sall" class="vt-sec" aria-expanded="false" aria-controls="sall" title="Search all — list EVERY line matching the quick filter across the current file(s) (merged view: all loaded files; per-file view: the displayed file) in a bottom panel — shortcut: Ctrl+Enter">Search all <kbd id="sall-kbd" style="margin-left:4px"></kbd></button>
           <button id="btn-mask" title="toggle masking (M)">Mask: ON</button>
           <button id="vtools-more" title="more viewer controls" aria-expanded="false" aria-controls="vtools">⋯</button>
           <button id="btn-wrap" class="vt-sec" title="wrap long lines (W)">Wrap: OFF</button>
@@ -7039,6 +7039,11 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     });
     // viewer Search all: same click-to-jump rows, plus lazy pages on scroll
     $('btn-sall').onclick = () => { runSearchAll().catch(pagingError); };
+    // platform-aware shortcut hint: one-time detection (Chromium exposes
+    // userAgentData, Safari/Firefox fall back to navigator.platform); any
+    // absence or unrecognized value keeps the Ctrl spelling (R5-3)
+    const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    $('sall-kbd').textContent = /mac|ipad/i.test(platform) ? '⌘Enter' : 'Ctrl+Enter';
     $('sall-close').onclick = sallClose;
     $('sall-rows').addEventListener('click', (e) => {
       const row = e.target.closest('.sr-row');

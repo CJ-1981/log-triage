@@ -2832,6 +2832,11 @@
     });
     // viewer Search all: same click-to-jump rows, plus lazy pages on scroll
     $('btn-sall').onclick = () => { runSearchAll().catch(pagingError); };
+    // platform-aware shortcut hint: one-time detection (Chromium exposes
+    // userAgentData, Safari/Firefox fall back to navigator.platform); any
+    // absence or unrecognized value keeps the Ctrl spelling (R5-3)
+    const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
+    $('sall-kbd').textContent = /mac|ipad/i.test(platform) ? '⌘Enter' : 'Ctrl+Enter';
     $('sall-close').onclick = sallClose;
     $('sall-rows').addEventListener('click', (e) => {
       const row = e.target.closest('.sr-row');
