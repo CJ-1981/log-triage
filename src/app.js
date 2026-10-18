@@ -1486,7 +1486,7 @@
   const SAMPLES = {
     vin: 'VIN YV4AB9CD12EF34567', iban: 'IBAN DE89370400440532013000', card: 'card 4111 1111 1111 1111',
     ssn: 'ssn 123-45-6789', phoneIntl: 'call +46 70 123 45 67', phoneUs: 'call (555) 123-4567',
-    imei: 'IMEI 350774129305118', email: 'mail driver.jung@lotus-tech.example', serial: 'serial SN-A1B2C3D4E5F6',
+    imei: 'IMEI 350774129305118', email: 'mail driver@corp.example', serial: 'serial SN-A1B2C3D4E5F6',
     mac: 'mac aa:bb:cc:11:22:33', ipv4Private: 'host 192.168.1.104', ipv4Public: 'host 203.0.113.77',
     ipv6: 'link fe80::7a8b:cafe:1234:5678', gnss: 'fix 48.858400, 2.294500',
     subscriberId: 'subscriberId=41011223344', ssid: 'ssid=AndroidShare_4821',

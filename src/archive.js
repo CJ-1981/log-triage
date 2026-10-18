@@ -467,7 +467,7 @@
       return extract7z(data, depth, base, name, onProgress);
     }
     if (type === 'tar') {
-      // some devices ship gzip bytes under a .tar name (TCAM kmesglog_*.tar):
+      // some devices ship gzip bytes under a .tar name:
       // sniff the gzip magic and decompress before the tar parse
       if (data.length > 2 && data[0] === 0x1f && data[1] === 0x8b) {
         onProgress('decompressing ' + name + '…');

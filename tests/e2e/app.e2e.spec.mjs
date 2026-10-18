@@ -205,7 +205,7 @@ test('ripgrep search: instant results and deep scan agree on small files', async
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44');
   await page.evaluate(() => {
     const q = document.getElementById('rg-pattern');
-    q.value = 'heartbeat ecu=tcam';
+    q.value = 'heartbeat ecu=engine';
     q.dispatchEvent(new Event('input'));
   });
   await page.waitForFunction(() => document.getElementById('search-progress').textContent.includes('match'), null, { timeout: 10000 });
@@ -2378,16 +2378,16 @@ test('analysis surfaces respect the mask toggle (issue snippets + top message sh
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
   await page.waitForFunction(() => {
     const t = document.getElementById('tab-analysis').textContent;
-    return t.includes('Top message shapes') && (t.includes('d***@***.example') || t.includes('driver.jung@'));
+    return t.includes('Top message shapes') && (t.includes('d***@***.example') || t.includes('driver@'));
   }, null, { timeout: 10000 });
   let text = await page.evaluate(() => document.getElementById('tab-analysis').textContent);
-  assert.ok(!text.includes('driver.jung@lotus-tech.example'), 'mask ON: no raw email anywhere in analysis');
+  assert.ok(!text.includes('driver@corp.example'), 'mask ON: no raw email anywhere in analysis');
   assert.ok(text.includes('d***@***.example'), 'mask ON: masked email shown in issue snippet / message shapes');
   // toggle mask OFF (via viewer toolbar) → analysis re-render shows the raw text
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
   await page.click('#btn-mask');
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=analysis]').click());
-  await page.waitForFunction(() => document.getElementById('tab-analysis').textContent.includes('driver.jung@lotus-tech.example'), null, { timeout: 10000 });
+  await page.waitForFunction(() => document.getElementById('tab-analysis').textContent.includes('driver@corp.example'), null, { timeout: 10000 });
   // restore mask ON
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
   await page.click('#btn-mask');

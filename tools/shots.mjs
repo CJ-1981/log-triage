@@ -75,7 +75,7 @@ await shot('4-analysis.png');
 // 5: multifile search with instant results
 await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
 await page.evaluate(() => {
-  const q = document.getElementById('rg-pattern'); q.value = 'heartbeat ecu=tcam'; q.dispatchEvent(new Event('input'));
+  const q = document.getElementById('rg-pattern'); q.value = 'heartbeat ecu=engine'; q.dispatchEvent(new Event('input'));
 });
 await page.waitForTimeout(250);
 await shot('5-search.png');

@@ -3883,7 +3883,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       return extract7z(data, depth, base, name, onProgress);
     }
     if (type === 'tar') {
-      // some devices ship gzip bytes under a .tar name (TCAM kmesglog_*.tar):
+      // some devices ship gzip bytes under a .tar name:
       // sniff the gzip magic and decompress before the tar parse
       if (data.length > 2 && data[0] === 0x1f && data[1] === 0x8b) {
         onProgress('decompressing ' + name + '…');
@@ -5767,7 +5767,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   const SAMPLES = {
     vin: 'VIN YV4AB9CD12EF34567', iban: 'IBAN DE89370400440532013000', card: 'card 4111 1111 1111 1111',
     ssn: 'ssn 123-45-6789', phoneIntl: 'call +46 70 123 45 67', phoneUs: 'call (555) 123-4567',
-    imei: 'IMEI 350774129305118', email: 'mail driver.jung@lotus-tech.example', serial: 'serial SN-A1B2C3D4E5F6',
+    imei: 'IMEI 350774129305118', email: 'mail driver@corp.example', serial: 'serial SN-A1B2C3D4E5F6',
     mac: 'mac aa:bb:cc:11:22:33', ipv4Private: 'host 192.168.1.104', ipv4Public: 'host 203.0.113.77',
     ipv6: 'link fe80::7a8b:cafe:1234:5678', gnss: 'fix 48.858400, 2.294500',
     subscriberId: 'subscriberId=41011223344', ssid: 'ssid=AndroidShare_4821',
@@ -7647,15 +7647,15 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     eq(SRC.maskLine('card 2224 8888 7777 6666 declined'), 'card [card] declined');
     // vin: digit-only 17-char storage timestamps stay intact
     eq(SRC.maskLine('[OTA]storage time[2026090306444571Z]'), '[OTA]storage time[2026090306444571Z]');
-    // vin: digit-led real VIN still masks (letter within the first 8 chars)
-    eq(SRC.maskLine('vin 1FTFW1ET5DFC10324 ok'), 'vin 1FT**********0324 ok');
+    // vin: digit-led synthetic VIN still masks (letter within the first 8 chars)
+    eq(SRC.maskLine('vin 1A2B3C4D5E6F70324 ok'), 'vin 1A2**********0324 ok');
     // imei: constant-digit config values stay intact
     eq(SRC.maskLine('const 000000000000000 set'), 'const 000000000000000 set');
     eq(SRC.maskLine('const 111111111111111 set'), 'const 111111111111111 set');
   });
 
   T('mask', 'email keeps first local char and TLD', () => {
-    eq(SRC.maskLine('rejected for driver.jung@lotus-tech.example'), 'rejected for d***@***.example');
+    eq(SRC.maskLine('rejected for driver@corp.example'), 'rejected for d***@***.example');
   });
 
   T('mask', 'device serial keeps SN- prefix', () => {
@@ -8544,19 +8544,19 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   T('issues', 'issueScan masks snippets via the maskText option (mask before slice)', () => {
     const mask = (t) => SRC.maskLine(String(t));
     const found = SRC.issueScan(recs([
-      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed, credential rejected for driver.jung@lotus-tech.example',
+      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed, credential rejected for driver@corp.example',
     ]), GROUPS, (id) => id, mask);
     eq(found.length, 1, 'auth group matches');
-    ok(!found[0].snippet.includes('driver.jung@lotus-tech.example'), 'raw email never rendered');
+    ok(!found[0].snippet.includes('driver@corp.example'), 'raw email never rendered');
     ok(found[0].snippet.includes('d***@***.example'), 'masked email in snippet: ' + found[0].snippet);
     // default (no maskText) keeps the legacy identity behavior
     const plain = SRC.issueScan(recs([
-      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed for driver.jung@lotus-tech.example',
+      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed for driver@corp.example',
     ]), GROUPS, (id) => id);
-    ok(plain[0].snippet.includes('driver.jung@'), 'identity default keeps snippet as-is');
+    ok(plain[0].snippet.includes('driver@'), 'identity default keeps snippet as-is');
     // mask runs BEFORE the 110-char slice: an email starting at char 105 leaks nothing
     const long = SRC.issueScan(recs([
-      'credential rejected ' + 'x'.repeat(84) + ' driver.jung@lotus-tech.example tail',
+      'credential rejected ' + 'x'.repeat(84) + ' driver@corp.example tail',
     ]), GROUPS, (id) => id, mask);
     eq(long.length, 1);
     ok(!long[0].snippet.includes('driver'), 'no raw local-part fragment past the slice boundary');
@@ -8624,8 +8624,8 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
 
   T('issues', 'anr event-log entries and force-finishing are flagged', () => {
     const found = SRC.issueScan(recs([
-      'I am_anr : [0,com.lotus.hmi/.MainActivity,100,803627610]',
-      'W ActivityManager: Force finishing activity ActivityRecord{abc u0 com.lotus.hmi/.Main t42}',
+      'I am_anr : [0,com.example.hmi/.MainActivity,100,803627610]',
+      'W ActivityManager: Force finishing activity ActivityRecord{abc u0 com.example.hmi/.Main t42}',
     ]), GROUPS, (id) => id);
     eq(found.length, 2);
     ok(found.every((f) => f.kind === 'anr'));
@@ -8655,7 +8655,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
 
   T('issues', 'issue scan false-positive guards', () => {
     const found = SRC.issueScan(recs([
-      'ActivityManager: Start proc 1234:com.lotus.hmi/u0a12 for activity',
+      'ActivityManager: Start proc 1234:com.example.hmi/u0a12 for activity',
       'AudioService: playback resumed after temporary suspension of audio focus',
       'SensorHub: resumed sensor batching',
       'D WifiHal: scan interval wake-up alarm scheduled',
@@ -8691,7 +8691,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
 </script>
 <script>
 /* Embedded demo log fixture (also used by tests/). */
-const LT_DEMO_LOG = "08-24 15:37:01.123  1234  5678 I ActivityManager: Start proc 1234:com.lotus.hmi/u0a12 for activity\n08-24 15:37:01.456  1234  5678 D HMI-CAN : VIN read: YV4AB9CD12EF34567 from ECU gateway\n08-24 15:37:01.789  2231  2245 I Netd    : client connected, uid=1027\n08-24 15:37:02.001  4310  4310 D WifiService: associated with AP ssid=AndroidShare_4821 bssid=aa:bb:cc:11:22:33\n08-24 15:37:02.240  4310  4355 I DhcpClient: lease 192.168.1.104/24 gw 192.168.1.1 dns 10.20.30.40\n08-24 15:37:02.512  4310  4355 W NetworkMonitor: validation failed for https://ota.lotus-tech.example, retry 3\n08-24 15:37:03.000  8891  8902 E Auth    : token refresh failed, credential rejected for driver.jung@lotus-tech.example\n08-24 15:37:03.220  8891  8902 E Auth    : subscriberId=410112233445566 not provisioned\n08-24 15:37:03.500  5152  5199 D GNSS    : position fix lat=48.858400 lon=2.294500 acc=3.2m sats=11\n08-24 15:37:03.700  5152  5199 D GNSS    : position fix lat=48.858412°N, 2.294511°E acc=2.9m sats=12\n08-24 15:37:04.000  1201  1201 I Zygote  : Forked child process 9876\n08-24 15:37:04.100  9876  9876 D BT      : bonded device CC:DD:EE:FF:00:11 type LE\n08-24 15:37:05.000  9877  9900 I Modem   : IMEI reported 350774129305118, card state READY\n08-24 15:37:06.000  1234  5700 W View    : requestLayout() improperly called\n08-24 15:37:07.000  1234  5700 E CR_OTA  : download stalled url=https://ota.example/pkg v2.41.3\n08-24 15:37:08.000  1234  5710 E AndroidRuntime: FATAL EXCEPTION: main\n08-24 15:37:08.000  1234  5710 E AndroidRuntime: Process: com.lotus.hmi, PID: 1234\n08-24 15:37:08.000  1234  5710 E AndroidRuntime: java.lang.NullPointerException: attempt to invoke virtual method on a null object reference\n08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at com.lotus.hmi.MainActivity.renderCluster(MainActivity.java:312)\n08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at com.lotus.hmi.ClusterView.onDraw(ClusterView.java:88)\n08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at android.view.View.draw(View.java:20340)\n08-24 15:37:08.100  1234  1234 I Process : Sending signal. PID: 1234 SIG: 9\n08-24 15:37:08.500  1000  1000 I ActivityManager: Process com.lotus.hmi has died\n08-24 15:37:09.000  1000  1000 W ActivityManager: Force stopping com.lotus.hmi appid=10112\n08-24 15:37:10.000  1000  1420 E am_proc_died: [0,10112,com.lotus.hmi]\n08-24 15:37:11.000  1000  1420 I ActivityManager: ANR in com.lotus.cluster (com.lotus.cluster/.ClusterService)\n08-24 15:37:11.100  1000  1420 E ActivityManager: Input dispatching timed out (Waiting to send key event because the focused window has not finished)\n08-24 15:37:12.000  2001  2100 D CarServ : vehicleId=YV4ZZZCD12EF34567 paired to phone +46 70 123 45 67\n08-24 15:37:12.300  2001  2100 D CarServ : finance contract DE89370400440532013000 validated\n08-24 15:37:12.600  2001  2100 W CarServ : card 4111 1111 1111 1111 declined by payment provider\n08-24 15:37:13.000  2001  2100 I CarServ : owner ssn 123-45-6789 verified against registry\n08-24 15:37:14.000  2001  2100 D Telematics: post to https://telematics.example/v2 retry left=2\n08-24 15:37:14.500  2001  2100 E Telematics: socket timeout after 30000ms host 203.0.113.77\n08-24 15:37:15.000  3333  3344 D SensorHub: calibration done, serial SN-A1B2C3D4E5F6 stored\n08-24 15:37:16.000  3333  3344 W SensorHub: watchdog, miss=1\n08-24 15:37:17.000  1234  5678 D HMI-CAN : heartbeat ecu=gateway alive seq=1201\n08-24 15:37:18.000  1234  5678 I HMI-CAN : heartbeat ecu=tcam alive seq=878\n08-24 15:37:19.000  1234  5678 W HMI-CAN : heartbeat ecu=tcam missed seq=879\n08-24 15:37:20.000  1234  5678 E HMI-CAN : heartbeat ecu=tcam lost, reconnecting\n08-24 15:37:21.000  4310  4355 I WifiService: CONNECTED bssid=aa:bb:cc:11:22:33 rssi=-52\n08-24 15:37:22.000  4310  4355 D IpManager: probing link, ipv6 fe80::7a8b:cafe:1234:5678%wlan0\n08-24 15:37:23.000  9999  9999 V RenderThread: 60fps jank=0.8ms\n08-24 15:37:24.000  9999  9999 D ClusterGL: frame 12345 drawn in 6.2ms\n08-24 15:37:25.000  1234  5678 I BootReceiver: boot completed at uptime 42s\n";
+const LT_DEMO_LOG = "08-24 15:37:01.123  1234  5678 I ActivityManager: Start proc 1234:com.example.hmi/u0a12 for activity\n08-24 15:37:01.456  1234  5678 D HMI-CAN : VIN read: YV4AB9CD12EF34567 from ECU gateway\n08-24 15:37:01.789  2231  2245 I Netd    : client connected, uid=1027\n08-24 15:37:02.001  4310  4310 D WifiService: associated with AP ssid=AndroidShare_4821 bssid=aa:bb:cc:11:22:33\n08-24 15:37:02.240  4310  4355 I DhcpClient: lease 192.168.1.104/24 gw 192.168.1.1 dns 10.20.30.40\n08-24 15:37:02.512  4310  4355 W NetworkMonitor: validation failed for https://ota.corp.example, retry 3\n08-24 15:37:03.000  8891  8902 E Auth    : token refresh failed, credential rejected for driver@corp.example\n08-24 15:37:03.220  8891  8902 E Auth    : subscriberId=410112233445566 not provisioned\n08-24 15:37:03.500  5152  5199 D GNSS    : position fix lat=48.858400 lon=2.294500 acc=3.2m sats=11\n08-24 15:37:03.700  5152  5199 D GNSS    : position fix lat=48.858412°N, 2.294511°E acc=2.9m sats=12\n08-24 15:37:04.000  1201  1201 I Zygote  : Forked child process 9876\n08-24 15:37:04.100  9876  9876 D BT      : bonded device CC:DD:EE:FF:00:11 type LE\n08-24 15:37:05.000  9877  9900 I Modem   : IMEI reported 350774129305118, card state READY\n08-24 15:37:06.000  1234  5700 W View    : requestLayout() improperly called\n08-24 15:37:07.000  1234  5700 E CR_OTA  : download stalled url=https://ota.example/pkg v2.41.3\n08-24 15:37:08.000  1234  5710 E AndroidRuntime: FATAL EXCEPTION: main\n08-24 15:37:08.000  1234  5710 E AndroidRuntime: Process: com.example.hmi, PID: 1234\n08-24 15:37:08.000  1234  5710 E AndroidRuntime: java.lang.NullPointerException: attempt to invoke virtual method on a null object reference\n08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at com.example.hmi.MainActivity.renderCluster(MainActivity.java:312)\n08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at com.example.hmi.ClusterView.onDraw(ClusterView.java:88)\n08-24 15:37:08.000  1234  5710 E AndroidRuntime:     at android.view.View.draw(View.java:20340)\n08-24 15:37:08.100  1234  1234 I Process : Sending signal. PID: 1234 SIG: 9\n08-24 15:37:08.500  1000  1000 I ActivityManager: Process com.example.hmi has died\n08-24 15:37:09.000  1000  1000 W ActivityManager: Force stopping com.example.hmi appid=10112\n08-24 15:37:10.000  1000  1420 E am_proc_died: [0,10112,com.example.hmi]\n08-24 15:37:11.000  1000  1420 I ActivityManager: ANR in com.example.cluster (com.example.cluster/.ClusterService)\n08-24 15:37:11.100  1000  1420 E ActivityManager: Input dispatching timed out (Waiting to send key event because the focused window has not finished)\n08-24 15:37:12.000  2001  2100 D CarServ : vehicleId=YV4ZZZCD12EF34567 paired to phone +46 70 123 45 67\n08-24 15:37:12.300  2001  2100 D CarServ : finance contract DE89370400440532013000 validated\n08-24 15:37:12.600  2001  2100 W CarServ : card 4111 1111 1111 1111 declined by payment provider\n08-24 15:37:13.000  2001  2100 I CarServ : owner ssn 123-45-6789 verified against registry\n08-24 15:37:14.000  2001  2100 D Telematics: post to https://telematics.example/v2 retry left=2\n08-24 15:37:14.500  2001  2100 E Telematics: socket timeout after 30000ms host 203.0.113.77\n08-24 15:37:15.000  3333  3344 D SensorHub: calibration done, serial SN-A1B2C3D4E5F6 stored\n08-24 15:37:16.000  3333  3344 W SensorHub: watchdog, miss=1\n08-24 15:37:17.000  1234  5678 D HMI-CAN : heartbeat ecu=gateway alive seq=1201\n08-24 15:37:18.000  1234  5678 I HMI-CAN : heartbeat ecu=engine alive seq=878\n08-24 15:37:19.000  1234  5678 W HMI-CAN : heartbeat ecu=engine missed seq=879\n08-24 15:37:20.000  1234  5678 E HMI-CAN : heartbeat ecu=engine lost, reconnecting\n08-24 15:37:21.000  4310  4355 I WifiService: CONNECTED bssid=aa:bb:cc:11:22:33 rssi=-52\n08-24 15:37:22.000  4310  4355 D IpManager: probing link, ipv6 fe80::7a8b:cafe:1234:5678%wlan0\n08-24 15:37:23.000  9999  9999 V RenderThread: 60fps jank=0.8ms\n08-24 15:37:24.000  9999  9999 D ClusterGL: frame 12345 drawn in 6.2ms\n08-24 15:37:25.000  1234  5678 I BootReceiver: boot completed at uptime 42s\n";
 </script>
 <div id="archive-progress"><div class="box"><div class="spinner"></div><div class="msg" id="archive-progress-msg">processing…</div></div></div>
 </body>

@@ -358,15 +358,15 @@
     eq(SRC.maskLine('card 2224 8888 7777 6666 declined'), 'card [card] declined');
     // vin: digit-only 17-char storage timestamps stay intact
     eq(SRC.maskLine('[OTA]storage time[2026090306444571Z]'), '[OTA]storage time[2026090306444571Z]');
-    // vin: digit-led real VIN still masks (letter within the first 8 chars)
-    eq(SRC.maskLine('vin 1FTFW1ET5DFC10324 ok'), 'vin 1FT**********0324 ok');
+    // vin: digit-led synthetic VIN still masks (letter within the first 8 chars)
+    eq(SRC.maskLine('vin 1A2B3C4D5E6F70324 ok'), 'vin 1A2**********0324 ok');
     // imei: constant-digit config values stay intact
     eq(SRC.maskLine('const 000000000000000 set'), 'const 000000000000000 set');
     eq(SRC.maskLine('const 111111111111111 set'), 'const 111111111111111 set');
   });
 
   T('mask', 'email keeps first local char and TLD', () => {
-    eq(SRC.maskLine('rejected for driver.jung@lotus-tech.example'), 'rejected for d***@***.example');
+    eq(SRC.maskLine('rejected for driver@corp.example'), 'rejected for d***@***.example');
   });
 
   T('mask', 'device serial keeps SN- prefix', () => {
@@ -1255,19 +1255,19 @@
   T('issues', 'issueScan masks snippets via the maskText option (mask before slice)', () => {
     const mask = (t) => SRC.maskLine(String(t));
     const found = SRC.issueScan(recs([
-      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed, credential rejected for driver.jung@lotus-tech.example',
+      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed, credential rejected for driver@corp.example',
     ]), GROUPS, (id) => id, mask);
     eq(found.length, 1, 'auth group matches');
-    ok(!found[0].snippet.includes('driver.jung@lotus-tech.example'), 'raw email never rendered');
+    ok(!found[0].snippet.includes('driver@corp.example'), 'raw email never rendered');
     ok(found[0].snippet.includes('d***@***.example'), 'masked email in snippet: ' + found[0].snippet);
     // default (no maskText) keeps the legacy identity behavior
     const plain = SRC.issueScan(recs([
-      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed for driver.jung@lotus-tech.example',
+      '09-11 22:14:01.100  1000  2000 E Auth    : token refresh failed for driver@corp.example',
     ]), GROUPS, (id) => id);
-    ok(plain[0].snippet.includes('driver.jung@'), 'identity default keeps snippet as-is');
+    ok(plain[0].snippet.includes('driver@'), 'identity default keeps snippet as-is');
     // mask runs BEFORE the 110-char slice: an email starting at char 105 leaks nothing
     const long = SRC.issueScan(recs([
-      'credential rejected ' + 'x'.repeat(84) + ' driver.jung@lotus-tech.example tail',
+      'credential rejected ' + 'x'.repeat(84) + ' driver@corp.example tail',
     ]), GROUPS, (id) => id, mask);
     eq(long.length, 1);
     ok(!long[0].snippet.includes('driver'), 'no raw local-part fragment past the slice boundary');
@@ -1335,8 +1335,8 @@
 
   T('issues', 'anr event-log entries and force-finishing are flagged', () => {
     const found = SRC.issueScan(recs([
-      'I am_anr : [0,com.lotus.hmi/.MainActivity,100,803627610]',
-      'W ActivityManager: Force finishing activity ActivityRecord{abc u0 com.lotus.hmi/.Main t42}',
+      'I am_anr : [0,com.example.hmi/.MainActivity,100,803627610]',
+      'W ActivityManager: Force finishing activity ActivityRecord{abc u0 com.example.hmi/.Main t42}',
     ]), GROUPS, (id) => id);
     eq(found.length, 2);
     ok(found.every((f) => f.kind === 'anr'));
@@ -1366,7 +1366,7 @@
 
   T('issues', 'issue scan false-positive guards', () => {
     const found = SRC.issueScan(recs([
-      'ActivityManager: Start proc 1234:com.lotus.hmi/u0a12 for activity',
+      'ActivityManager: Start proc 1234:com.example.hmi/u0a12 for activity',
       'AudioService: playback resumed after temporary suspension of audio focus',
       'SensorHub: resumed sensor batching',
       'D WifiHal: scan interval wake-up alarm scheduled',

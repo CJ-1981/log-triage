@@ -497,23 +497,23 @@ test('extractArchive unpacks tar and nested tar.gz entries', { skip: !hasStreams
 });
 
 test('extractArchive unpacks a top-level tar.gz and tgz', { skip: !hasStreams }, async () => {
-  const tarBuf = ar.writeTar([{ name: 'tcam.log', data: new TextEncoder().encode('tcam backup line\n') }]);
+  const tarBuf = ar.writeTar([{ name: 'device.log', data: new TextEncoder().encode('device backup line\n') }]);
   for (const name of ['217.tar.gz', '217.tgz']) {
     const gz = await ar.gzipData(tarBuf);
     const out = await ar.extractArchive(name, gz);
     assert.strictEqual(out.length, 1, name + ': one entry');
-    assert.strictEqual(out[0].name, '217/tcam.log', name + ': path prefix kept');
-    assert.strictEqual(new TextDecoder().decode(out[0].data), 'tcam backup line\n');
+    assert.strictEqual(out[0].name, '217/device.log', name + ': path prefix kept');
+    assert.strictEqual(new TextDecoder().decode(out[0].data), 'device backup line\n');
   }
 });
 
 test('extractArchive decompresses a gzip payload misnamed .tar', { skip: !hasStreams }, async () => {
-  // some devices (e.g. TCAM kmesglog_*.tar) ship gzip bytes with a .tar name
-  const tarBuf = ar.writeTar([{ name: 'kmesg.log', data: new TextEncoder().encode('kernel ring buffer line\n') }]);
+  // some devices ship gzip bytes with a .tar name
+  const tarBuf = ar.writeTar([{ name: 'kernel.log', data: new TextEncoder().encode('kernel ring buffer line\n') }]);
   const gz = await ar.gzipData(tarBuf);
-  const out = await ar.extractArchive('kmesglog_2026-05-20-17-41-41_0006.tar', gz);
+  const out = await ar.extractArchive('kernellog_2026-05-20.tar', gz);
   assert.strictEqual(out.length, 1);
-  assert.strictEqual(out[0].name, 'kmesglog_2026-05-20-17-41-41_0006/kmesg.log');
+  assert.strictEqual(out[0].name, 'kernellog_2026-05-20/kernel.log');
   assert.strictEqual(new TextDecoder().decode(out[0].data), 'kernel ring buffer line\n');
 });
 
