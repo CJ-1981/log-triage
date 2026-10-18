@@ -70,6 +70,11 @@ Note: the G0–G8 records below are historical — they describe the design veri
 - **Error guard:** every e2e test ends with an `afterEach` assertion of zero uncaught page errors (`page.on(pageerror)` plus an in-page `window.__errs` tally) — the guard that would have caught the v1.1.x file-switch `ReferenceError` (see Retrospective R1).
 - **Performance / big file:** a 300 MB / 3,380,636-line synthetic log was fully streamed and counted in ~31 s in Chromium (~108 MB/s), with exact per-file counters, FIFO trim at the 100k kept-line cap, and zero page errors. Throughput in hidden/background tabs is lower because browsers throttle them; the app uses a `MessageChannel` yield (ADR-0006) to minimize this effect.
 
+## Verification evidence (Unreleased, SPEC-VIEWER-001)
+
+- **Coverage gate:** green on all touched gated modules; the seq-keyed selection helpers added to `src/selection.js` (`addValues`, `selectAllValues`, anchor getter) are unit-covered by the new `tests/selection.test.js` (5 tests, wired into the `npm test` script). A pre-existing, SPEC-unrelated shortfall stands: `src/format-7z.js` branch coverage measures 82.1% (< 85).
+- **E2e scope:** the app suite grows from 87 to 99 specs (item 54) and the wheel stress spec (stress item 2) now pins the seamless-window contract; totals are listed in the E2e scope header above.
+
 ## Coverage policy
 
 - Enforced by `node tools/coverage-gate.mjs` on Node 22 using `node:test`.
@@ -81,9 +86,9 @@ Note: the G0–G8 records below are historical — they describe the design veri
 
 | Command | Purpose |
 | --- | --- |
-| `npm test` | Run the Node unit suites (`node:test`, Node 22): shared logic cases + bump-tooling suite. |
+| `npm test` | Run the Node unit suites (`node:test`, Node 22): shared logic cases, the selection model suite, and the bump-tooling suite. |
 | `npm run test:gate` | Run unit tests with coverage and enforce ≥ 90% line / ≥ 85% branch per core module. |
-| `npm run e2e` | Run the Playwright end-to-end suite (53 specs: 45 app + 8 stress) against the built `log-triage.html`. |
+| `npm run e2e` | Run the Playwright end-to-end suite (107 specs: 99 app + 8 stress) against the built `log-triage.html`. |
 | `npm run e2e:stress` | Run only the stress suite against the generated big fixture (`tools/genbig.mjs`). |
 | `npm run build` | Rebuild `log-triage.html` from `src/` (inlines CSS, modules, shared cases, demo log). |
 
@@ -95,9 +100,9 @@ Note: the G0–G8 records below are historical — they describe the design veri
 - **Browser:** `build.js` inlines the identical file into `log-triage.html`; opening it with `?selftest` executes the suite and reports pass/fail counts and failing case names.
 - **Guarantee:** any behavior change must be expressed as a case update, so Node CI and the in-browser self-test can never disagree.
 
-## E2e scope (Playwright — 95 specs: 87 app + 8 stress)
+## E2e scope (Playwright — 107 specs: 99 app + 8 stress)
 
-App suite (87 specs) — coverage includes:
+App suite (99 specs) — coverage includes:
 
 1. `?selftest` page runs and reports green.
 2. Demo load: format detection, level chips, and masking indications correct.
@@ -159,11 +164,12 @@ App suite (87 specs) — coverage includes:
 51. History dropdown interaction pass (v1.52.2, FR-17 AC-3): with 14 committed terms the capped 12-item list overflows its 240px max-height (scrollbar present) and scrolling INSIDE it keeps it open with a real scrollTop change (the capture-phase page-scroll closer used to kill the list on its own scroll), while a page scroll behind it still closes it; a closed dropdown reopens from the field with ↓ (nothing highlighted, matching a fresh open) or ↑ (last entry pre-highlighted); the inline ✕ clears the field to all-44-lines WITHOUT reopening the list and focus leaves the field (the dropdown renders only while its field has focus). v1.53.1: the keyboard highlight scrolls the list — reopening with ↑ arrives scrolled to the below-fold last entry (scrollTop > 0, entry within the visible band), and walking 12× ↓ to the last entry keeps it in view (previously the highlight moved out of sight while the list stayed put — "keyboard scrolling doesn't work").
 52. Search-all shortcut (v1.53.0, FR-17 AC-5): Ctrl+Enter fires with the cursor still in the quick filter (type 'heartbeat', shortcut → panel with 4 matches — the INPUT focus must not swallow it), from body focus RE-RUNS with the current pattern ('fail' → 2 matches), the button tooltip advertises the shortcut, an empty pattern keeps the panel closed with the "Type a pattern" flash, and the shortcut is inert off the viewer tab (no re-run while Masks is shown).
 53. Light-theme mark ink (v1.53.2, FR-10 AC-4): with quick-filter marks in the viewer, Paper and Solarized Light render the mark text with dark ink on the yellow highlight (computed color avg < 96 — the mark rule used to take its color from the page background, painting near-white on yellow), and Midnight keeps its dark-ink rendering; a shared self-test case additionally pins the --hl-ink rule (dark themes = --bg, light themes = --fg) for every palette.
+54. Continuous scroll window, selection persistence, shortcut hint (Unreleased, SPEC-VIEWER-001): wheeling past a page edge appends/prepends the next page with the viewport anchored (no jump, sub-page window growth past the seam, farthest-page eviction with scroll compensation, ≤ 2,500-row window), start/end marks follow the window's position against the global first/last matching line, and the pager keeps anchor-page semantics; the selection is keyed by global line id — it survives append/prepend/eviction AND loadPage replacement (a row selected then jumped away stays selected off-window with no highlight, excluded from the status count and copy/export, and re-highlights when it re-enters), Esc clears everything including off-window entries, Ctrl+A scopes to the current window; the Search all button renders a platform-aware kbd hint (`⌘Enter` under an emulated macOS platform, `Ctrl+Enter` otherwise), still hidden with the button at ≤ 560 px.
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 
 1. Ingest timing (<60 s) with total-line count asserted against the fixture on disk; every indexed line is the view scope (no kept-window trim).
-2. Real mouse-wheel paging across the 500-row page edges (line numbers advance across page boundaries, bounded rendered window, error-free).
+2. Real mouse-wheel paging across the 500-row page edges, now with continuous scrolling (Unreleased): no scroll jump at the page seam, the rendered window grows past the boundary without replacing rows, the anchor page stays stable, the window stays bounded (≤ 2,500 rows), and the run is error-free.
 3. Go-to-line late in the file (viewer loads the page, drawer shows the exact line).
 4. Go-to-line for a line the old kept cap used to release (line 150000 of ~338k) — the viewer loads its page and opens the drawer.
 5. Clicking an instant-search result jumps to the line (tab switch, selection, drawer).
