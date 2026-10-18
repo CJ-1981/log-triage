@@ -419,6 +419,319 @@ test('parse7z rejects unknown header elements', () => {
 });
 
 // ---------------------------------------------------------------------------
+// parser edge/error branches (hand-crafted headers)
+// ---------------------------------------------------------------------------
+
+test('parse7z rejects a header that ends mid-property', () => {
+  // kHeader, kMainStreamsInfo, kPackInfo — then the bytes run out inside kPackInfo
+  const header = new Uint8Array([0x01, 0x04, 0x06]);
+  const buf = craftArchive(header, enc('abc'));
+  assert.throws(() => F7.parse7z(buf), /end of header/i);
+});
+
+test('parse7z rejects a files-info block that runs past the header', () => {
+  // kEmptyStream claims 32 bytes of bitset but the header ends immediately
+  const header = new Uint8Array([0x01, 0x05, 0x01, 0x0e, 0x20, 0x00, 0x00]);
+  const buf = craftArchive(header, enc('abc'));
+  assert.throws(() => F7.parse7z(buf), /end of header/i);
+});
+
+test('parse7z recognises the lzma2 coder id', () => {
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x06, 0x00, 0x01, 0x09, 0x03, 0x00,
+    0x07, 0x0b, 0x01, 0x00, 0x01, 0x01, 0x21, // 1 coder, id 0x21 (LZMA2)
+    0x0c, 0x03,
+    0x00,
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc('abc'));
+  const parsed = F7.parse7z(buf);
+  assert.strictEqual(parsed.folders.length, 1);
+});
+
+test('parse7z recognises the lzma coder id and reads coder properties', () => {
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x06, 0x00, 0x01, 0x09, 0x03, 0x00,
+    // flags 0x23 = idSize 3 + has-properties; id 03 01 01 (LZMA), props [0x5d]
+    0x07, 0x0b, 0x01, 0x00, 0x01, 0x23, 0x03, 0x01, 0x01, 0x01, 0x5d,
+    0x0c, 0x03,
+    0x00,
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc('abc'));
+  const parsed = F7.parse7z(buf);
+  assert.strictEqual(parsed.folders.length, 1);
+});
+
+test('parse7z handles a complex coder declaration with an output-stream count', () => {
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x06, 0x00, 0x01, 0x09, 0x03, 0x00,
+    // flags 0x11 = idSize 1 + complex: numIn=0(num read), numOut=1, id 0x00 (copy)
+    0x07, 0x0b, 0x01, 0x00, 0x01, 0x11, 0x00, 0x00, 0x01,
+    0x0c, 0x03,
+    0x00,
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc('abc'));
+  const parsed = F7.parse7z(buf);
+  assert.strictEqual(parsed.folders.length, 1);
+});
+
+test('parse7z rejects unpack info without a folder section', () => {
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x06, 0x00, 0x01, 0x09, 0x03, 0x00,
+    0x07, 0x00, // kUnpackInfo followed by kEnd instead of kFolder
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc('abc'));
+  assert.throws(() => F7.parse7z(buf), /missing folder section/i);
+});
+
+test('parse7z rejects external folder data', () => {
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x06, 0x00, 0x01, 0x09, 0x03, 0x00,
+    0x07, 0x0b, 0x01, 0x01, // kFolder, 1 folder, external=1
+    0x00,
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc('abc'));
+  assert.throws(() => F7.parse7z(buf), /external folder data/i);
+});
+
+test('parse7z reads folder-level CRC digests', () => {
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x06, 0x00, 0x01, 0x09, 0x03, 0x00,
+    0x07, 0x0b, 0x01, 0x00, 0x01, 0x01, 0x00,
+    0x0c, 0x03,
+    0x0a, 0x01, 0x44, 0x33, 0x22, 0x11, // kCRC: allAreDefined=1, crc 0x11223344
+    0x00,
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc('abc'));
+  const parsed = F7.parse7z(buf);
+  assert.strictEqual(parsed.folders[0].crc, 0x11223344);
+});
+
+test('parse7z rejects a split folder with no substream sizes', () => {
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x06, 0x00, 0x01, 0x09, 0x03, 0x00,
+    0x07, 0x0b, 0x01, 0x00, 0x01, 0x01, 0x00,
+    0x0c, 0x03,
+    0x00,
+    0x08, 0x0d, 0x02, 0x00, // kSubStreamsInfo: 2 substreams, then kEnd — sizes missing
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc('abc'));
+  assert.throws(() => F7.parse7z(buf), /missing substream sizes/i);
+});
+
+test('parse7z maps mixed substream counts (split, single, empty) across folders', () => {
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x06, 0x00, 0x03, 0x09, 0x03, 0x03, 0x03, 0x00, // 3 packed streams of 3 bytes
+    0x07, 0x0b, 0x03, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00, 0x01, 0x01, 0x00,
+    0x0c, 0x03, 0x03, 0x03,
+    0x00,
+    0x08, 0x0d, 0x02, 0x01, 0x00, 0x09, 0x01, 0x00, // counts 2/1/0, first split size 1
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc('abc'));
+  const parsed = F7.parse7z(buf);
+  assert.strictEqual(parsed.folders.length, 3);
+  // folder 0 splits into sizes [1, 2] (last = outSize - sum); folders 1/2 keep outSize
+  assert.deepStrictEqual(parsed.files, []); // no FilesInfo section
+});
+
+test('parse7z rejects an unexpected substream property', () => {
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x06, 0x00, 0x01, 0x09, 0x03, 0x00,
+    0x07, 0x0b, 0x01, 0x00, 0x01, 0x01, 0x00,
+    0x0c, 0x03,
+    0x00,
+    0x08, 0x0d, 0x01, 0x7f, 0x00, // kSubStreamsInfo: 1 stream, then reserved 0x7f
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc('abc'));
+  assert.throws(() => F7.parse7z(buf), /unexpected substream property 127/i);
+});
+
+test('parse7z rejects an unexpected streams-info element', () => {
+  const header = new Uint8Array([0x01, 0x04, 0x19, 0x00, 0x00]);
+  const buf = craftArchive(header, enc('abc'));
+  assert.throws(() => F7.parse7z(buf), /unexpected streams info element 25/i);
+});
+
+test('parse7z rejects a folder with no packed stream size', () => {
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x07, 0x0b, 0x01, 0x00, 0x01, 0x01, 0x00, // unpack info, no kPackInfo
+    0x0c, 0x03,
+    0x00,
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc('abc'));
+  assert.throws(() => F7.parse7z(buf), /missing packed stream size/i);
+});
+
+test('parse7z reads empty-stream and empty-file bitsets (directory + empty file)', () => {
+  const nameBytes = [
+    0x64, 0x00, 0x00, 0x00, // "d"
+    0x65, 0x00, 0x00, 0x00, // "e"
+  ];
+  const header = new Uint8Array([
+    0x01, 0x05, 0x02,
+    0x0e, 0x01, 0xc0, // kEmptyStream: both files are empty streams
+    0x0f, 0x01, 0x40, // kEmptyFile: second is an empty file, first is a directory
+    0x11, nameBytes.length + 1, 0x00, ...nameBytes,
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc(''));
+  const parsed = F7.parse7z(buf);
+  assert.strictEqual(parsed.files.length, 2);
+  assert.strictEqual(parsed.files[0].name, 'd');
+  assert.strictEqual(parsed.files[0].isDir, true);
+  assert.strictEqual(parsed.files[0].size, 0);
+  assert.strictEqual(parsed.files[1].name, 'e');
+  assert.strictEqual(parsed.files[1].isDir, false);
+});
+
+test('parse7z rejects files with no names', () => {
+  const header = new Uint8Array([0x01, 0x05, 0x01, 0x00, 0x00]);
+  const buf = craftArchive(header, enc('abc'));
+  assert.throws(() => F7.parse7z(buf), /file names missing/i);
+});
+
+test('parse7z rejects more files than substreams', () => {
+  const nameBytes = [
+    0x61, 0x00, 0x00, 0x00, // "a"
+    0x62, 0x00, 0x00, 0x00, // "b"
+  ];
+  const header = new Uint8Array([
+    0x01, 0x04,
+    0x06, 0x00, 0x01, 0x09, 0x03, 0x00,
+    0x07, 0x0b, 0x01, 0x00, 0x01, 0x01, 0x00,
+    0x0c, 0x03,
+    0x00,
+    0x00,
+    0x05, 0x02, 0x11, nameBytes.length + 1, 0x00, ...nameBytes, // 2 files, 1 substream
+    0x00,
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc('abc'));
+  assert.throws(() => F7.parse7z(buf), /more files than substreams/i);
+});
+
+test('parse7z rejects a next-header offset that runs past the archive', () => {
+  const buf = F7.write7zStored([{ name: 'a.log', data: enc('hello\n') }]);
+  const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+  dv.setBigUint64(12, 1n << 40n, true); // nextOff far beyond the data
+  dv.setUint32(8, F7.crc32(buf.subarray(12, 32)), true); // keep the start CRC valid
+  assert.throws(() => F7.parse7z(buf), /truncated archive \(next header\)/i);
+});
+
+test('parse7z rejects an encoded header without exactly one folder', () => {
+  const header = new Uint8Array([
+    0x17, // kEncodedHeader
+    0x06, 0x00, 0x00, 0x00, // kPackInfo with zero streams, then kEnd
+    0x00,
+  ]);
+  const buf = craftArchive(header, enc(''));
+  assert.throws(() => F7.parse7z(buf), /bad encoded header/i);
+});
+
+test('parse7z rejects an unexpected top-level header id', () => {
+  const header = new Uint8Array([0x19, 0x00, 0x00]);
+  const buf = craftArchive(header, enc(''));
+  assert.throws(() => F7.parse7z(buf), /unexpected header id 25/i);
+});
+
+test('parse7z rejects archive properties and additional streams elements', () => {
+  let buf = craftArchive(new Uint8Array([0x01, 0x02, 0x00, 0x00]), enc(''));
+  assert.throws(() => F7.parse7z(buf), /archive properties not supported/i);
+  buf = craftArchive(new Uint8Array([0x01, 0x03, 0x00, 0x00]), enc(''));
+  assert.throws(() => F7.parse7z(buf), /additional streams not supported/i);
+});
+
+test('parse7z returns no folders when the header is only a terminator', () => {
+  const buf = craftArchive(new Uint8Array([0x01, 0x00]), enc(''));
+  const parsed = F7.parse7z(buf);
+  assert.deepStrictEqual(parsed.files, []);
+  assert.deepStrictEqual(parsed.folders, []);
+});
+
+test('write7zStored defaults missing entry data to an empty file', () => {
+  const buf = F7.write7zStored([{ name: 'x.log' }]);
+  const parsed = F7.parse7z(buf);
+  assert.strictEqual(parsed.files.length, 1);
+  assert.strictEqual(parsed.files[0].size, 0);
+  assert.strictEqual(parsed.files[0].crc, F7.crc32(new Uint8Array(0)));
+});
+
+// ---------------------------------------------------------------------------
+// decode-path branches (direct folder objects, no header crafting)
+// ---------------------------------------------------------------------------
+
+test('decodeFolderSync rejects a copy folder whose sizes disagree', () => {
+  const folder = { codec: 'copy', props: null, outSize: 5, packOffset: 0, packSize: 4, crc: null };
+  assert.throws(() => F7.decodeFolderSync(new Uint8Array(8), folder), /copy coder size mismatch/i);
+});
+
+test('decodeFolderSync decodes an uncompressed LZMA2 folder', () => {
+  const msg = enc('lzma2 folder payload\n');
+  const stream = new Uint8Array([0x01, (msg.length - 1) >> 8, (msg.length - 1) & 0xff, ...msg, 0x00]);
+  const folder = { codec: 'lzma2', props: null, outSize: msg.length, packOffset: 0, packSize: stream.length, crc: null };
+  const out = F7.decodeFolderSync(stream, folder);
+  assert.deepStrictEqual(out, msg);
+});
+
+test('decodeFolderSync decodes an LZMA1 folder with properties', () => {
+  const src = hex('lzma1.hex');
+  const folder = { codec: 'lzma', props: [0x5d], outSize: SAMPLE.length, packOffset: 0, packSize: src.length, crc: null };
+  const out = F7.decodeFolderSync(src, folder);
+  assert.strictEqual(dec(out), SAMPLE);
+});
+
+test('decodeFolderSync rejects an LZMA folder with no properties', () => {
+  const folder = { codec: 'lzma', props: null, outSize: SAMPLE.length, packOffset: 0, packSize: 100, crc: null };
+  assert.throws(() => F7.decodeFolderSync(hex('lzma1.hex'), folder), /missing properties/i);
+});
+
+test('decode7zFolder rejects deflate output that is the wrong size', { skip: typeof DecompressionStream === 'undefined' }, async () => {
+  const zlib = require('node:zlib');
+  const raw = enc('wrong size\n');
+  const comp = zlib.deflateRawSync(raw);
+  const folder = { codec: 'deflate', props: null, outSize: raw.length + 1, packOffset: 0, packSize: comp.length, crc: null };
+  await assert.rejects(() => F7.decode7zFolder(comp, folder), /deflate coder size mismatch/i);
+});
+
+test('decode7zFolder rejects deflate folder data with a bad CRC', { skip: typeof DecompressionStream === 'undefined' }, async () => {
+  const zlib = require('node:zlib');
+  const raw = enc('crc check\n');
+  const comp = zlib.deflateRawSync(raw);
+  const folder = { codec: 'deflate', props: null, outSize: raw.length, packOffset: 0, packSize: comp.length, crc: 0xdeadbeef };
+  await assert.rejects(() => F7.decode7zFolder(comp, folder), /CRC/i);
+});
+
+// ---------------------------------------------------------------------------
 // Real 7-Zip CLI fixtures (skipped when the CLI is unavailable)
 // ---------------------------------------------------------------------------
 
