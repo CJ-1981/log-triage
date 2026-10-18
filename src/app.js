@@ -109,12 +109,34 @@
       if (token !== pageToken || query !== viewToken) return false;
       view = result.rows; pageStart = result.start; viewStart = result.start; filteredCount = result.total;
       rebuildWindowIndex();
-      displayCache.clear(); selection.clear(); invalidateHeights();
+      displayCache.clear(); invalidateHeights();
       viewer().scrollTop = 0; renderRows();
       if (bottom) { viewer().scrollTop = viewer().scrollHeight; renderRows(); }
       updateStatus(); updatePager(); return true;
     } catch (error) { if (token === pageToken) pagingError(error); return false; }
     finally { doneBusy(bt); }
+  }
+
+  /* Selection is keyed by global seq (stable row ids), so it survives window
+   * mutation AND view replacement: rows selected but outside the current
+   * window stay stored and re-highlight when they re-enter it. These helpers
+   * scope copy/export/count to the rows present in the CURRENT window. */
+  function selectedWindowIndices() {
+    const idxs = [];
+    for (const seq of selection.indices()) {
+      const idx = seqToIdx.get(seq);
+      if (idx !== undefined) idxs.push(idx);
+    }
+    return idxs.sort((a, b) => a - b);
+  }
+  function shiftSelectRange(idx) {
+    // shift ranges are computed over WINDOW indices, then mapped to the
+    // rows' global seqs (seq is a physical line id, not a view ordinal)
+    const anchor = selection.anchor;
+    if (anchor < 0 || !seqToIdx.has(anchor)) { selection.click(view[idx].seq); return; }
+    const a = seqToIdx.get(anchor), seqs = [];
+    for (let i = Math.min(a, idx); i <= Math.max(a, idx); i++) seqs.push(view[i].seq);
+    selection.addValues(seqs);
   }
 
   /* Seamless continuous scrolling: the wheel edge handler extends the window
@@ -871,7 +893,7 @@
       const rec = view[i];
       const row = document.createElement('div');
       let cls = 'vrow' + wrapCls;
-      if (selection.has(i)) cls += ' sel';
+      if (selection.has(rec.seq)) cls += ' sel';
       else if (rec.level === 'W') cls += ' tint-w';
       else if (rec.level === 'E') cls += ' tint-e';
       else if (rec.level === 'F') cls += ' tint-f';
@@ -880,7 +902,7 @@
       const text = displayText(rec);
       const visual = LT.highlightText(text, compiledHighlights);
       const hl = highlightedHtml(text, visual.spans);
-      if (visual.row && !selection.has(i)) {
+      if (visual.row && !selection.has(rec.seq)) {
         row.classList.add('rule-highlight-row');
         row.style.setProperty('--rule-row-color', visual.row.color + '33');
         row.title = visual.row.name;
@@ -971,7 +993,7 @@
     $('st-total').textContent = st.totalLines;
     $('st-kept').textContent = st.keptTotal;
     $('st-shown').textContent = filteredCount;
-    $('st-sel').textContent = selection.count;
+    $('st-sel').textContent = selectedWindowIndices().length;
     syncExportButtons();
     $('st-bm').textContent = bookmarksStore.all().length;
     const bmCount = $('bm-count');
@@ -1005,9 +1027,9 @@
       // only trust the drag gesture while the primary button is really held
       drag = (e.buttons & 1) === 1;
       lastHoverIdx = idx;
-      if (e.shiftKey) selection.shiftClick(idx);
-      else if (e.ctrlKey || e.metaKey) selection.ctrlClick(idx);
-      else { selection.click(idx); if (state.drawerOn) showDrawer(view[idx]); }
+      if (e.shiftKey) shiftSelectRange(idx);
+      else if (e.ctrlKey || e.metaKey) selection.ctrlClick(view[idx].seq);
+      else { selection.click(view[idx].seq); if (state.drawerOn) showDrawer(view[idx]); }
       renderRows(); updateStatus();
       e.preventDefault();
     });
@@ -1021,7 +1043,7 @@
       if (idx === lastHoverIdx) return;
       lastHoverIdx = idx;
       if (!(e.buttons & 1)) return; // button released — not a drag
-      selection.shiftClick(idx);
+      shiftSelectRange(idx);
       renderRows(); updateStatus();
     });
     const endDrag = () => { drag = false; lastHoverIdx = -1; };
@@ -1128,8 +1150,8 @@
 
   /* ---------------- copy ---------------- */
   async function copySelection() {
-    if (!selection.count) return;
-    const idxs = selection.indices();
+    const idxs = selectedWindowIndices();
+    if (!idxs.length) return;
     const prefix = $('copy-prefix').value;
     const lines = idxs.map((i) => {
       const rec = view[i];
@@ -1827,14 +1849,14 @@
   /* ---------------- export ---------------- */
   function syncExportButtons() {
     // selection-only with no rows selected must not export the whole view
-    const blocked = $('exp-selection').checked && selection.count === 0;
+    const blocked = $('exp-selection').checked && selectedWindowIndices().length === 0;
     ['exp-txt', 'exp-csv', 'exp-json'].forEach((id) => { $(id).disabled = blocked; });
   }
 
   async function exportRecords(kind) {
     if (exportLock) { flash('export in progress — please wait'); return; }
     const selectionOnly = $('exp-selection').checked;
-    const selectionIndices = selection.indices();
+    const selectionIndices = selectedWindowIndices();
     const expectedRevision = lastQueryRevision;
     const prefix = $('exp-prefix').value;
     const name = (base, ext) => LT.timestampedName(new Date(), base, ext);
@@ -1898,7 +1920,7 @@
     const format = $('exp-archive-format').value;
     const note = $('exp-archive-note');
     const selectionOnly = $('exp-selection').checked;
-    const selectionIndices = selection.indices();
+    const selectionIndices = selectedWindowIndices();
     const expectedRevision = lastQueryRevision;
     const ac = new AbortController();
     exportAbortController = ac;
@@ -2107,7 +2129,7 @@
       y = idx * ROW_H;
     }
     v.scrollTop = Math.max(0, topOffset() + y - v.clientHeight / 2);
-    selection.click(idx);
+    selection.click(view[idx].seq);
     renderRows(); updateStatus();
     if (view[idx] && state.drawerOn) showDrawer(view[idx]);
   }
@@ -2953,10 +2975,10 @@
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
       if (e.key === 'm' || e.key === 'M') setMask(!state.maskOn);
       else if (e.key === 'w' || e.key === 'W') setWrap(!state.wrapOn);
-      else if (e.key === 'b' || e.key === 'B') { if (view.length) toggleBookmark(selection.count ? selection.indices()[0] : Number((viewer().querySelector('.vrow') || { dataset: { idx: 0 } }).dataset.idx || 0)); }
+      else if (e.key === 'b' || e.key === 'B') { if (view.length) { const sel = selectedWindowIndices(); toggleBookmark(sel.length ? sel[0] : Number((viewer().querySelector('.vrow') || { dataset: { idx: 0 } }).dataset.idx || 0)); } }
       else if (e.key === 'Escape') { selection.clear(); $('drawer').className = ''; renderRows(); updateStatus(); }
-      else if ((e.ctrlKey || e.metaKey) && (e.key === 'c')) { if (selection.count) { copySelection(); e.preventDefault(); } }
-      else if ((e.ctrlKey || e.metaKey) && (e.key === 'a')) { selection.selectAll(view.length); renderRows(); updateStatus(); e.preventDefault(); }
+      else if ((e.ctrlKey || e.metaKey) && (e.key === 'c')) { if (selectedWindowIndices().length) { copySelection(); e.preventDefault(); } }
+      else if ((e.ctrlKey || e.metaKey) && (e.key === 'a')) { selection.selectAllValues(view.map((r) => r.seq)); renderRows(); updateStatus(); e.preventDefault(); }
     });
   }
 

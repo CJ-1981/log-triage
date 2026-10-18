@@ -352,13 +352,21 @@ test('selection-only export exports exactly the selected rows and guards empty s
   const fsmod = await import('node:fs');
   const content = fsmod.readFileSync(await download.path(), 'utf8');
   assert.strictEqual(content.trim().split('\n').length, 2, 'exactly the two selected rows exported');
-  // changing the page clears the selection -> selection-only export disabled again
+  // selection is keyed by global seq — paging away keeps it stored (inert
+  // while off-window: no highlight, no count, selection-only export blocked)
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
   await page.waitForSelector('#pager', { state: 'visible', timeout: 5000 });
   await page.evaluate(() => document.getElementById('page-next').click());
   await page.waitForFunction(() => document.getElementById('page-number').value === '2', null, { timeout: 5000 });
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '0', null, { timeout: 5000 });
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
   await page.waitForFunction(() => document.getElementById('exp-txt').disabled, null, { timeout: 5000 });
+  // paging back restores the stored selection without re-clicking
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.evaluate(() => document.getElementById('page-prev').click());
+  await page.waitForFunction(() => document.getElementById('st-sel').textContent === '2', null, { timeout: 5000 });
+  const restored = await page.evaluate(() => document.querySelectorAll('.vrow.sel').length);
+  assert.ok(restored >= 2, 'both selected rows re-highlight when they re-enter the window');
   fs.rmSync(big, { force: true });
 });
 

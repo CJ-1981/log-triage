@@ -1,5 +1,7 @@
 /* Log Triage — selection.js: index-based multiline selection model.
  * Index-based by design, so selection survives virtualization and re-renders.
+ * Callers may pass any stable integer row ids (the viewer passes global seq
+ * values so selections survive paging and window mutation).
  * click = anchor+single · shiftClick = range from anchor · ctrlClick = toggle
  * (and moves the anchor) · selectAll/clear operate on the whole view. */
 (function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {
@@ -39,7 +41,22 @@
       for (let i = 0; i < n; i++) this._set.add(i);
     }
 
+    // bulk add for id sets computed by the caller (e.g. a shift range mapped
+    // to global seqs) — never touches the anchor
+    addValues(values) {
+      for (const v of values) this._set.add(v);
+    }
+
+    // bulk replace (e.g. select-all over the current window's global seqs)
+    selectAllValues(values) {
+      this._set.clear();
+      this.addValues(values);
+    }
+
     has(idx) { return this._set.has(idx); }
+
+    // id of the anchor row (or -1) so callers can map a shift range
+    get anchor() { return this._anchor; }
 
     indices() {
       return Array.from(this._set).sort((a, b) => a - b);
