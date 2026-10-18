@@ -109,12 +109,28 @@ test('stress: mouse wheel pages across page boundaries in the virtualized viewer
   });
   await page.mouse.move(box.x, box.y);
   const before = await state();
-  // several big wheels cross the 500-row page edge; the app then loads the
-  // next page and the rendered line numbers advance past the old page
-  for (let i = 0; i < 6; i++) { await page.mouse.wheel(0, 4000); await page.waitForTimeout(150); }
+  // several big wheels cross the 500-row page edge; the app then APPENDS the
+  // next page to the continuous window and the rendered line numbers advance
+  // past the old page boundary without replacing the view. Scroll must never
+  // jump: the old page-replacement path reset scrollTop to 0 at every seam.
+  const scrolls = [];
+  for (let i = 0; i < 6; i++) {
+    await page.mouse.wheel(0, 4000);
+    await page.waitForTimeout(150);
+    scrolls.push(await page.evaluate(() => document.getElementById('viewer').scrollTop));
+  }
+  for (let i = 1; i < scrolls.length; i++) {
+    assert.ok(scrolls[i] >= scrolls[i - 1] - 1, 'no scroll jump across the page seam: ' + scrolls[i - 1] + ' -> ' + scrolls[i]);
+  }
   const afterDown = await state();
   assert.ok(Number(afterDown.firstLn) > Number(before.firstLn), 'rendered lines advanced: ' + before.firstLn + ' -> ' + afterDown.firstLn);
   assert.ok(afterDown.rows > 0 && afterDown.rows < 300, 'windowed rendering keeps row count bounded');
+  // the scroll content now spans MORE than one 500-row page: the window grew
+  // by appending (the old page-replacement path always held exactly 500 rows)
+  const windowRows = await page.evaluate(() => Math.round(parseFloat(document.getElementById('vspacer').style.height) / 22));
+  assert.ok(windowRows > 500, 'window holds more than one page after wheeling past the seam (got ' + windowRows + ' rows)');
+  // anchor-page semantics: seamless appends never move the pager
+  assert.strictEqual(await page.evaluate(() => document.getElementById('page-number').value), '1', 'pager stays on the anchor page');
   for (let i = 0; i < 8; i++) { await page.mouse.wheel(0, -4000); await page.waitForTimeout(150); }
   const afterUp = await state();
   assert.ok(Number(afterUp.firstLn) <= Number(afterDown.firstLn), 'wheeling back returns toward earlier lines');

@@ -84,7 +84,8 @@
   let ingestAbort = false;
   const paging = new LT.PagingClient();
   const PAGE_SIZE = 500;
-  let pageStart = 0, viewToken = 0, pageToken = 0, busyToken = 0, loadSerial = Promise.resolve();
+  const MAX_WINDOW_PAGES = 5; // continuous-scroll window cap (5 * PAGE_SIZE rows)
+  let pageStart = 0, viewStart = 0, viewToken = 0, pageToken = 0, busyToken = 0, loadSerial = Promise.resolve();
   function busy(message) { const token = ++busyToken; $('viewer-busy').classList.add('active'); $('viewer-busy-text').textContent = message; $('st-progress').textContent = message; $('viewer').setAttribute('aria-busy', 'true'); return token; }
   function busyMessage(token, message) { if (token === busyToken) { $('viewer-busy-text').textContent = message; $('st-progress').textContent = message; } }
   function doneBusy(token) { if (token === busyToken) { $('viewer-busy').classList.remove('active'); $('viewer-busy-text').textContent = ''; $('st-progress').textContent = ''; $('viewer').setAttribute('aria-busy', 'false'); } }
@@ -97,18 +98,81 @@
     $('page-first').disabled = $('page-prev').disabled = pageStart === 0;
     $('page-next').disabled = $('page-last').disabled = pageStart + PAGE_SIZE >= filteredCount;
   }
+  function rebuildWindowIndex() {
+    seqToIdx = new Map(view.map((r, i) => [r.seq, i]));
+    viewMaxLen = Math.min(2000, Math.max(0, ...view.map((r) => r.raw.length)));
+  }
   async function loadPage(start, bottom = false, owner) {
     const token = ++pageToken, query = viewToken, bt = owner || busy('Loading page…');
     try {
       const result = await paging.request('page', { start: Math.max(0, start), size: PAGE_SIZE });
       if (token !== pageToken || query !== viewToken) return false;
-      view = result.rows; pageStart = result.start; filteredCount = result.total;
-      seqToIdx = new Map(view.map((r, i) => [r.seq, i]));
-      viewMaxLen = Math.min(2000, Math.max(0, ...view.map((r) => r.raw.length)));
+      view = result.rows; pageStart = result.start; viewStart = result.start; filteredCount = result.total;
+      rebuildWindowIndex();
       displayCache.clear(); selection.clear(); invalidateHeights();
       viewer().scrollTop = 0; renderRows();
       if (bottom) { viewer().scrollTop = viewer().scrollHeight; renderRows(); }
       updateStatus(); updatePager(); return true;
+    } catch (error) { if (token === pageToken) pagingError(error); return false; }
+    finally { doneBusy(bt); }
+  }
+
+  /* Seamless continuous scrolling: the wheel edge handler extends the window
+   * by one page instead of replacing it. The window holds at most
+   * MAX_WINDOW_PAGES pages; on overflow the farthest page on the side
+   * OPPOSITE the scroll direction is evicted, with scrollTop compensation so
+   * the visible lines never shift. Pagination buttons, keyboard paging,
+   * go-to-line and locate jumps keep the loadPage full-replacement collapse.
+   * Selection is keyed by global seq, so it survives every mutation here. */
+  function rowsHeightOf(from, to, oldSum) {
+    // height of rows [from, to) of the PRE-mutation view: ROW_H arithmetic
+    // without wrap, prefix-sum delta in wrap mode (oldSum measured before)
+    if (!state.wrapOn) return (to - from) * ROW_H;
+    return (oldSum ? oldSum[to] : 0) - (oldSum ? oldSum[from] : 0);
+  }
+  async function appendPage() {
+    if (viewStart + view.length >= filteredCount) return false; // window ends at the global bound
+    const token = ++pageToken, query = viewToken, bt = busy('Loading page…');
+    try {
+      const result = await paging.request('page', { start: viewStart + view.length, size: PAGE_SIZE });
+      if (token !== pageToken || query !== viewToken) return false;
+      const v = viewer();
+      if (state.wrapOn) measureWrap(); // prefix sums for the pre-mutation view
+      const oldSum = heightSum, topOffOld = topOffset(), st0 = v.scrollTop;
+      filteredCount = result.total;
+      // over the cap: evict the farthest TOP page (off-screen above the viewport)
+      const over = Math.max(0, view.length + result.rows.length - MAX_WINDOW_PAGES * PAGE_SIZE);
+      const evictH = rowsHeightOf(0, over, oldSum);
+      view = view.concat(result.rows).slice(over);
+      viewStart += over;
+      rebuildWindowIndex(); invalidateHeights();
+      renderRows();
+      // rows above the viewport shrank by evictH; a start mark may have appeared
+      v.scrollTop = st0 - evictH + (topOffset() - topOffOld);
+      updateStatus(); return true;
+    } catch (error) { if (token === pageToken) pagingError(error); return false; }
+    finally { doneBusy(bt); }
+  }
+  async function prependPage() {
+    if (viewStart <= 0) return false; // window starts at the global bound
+    const token = ++pageToken, query = viewToken, bt = busy('Loading page…');
+    try {
+      const result = await paging.request('page', { start: Math.max(0, viewStart - PAGE_SIZE), size: PAGE_SIZE });
+      if (token !== pageToken || query !== viewToken) return false;
+      const v = viewer();
+      const topOffOld = topOffset(), st0 = v.scrollTop;
+      filteredCount = result.total;
+      view = result.rows.concat(view);
+      viewStart = result.start;
+      // over the cap: evict the farthest BOTTOM page (off-screen below the viewport)
+      const over = Math.max(0, view.length - MAX_WINDOW_PAGES * PAGE_SIZE);
+      if (over) view = view.slice(0, view.length - over);
+      rebuildWindowIndex(); invalidateHeights();
+      renderRows(); // re-measures wrap heights: prefix sums cover the prepended rows
+      const addedH = state.wrapOn ? (heightSum ? heightSum[result.rows.length] || 0 : 0) : result.rows.length * ROW_H;
+      // rows above the viewport grew by addedH; a start mark may have appeared
+      v.scrollTop = st0 + addedH + (topOffset() - topOffOld);
+      updateStatus(); return true;
     } catch (error) { if (token === pageToken) pagingError(error); return false; }
     finally { doneBusy(bt); }
   }
@@ -697,11 +761,11 @@
   const MARK_H = 26;    // fixed height of the start/end-of-log marker bands
 
   // With pagination it is easy to lose track of where the log begins and
-  // ends, so the first page carries a start band and the last page an end
-  // band inside the scrollable area (they participate in the layout as
-  // fixed-height offsets).
-  const showStartMark = () => pageStart === 0 && view.length > 0;
-  const showEndMark = () => view.length > 0 && pageStart + view.length >= filteredCount;
+  // ends, so the window carries a start band only when it begins at global
+  // line 1 and an end band only when it ends at the last matching line
+  // (they participate in the layout as fixed-height offsets).
+  const showStartMark = () => viewStart === 0 && view.length > 0;
+  const showEndMark = () => view.length > 0 && viewStart + view.length >= filteredCount;
   const topOffset = () => (showStartMark() ? MARK_H : 0);
   // physical-log wording is only truthful without active filters; with any
   // filter the bands bound the MATCHING results instead
@@ -2596,8 +2660,8 @@
     viewer().addEventListener('wheel', async (e) => {
       if (wheelPaging || $('viewer-busy').classList.contains('active')) return;
       const v = viewer();
-      if (e.deltaY > 0 && v.scrollTop + v.clientHeight >= v.scrollHeight - 2 && pageStart + PAGE_SIZE < filteredCount) { wheelPaging = true; await loadPage(pageStart + PAGE_SIZE); setTimeout(() => { wheelPaging = false; }, 150); }
-      else if (e.deltaY < 0 && v.scrollTop <= 0 && pageStart > 0) { wheelPaging = true; await loadPage(pageStart - PAGE_SIZE, true); setTimeout(() => { wheelPaging = false; }, 150); }
+      if (e.deltaY > 0 && v.scrollTop + v.clientHeight >= v.scrollHeight - 2 && viewStart + view.length < filteredCount) { wheelPaging = true; await appendPage(); setTimeout(() => { wheelPaging = false; }, 150); }
+      else if (e.deltaY < 0 && v.scrollTop <= 0 && viewStart > 0) { wheelPaging = true; await prependPage(); setTimeout(() => { wheelPaging = false; }, 150); }
     }, { passive: true });
     viewer().tabIndex = 0;
     viewer().addEventListener('keydown', (e) => {
