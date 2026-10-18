@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 1.54.0 (2026-10-18)
+- fix(viewer): fall back to in-page paging twin when Safari blocks file:// worker blob reads
+- docs(viewer): sync docs for continuous scroll window, seq-keyed selection, shortcut hint
+- test(e2e): cover continuous scroll window, selection persistence, and shortcut hint
+- feat(viewer): platform-aware shortcut hint on Search all button
+- feat(viewer): keep selection anchored to global line ids across paging
+- feat(viewer): seamless continuous scrolling across page boundaries
+- Merge pull request #61 from CJ-1981/docs/refresh-screenshots
+- docs: refresh README screenshots (current UI, new Search-all shot), fix shots.mjs theme switching, stale counts
+
 ## 1.53.2 (2026-10-04)
 - Merge pull request #60 from CJ-1981/fix/light-theme-mark-contrast
 - fix: light themes render match marks with dark ink (--hl-ink token)
