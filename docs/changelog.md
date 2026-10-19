@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.57.0 (2026-10-19)
+- feat(ui): add keyboard tab switching and Escape focus release (SPEC-TABS-001)
+
 ## 1.56.0 (2026-10-19)
 - feat(viewer): add Filter ON/OFF master toggle with FILTERED indication (SPEC-VIEWER-002)
 
