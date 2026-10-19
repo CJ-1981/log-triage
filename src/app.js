@@ -2693,6 +2693,8 @@
     $('btn-pick').onclick = () => $('file-input').click();
     $('file-input').onchange = (e) => { loadFiles(Array.from(e.target.files)); e.target.value = ''; };
     $('btn-demo').onclick = () => {
+      // the fixture is fixed, so a second press would only add a duplicate entry
+      if (files.some((f) => f.name === 'demo.log')) { flash('demo log is already loaded'); return; }
       const f = new File([LT_DEMO_LOG], 'demo.log', { type: 'text/plain' });
       loadFiles([f]);
     };

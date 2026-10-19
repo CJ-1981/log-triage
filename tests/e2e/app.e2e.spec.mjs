@@ -107,6 +107,19 @@ test('demo log: detection badge, chips, viewer rows, masking', async () => {
   await click('btn-mask');
 });
 
+test('demo log button ignores repeat presses (no duplicate entries)', async () => {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent !== '0', null, { timeout: 8000 });
+  const totalBefore = await page.textContent('#st-total');
+  await click('btn-demo');
+  await page.waitForTimeout(300);
+  const demoItems = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.file-item')).filter((n) => n.textContent.includes('demo.log')).length);
+  assert.strictEqual(demoItems, 1, 'repeat press must not add a second demo.log entry');
+  assert.strictEqual(await page.textContent('#st-total'), totalBefore, 'row total unchanged by repeat press');
+});
+
 test('quick filter narrows view and highlights matches', async () => {
   await fresh();
   await click('btn-demo');
