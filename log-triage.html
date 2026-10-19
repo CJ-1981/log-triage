@@ -49,6 +49,8 @@ header h1 span { color: var(--accent); }
 #tabs { display: flex; gap: 4px; margin-left: 8px; }
 #tabs button { border: none; background: transparent; color: var(--muted); padding: 6px 12px; border-radius: 6px; }
 #tabs button.active { background: var(--surface2); color: var(--fg); }
+#tabs kbd { margin-left: 5px; padding: 0 4px; font-size: 10px; opacity: .8; }
+#tabs button.active kbd { background: var(--bg); } /* badge must not blend into the active tab's surface2 fill */
 #hdr-right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex: none; }
 #privacy { font-size: 11px; color: var(--muted); white-space: nowrap; }
 @media (max-width: 1280px) { #privacy { display: none; } }
@@ -376,14 +378,14 @@ table.rules { min-width: 620px; }
     <button id="btn-side" title="show/hide the files panel">☰ Files</button>
     <h1>Log Triage <span id="ver">v1.56.0</span></h1>
     <div id="tabs">
-      <button data-tab="viewer" class="active">Viewer</button>
-      <button data-tab="search" title="ripgrep-style search across EVERY loaded file — instant results over the analysis sample, deep scan over the complete files">Multifile search</button>
-      <button data-tab="filters">Filters</button>
-      <button data-tab="masks">Masks</button>
-      <button data-tab="pii">PII</button>
-      <button data-tab="analysis">Analysis</button>
-      <button data-tab="export">Export</button>
-      <button data-tab="config">Config</button>
+      <button data-tab="viewer" class="active" title="Viewer">Viewer <kbd>1</kbd></button>
+      <button data-tab="search" title="ripgrep-style search across EVERY loaded file — instant results over the analysis sample, deep scan over the complete files">Multifile search <kbd>2</kbd></button>
+      <button data-tab="filters" title="Filters">Filters <kbd>3</kbd></button>
+      <button data-tab="masks" title="Masks">Masks <kbd>4</kbd></button>
+      <button data-tab="pii" title="PII">PII <kbd>5</kbd></button>
+      <button data-tab="analysis" title="Analysis">Analysis <kbd>6</kbd></button>
+      <button data-tab="export" title="Export">Export <kbd>7</kbd></button>
+      <button data-tab="config" title="Config">Config <kbd>8</kbd></button>
     </div>
     <div id="hdr-right">
       <span id="privacy">100% client-side — files never leave this machine</span>
@@ -6648,6 +6650,14 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     if (name === 'config') renderConfigSummary();
   }
 
+  /* SPEC-TABS-001: plain digits 1-8 switch tabs in #tabs visual order; text
+   * fields (including contenteditable) keep every keystroke, and Escape in a
+   * field releases focus so single-key shortcuts work again without a mouse. */
+  const DIGIT_TABS = ['viewer', 'search', 'filters', 'masks', 'pii', 'analysis', 'export', 'config'];
+  function isTextEntry(el) {
+    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+  }
+
   function setMask(on) {
     state.maskOn = on;
     $('btn-mask').textContent = 'Mask: ' + (on ? 'ON' : 'OFF');
@@ -7324,14 +7334,28 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         showFindHint();
         return;
       }
+      // Esc dismisses the Ctrl+F redirect hint immediately — the floating
+      // "browser find only scans the current page" note must never linger
+      // after the user bails out (its 9s auto-hide stays for other paths)
+      if (e.key === 'Escape') hideFindHint();
       // Esc exits zen first, then closes the search-all panel — from ANY
       // focus: with focus in the quick field the INPUT early-return below
       // used to swallow the keystroke and the panel could not be dismissed
       // (the history dropdown layers in front via stopPropagation when open)
       if (e.key === 'Escape' && state.zenOn) { setZen(false); e.preventDefault(); return; }
       if (e.key === 'Escape' && sallIsOpen()) { sallClose(); e.preventDefault(); return; }
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-      if (e.key === 'm' || e.key === 'M') setMask(!state.maskOn);
+      // Esc in a text field releases focus (single-key shortcuts work again
+      // without a mouse click) — deliberately AFTER the zen/sall branches
+      // above, which keep their any-focus precedence. Composing IMEs keep
+      // their Esc (cancel/confirm belongs to the composition), same guard as
+      // the Enter handlers on the quick/rg fields.
+      if (e.key === 'Escape' && !e.isComposing && isTextEntry(e.target)) { e.target.blur(); e.preventDefault(); return; }
+      if (isTextEntry(e.target)) return;
+      // plain digits 1-8 jump to the matching tab (#tabs order); every
+      // modifier combo is left to the browser (Ctrl/Cmd+digit switches
+      // browser tabs) and zen hides the tab bar, so digits mean nothing there
+      if (/^[1-8]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !state.zenOn) switchTab(DIGIT_TABS[Number(e.key) - 1]);
+      else if (e.key === 'm' || e.key === 'M') setMask(!state.maskOn);
       else if (e.key === 'w' || e.key === 'W') setWrap(!state.wrapOn);
       else if (e.key === 'b' || e.key === 'B') { if (view.length) { const sel = selectedWindowIndices(); toggleBookmark(sel.length ? sel[0] : Number((viewer().querySelector('.vrow') || { dataset: { idx: 0 } }).dataset.idx || 0)); } }
       else if (e.key === 'Escape') { selection.clear(); $('drawer').className = ''; renderRows(); updateStatus(); }

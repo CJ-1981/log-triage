@@ -2365,6 +2365,14 @@
     if (name === 'config') renderConfigSummary();
   }
 
+  /* SPEC-TABS-001: plain digits 1-8 switch tabs in #tabs visual order; text
+   * fields (including contenteditable) keep every keystroke, and Escape in a
+   * field releases focus so single-key shortcuts work again without a mouse. */
+  const DIGIT_TABS = ['viewer', 'search', 'filters', 'masks', 'pii', 'analysis', 'export', 'config'];
+  function isTextEntry(el) {
+    return !!el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.tagName === 'SELECT' || el.isContentEditable);
+  }
+
   function setMask(on) {
     state.maskOn = on;
     $('btn-mask').textContent = 'Mask: ' + (on ? 'ON' : 'OFF');
@@ -3041,14 +3049,28 @@
         showFindHint();
         return;
       }
+      // Esc dismisses the Ctrl+F redirect hint immediately — the floating
+      // "browser find only scans the current page" note must never linger
+      // after the user bails out (its 9s auto-hide stays for other paths)
+      if (e.key === 'Escape') hideFindHint();
       // Esc exits zen first, then closes the search-all panel — from ANY
       // focus: with focus in the quick field the INPUT early-return below
       // used to swallow the keystroke and the panel could not be dismissed
       // (the history dropdown layers in front via stopPropagation when open)
       if (e.key === 'Escape' && state.zenOn) { setZen(false); e.preventDefault(); return; }
       if (e.key === 'Escape' && sallIsOpen()) { sallClose(); e.preventDefault(); return; }
-      if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
-      if (e.key === 'm' || e.key === 'M') setMask(!state.maskOn);
+      // Esc in a text field releases focus (single-key shortcuts work again
+      // without a mouse click) — deliberately AFTER the zen/sall branches
+      // above, which keep their any-focus precedence. Composing IMEs keep
+      // their Esc (cancel/confirm belongs to the composition), same guard as
+      // the Enter handlers on the quick/rg fields.
+      if (e.key === 'Escape' && !e.isComposing && isTextEntry(e.target)) { e.target.blur(); e.preventDefault(); return; }
+      if (isTextEntry(e.target)) return;
+      // plain digits 1-8 jump to the matching tab (#tabs order); every
+      // modifier combo is left to the browser (Ctrl/Cmd+digit switches
+      // browser tabs) and zen hides the tab bar, so digits mean nothing there
+      if (/^[1-8]$/.test(e.key) && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && !state.zenOn) switchTab(DIGIT_TABS[Number(e.key) - 1]);
+      else if (e.key === 'm' || e.key === 'M') setMask(!state.maskOn);
       else if (e.key === 'w' || e.key === 'W') setWrap(!state.wrapOn);
       else if (e.key === 'b' || e.key === 'B') { if (view.length) { const sel = selectedWindowIndices(); toggleBookmark(sel.length ? sel[0] : Number((viewer().querySelector('.vrow') || { dataset: { idx: 0 } }).dataset.idx || 0)); } }
       else if (e.key === 'Escape') { selection.clear(); $('drawer').className = ''; renderRows(); updateStatus(); }

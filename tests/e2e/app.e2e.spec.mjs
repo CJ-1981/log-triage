@@ -2685,8 +2685,9 @@ test('viewer Search all: scoped match list in a bottom panel; Search tab renamed
   await fresh();
   // the search tab is renamed (multifile = every loaded file; the viewer's
   // Search all is the scoped counterpart)
-  const label = await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').textContent);
-  assert.strictEqual(label, 'Multifile search');
+  const label = await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').textContent.trim());
+  // SPEC-TABS-001: the digit badge is part of the label text
+  assert.strictEqual(label, 'Multifile search 2');
 
   await page.setInputFiles('#file-input', [
     join(root, 'tests', 'fixtures', 'demo.log'),
@@ -3708,4 +3709,255 @@ test('band labels read as unfiltered while bypassed', async () => {
   const band = await page.evaluate(() => (document.querySelector('.vmark.start span') || {}).textContent || '');
   assert.match(band, /start of/, 'unfiltered wording while bypassed');
   assert.ok(!band.includes('first match'), 'no filtered wording while bypassed');
+});
+
+/* ---------------- SPEC-TABS-001: digit tab switching, text-entry guard, Escape blur ---------------- */
+
+const activeTab = () => page.evaluate(() => document.querySelector('#tabs button.active').dataset.tab);
+const assertTabIs = async (name, msg) => {
+  assert.strictEqual(await activeTab(), name, msg);
+  assert.ok(await page.evaluate((n) => document.getElementById('tab-' + n).classList.contains('active'), name), msg);
+};
+
+test('digits 1-8 switch tabs in tab-bar order (AC-1.1)', async () => {
+  await fresh();
+  // AC-1.1 sequence: 2..8 then 1 (1 = Viewer, the starting tab, so it goes last)
+  const seq = [[2, 'search'], [3, 'filters'], [4, 'masks'], [5, 'pii'], [6, 'analysis'], [7, 'export'], [8, 'config'], [1, 'viewer']];
+  for (const [digit, tab] of seq) {
+    await page.keyboard.press(String(digit));
+    await assertTabIs(tab, 'digit ' + digit + ' activates ' + tab);
+  }
+});
+
+test('modified digits never switch tabs (AC-1.2)', async () => {
+  await fresh();
+  for (const combo of ['Control+1', 'Meta+1', 'Alt+1', 'Shift+1', 'Control+8', 'Meta+8']) {
+    await page.keyboard.press(combo);
+    await assertTabIs('viewer', combo + ' is ignored by the app');
+  }
+});
+
+test('digits do not switch tabs in zen mode (AC-1.3)', async () => {
+  await loadDemo();
+  await click('btn-zen');
+  assert.ok(await page.evaluate(() => document.body.classList.contains('zen')), 'zen entered');
+  for (let d = 1; d <= 8; d++) await page.keyboard.press(String(d));
+  await assertTabIs('viewer', 'no digit switch while zen hides the tab bar');
+  assert.ok(await page.evaluate(() => document.body.classList.contains('zen')), 'zen still active');
+  await page.keyboard.press('Escape');
+  assert.ok(await page.evaluate(() => !document.body.classList.contains('zen')), 'Escape exits zen');
+  await page.keyboard.press('2');
+  await assertTabIs('search', 'digits work again after zen exit');
+});
+
+test('digit typed in the quick filter goes to the field, no tab switch (AC-2.1)', async () => {
+  await loadDemo();
+  await page.click('#quick');
+  await page.keyboard.type('42');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('quick').value), '42', 'digits land in the field');
+  await assertTabIs('viewer', 'typing digits in the quick filter never switches tabs');
+  await page.keyboard.press('Enter');
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false', null, DEMO_WAIT);
+});
+
+test('guard covers input, select and go-to-line fields (AC-2.2)', async () => {
+  await loadDemo();
+  // go-to-line input
+  await page.evaluate(() => document.getElementById('goto-ln').focus());
+  await page.keyboard.press('5');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('goto-ln').value), '5', 'digit reaches goto-ln');
+  await assertTabIs('viewer', 'no switch from goto-ln focus');
+  // view-mode select (guard must swallow the digit)
+  await page.evaluate(() => document.getElementById('view-mode').focus());
+  await page.keyboard.press('5');
+  await assertTabIs('viewer', 'no switch from select focus');
+  // time-from input lives in the (hidden) Filters tab — switch there first,
+  // a .focus() on a display:none element is a silent no-op
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await page.evaluate(() => document.getElementById('time-from').focus());
+  await page.keyboard.press('3');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('time-from').value), '3', 'digit reaches time-from');
+  await assertTabIs('filters', 'no switch from time-from focus');
+  // rg-pattern field on the search tab
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
+  await page.evaluate(() => document.getElementById('rg-pattern').focus());
+  await page.keyboard.press('7');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('rg-pattern').value), '7', 'digit reaches rg-pattern');
+  await assertTabIs('search', 'no switch from rg-pattern focus');
+});
+
+test('contenteditable focus also guards digits (AC-2.4)', async () => {
+  await fresh();
+  await page.evaluate(() => {
+    const d = document.createElement('div');
+    d.id = 'ce-guard-test';
+    d.contentEditable = 'true';
+    d.style.position = 'fixed';
+    d.style.top = '0';
+    document.body.appendChild(d);
+    d.focus();
+  });
+  await page.keyboard.press('6');
+  await assertTabIs('viewer', 'contenteditable focus swallows digits');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('ce-guard-test').textContent), '6', 'digit lands in the editor');
+  await page.evaluate(() => document.getElementById('ce-guard-test').remove());
+});
+
+test('Escape blurs a focused field and restores single-key shortcuts (AC-3.1)', async () => {
+  await loadDemo();
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click()); // time-from is in the Filters tab
+  await page.evaluate(() => document.getElementById('time-from').focus());
+  assert.strictEqual(await page.evaluate(() => document.activeElement.id), 'time-from', 'field focused first');
+  await page.keyboard.press('Escape');
+  assert.ok(await page.evaluate(() => document.activeElement === document.body), 'Escape released the field');
+  await page.keyboard.press('m');
+  assert.ok(await page.evaluate(() => document.getElementById('btn-mask').textContent.includes('OFF')), 'mask toggled without a mouse after Escape');
+});
+
+test('zen exit keeps any-focus Escape precedence over blur (AC-3.2)', async () => {
+  await loadDemo();
+  await page.click('#quick');
+  await click('btn-zen'); // programmatic click keeps focus in #quick
+  assert.ok(await page.evaluate(() => document.activeElement === document.getElementById('quick')), 'field focused inside zen');
+  await page.keyboard.press('Escape');
+  assert.ok(await page.evaluate(() => !document.body.classList.contains('zen')), 'first Escape exits zen, does not merely blur');
+  assert.ok(await page.evaluate(() => document.activeElement === document.getElementById('quick')), 'field keeps focus through the zen exit');
+  await page.keyboard.press('Escape');
+  assert.ok(await page.evaluate(() => document.activeElement === document.body), 'second Escape blurs the field');
+});
+
+test('search-all close keeps any-focus Escape precedence over blur (AC-3.3)', async () => {
+  await loadDemo();
+  await setQuick('error');
+  await click('btn-sall');
+  await page.waitForFunction(() => !document.getElementById('sall').classList.contains('hidden'), null, DEMO_WAIT);
+  await page.click('#quick');
+  await page.keyboard.press('Escape');
+  assert.ok(await page.evaluate(() => document.getElementById('sall').classList.contains('hidden')), 'first Escape closes the panel from field focus');
+  assert.ok(await page.evaluate(() => document.activeElement === document.getElementById('quick')), 'field keeps focus through the panel close');
+  await page.keyboard.press('Escape');
+  assert.ok(await page.evaluate(() => document.activeElement === document.body), 'second Escape blurs the field');
+});
+
+test('theme menu still closes with Escape while a field is focused (AC-3.4)', async () => {
+  await loadDemo();
+  await click('theme-btn');
+  assert.ok(await page.evaluate(() => !document.getElementById('theme-menu').classList.contains('hidden')), 'theme menu open');
+  await page.evaluate(() => document.getElementById('quick').focus());
+  await page.keyboard.press('Escape');
+  assert.ok(await page.evaluate(() => document.getElementById('theme-menu').classList.contains('hidden')), 'independent theme listener closes the menu');
+  assert.ok(await page.evaluate(() => document.activeElement === document.body), 'Escape also released the field');
+});
+
+test('Escape during IME composition does not blur or fire shortcuts (AC-3.5)', async () => {
+  await loadDemo();
+  const midComposition = await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.focus();
+    q.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    // a real IME marks the Escape keydown with isComposing — replay exactly that
+    q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', isComposing: true, bubbles: true, cancelable: true }));
+    return document.activeElement === q;
+  });
+  assert.ok(midComposition, 'Escape during composition neither blurs the field nor fires shortcuts');
+  const afterComposition = await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true }));
+    q.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+    return document.activeElement === document.body;
+  });
+  assert.ok(afterComposition, 'after composition ends, Escape blurs normally');
+});
+
+test('digit while the search-all panel is open still switches tabs (AC-E.2)', async () => {
+  await loadDemo();
+  await setQuick('error');
+  await click('btn-sall');
+  await page.waitForFunction(() => !document.getElementById('sall').classList.contains('hidden'), null, DEMO_WAIT);
+  await page.evaluate(() => document.activeElement.blur());
+  await page.keyboard.press('6');
+  await assertTabIs('analysis', 'digits work outside text fields with the panel open');
+});
+
+test('rapid digit switching re-renders both tabs cleanly (AC-E.1)', async () => {
+  await loadDemo();
+  await page.keyboard.press('6');
+  await page.keyboard.press('1');
+  await assertTabIs('viewer', 'back on the viewer after the rapid round-trip');
+  await page.waitForFunction(() => document.querySelectorAll('#viewer .vrow').length > 0, null, DEMO_WAIT);
+  await page.keyboard.press('6');
+  await assertTabIs('analysis', 'analysis re-activates');
+  assert.ok(await page.evaluate(() => document.getElementById('tab-analysis').innerHTML.length > 0), 'analysis repainted');
+});
+
+test('each tab button shows a visible digit badge (AC-4.1)', async () => {
+  await fresh();
+  const rows = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#tabs button')).map((b) => {
+      const k = b.querySelector('kbd');
+      const cs = k ? getComputedStyle(k) : null;
+      const r = k ? k.getBoundingClientRect() : { width: 0, height: 0 };
+      return {
+        tab: b.dataset.tab,
+        kbd: k ? k.textContent : '',
+        visible: !!k && cs.display !== 'none' && cs.visibility !== 'hidden' && r.width > 0 && r.height > 0,
+        title: b.title,
+      };
+    }));
+  const digits = { viewer: 1, search: 2, filters: 3, masks: 4, pii: 5, analysis: 6, export: 7, config: 8 };
+  assert.strictEqual(rows.length, 8, 'eight tab buttons');
+  for (const row of rows) {
+    assert.strictEqual(row.kbd, String(digits[row.tab]), row.tab + ' carries a kbd digit badge');
+    assert.ok(row.visible, row.tab + ' badge is rendered at default width');
+    assert.ok(!/press \d/.test(row.title), row.tab + ' title no longer duplicates the badge: ' + row.title);
+  }
+  const search = rows.find((r) => r.tab === 'search');
+  assert.ok(search.title.includes('deep scan'), 'search button keeps its long tooltip text');
+});
+
+test('tab digit badge stays readable in all six themes', async () => {
+  await fresh();
+  const results = await page.evaluate(() => {
+    const names = Object.keys(window.LT.THEMES);
+    const out = [];
+    for (const name of names) {
+      document.getElementById('theme-btn').click();
+      const opt = Array.from(document.querySelectorAll('#theme-menu .theme-opt')).find((o) => o.dataset.value === name);
+      opt.click();
+      const k = document.querySelector('#tabs button[data-tab=viewer] kbd');
+      const cs = getComputedStyle(k);
+      const rgb = (s) => (s.match(/\d+/g) || []).map(Number).slice(0, 3);
+      const avg = (a) => (a[0] + a[1] + a[2]) / 3;
+      const bg = rgb(cs.backgroundColor);
+      const ink = rgb(cs.color);
+      out.push({
+        theme: name,
+        bgOpaque: cs.backgroundColor !== 'rgba(0, 0, 0, 0)',
+        contrast: Math.abs(avg(ink) - avg(bg)),
+      });
+    }
+    return out;
+  });
+  assert.strictEqual(results.length, 6, 'six themes cycled');
+  for (const r of results) {
+    assert.ok(r.bgOpaque, r.theme + ': badge background resolves (theme vars)');
+    assert.ok(r.contrast >= 40, r.theme + ': badge ink contrasts with badge background (diff ' + Math.round(r.contrast) + ')');
+  }
+});
+
+test('Escape hides the find hint immediately — with and without a focused field', async () => {
+  await loadDemo();
+  const hintHidden = () => page.evaluate(() => document.getElementById('find-hint').classList.contains('hidden'));
+  // Ctrl+F intercept shows the hint and focuses the quick filter
+  await page.keyboard.press('Control+f');
+  assert.ok(await page.evaluate(() => !document.getElementById('find-hint').classList.contains('hidden')), 'hint visible after Ctrl+F');
+  await page.keyboard.press('Escape'); // quick filter still focused -> blur branch
+  assert.ok(await hintHidden(), 'Escape in the quick filter hides the hint immediately (no timeout wait)');
+  assert.ok(await page.evaluate(() => document.activeElement === document.body), 'field also released');
+  // second path: hint visible, focus outside any field — Esc still clears it
+  await page.keyboard.press('Control+f');
+  assert.ok(await page.evaluate(() => !document.getElementById('find-hint').classList.contains('hidden')), 'hint visible again');
+  await page.evaluate(() => document.getElementById('quick').blur());
+  await page.keyboard.press('Escape');
+  assert.ok(await hintHidden(), 'Escape with no field focused also clears the hint');
 });

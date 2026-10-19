@@ -43,6 +43,8 @@ header h1 span { color: var(--accent); }
 #tabs { display: flex; gap: 4px; margin-left: 8px; }
 #tabs button { border: none; background: transparent; color: var(--muted); padding: 6px 12px; border-radius: 6px; }
 #tabs button.active { background: var(--surface2); color: var(--fg); }
+#tabs kbd { margin-left: 5px; padding: 0 4px; font-size: 10px; opacity: .8; }
+#tabs button.active kbd { background: var(--bg); } /* badge must not blend into the active tab's surface2 fill */
 #hdr-right { margin-left: auto; display: flex; gap: 8px; align-items: center; flex: none; }
 #privacy { font-size: 11px; color: var(--muted); white-space: nowrap; }
 @media (max-width: 1280px) { #privacy { display: none; } }
@@ -370,14 +372,14 @@ table.rules { min-width: 620px; }
     <button id="btn-side" title="show/hide the files panel">☰ Files</button>
     <h1>Log Triage <span id="ver">v__LT_VERSION__</span></h1>
     <div id="tabs">
-      <button data-tab="viewer" class="active">Viewer</button>
-      <button data-tab="search" title="ripgrep-style search across EVERY loaded file — instant results over the analysis sample, deep scan over the complete files">Multifile search</button>
-      <button data-tab="filters">Filters</button>
-      <button data-tab="masks">Masks</button>
-      <button data-tab="pii">PII</button>
-      <button data-tab="analysis">Analysis</button>
-      <button data-tab="export">Export</button>
-      <button data-tab="config">Config</button>
+      <button data-tab="viewer" class="active" title="Viewer">Viewer <kbd>1</kbd></button>
+      <button data-tab="search" title="ripgrep-style search across EVERY loaded file — instant results over the analysis sample, deep scan over the complete files">Multifile search <kbd>2</kbd></button>
+      <button data-tab="filters" title="Filters">Filters <kbd>3</kbd></button>
+      <button data-tab="masks" title="Masks">Masks <kbd>4</kbd></button>
+      <button data-tab="pii" title="PII">PII <kbd>5</kbd></button>
+      <button data-tab="analysis" title="Analysis">Analysis <kbd>6</kbd></button>
+      <button data-tab="export" title="Export">Export <kbd>7</kbd></button>
+      <button data-tab="config" title="Config">Config <kbd>8</kbd></button>
     </div>
     <div id="hdr-right">
       <span id="privacy">100% client-side — files never leave this machine</span>
