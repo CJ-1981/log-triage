@@ -3961,3 +3961,103 @@ test('Escape hides the find hint immediately — with and without a focused fiel
   await page.keyboard.press('Escape');
   assert.ok(await hintHidden(), 'Escape with no field focused also clears the hint');
 });
+
+/* ---------------- SPEC-VIEWER-002 follow-up: toggle keeps the user's place ---------------- */
+
+// top fully-visible row identity + scroll offset (nowrap: ROW_H arithmetic)
+const viewPos = () => page.evaluate(`JSON.stringify((function () {
+  const v = document.getElementById('viewer');
+  const vr = v.getBoundingClientRect();
+  const rows = Array.from(document.querySelectorAll('.vrow .ln')).filter((el) => {
+    const r = el.getBoundingClientRect();
+    return r.top >= vr.top - 1 && r.top < vr.bottom;
+  });
+  return { scrollTop: v.scrollTop, topLine: rows.length ? rows[0].textContent : null,
+    shown: document.getElementById('st-shown').textContent };
+})())`).then(JSON.parse);
+
+test('Filter toggle is a view no-op while no narrowing filter is configured', async () => {
+  await loadDemo();
+  // scroll into the middle of the demo log (44 rows at 22px are scrollable)
+  await page.evaluate(() => { document.getElementById('viewer').scrollTop = 200; });
+  await page.waitForFunction(() => document.getElementById('viewer').scrollTop === 200, null, DEMO_WAIT);
+  const before = await viewPos();
+  assert.notStrictEqual(before.scrollTop, 0, 'precondition: scrolled away from the top');
+
+  await click('btn-filter'); // OFF
+  await page.waitForTimeout(300); // a (buggy) rebuild would land within this window
+  let after = await viewPos();
+  assert.strictEqual(after.shown, '44');
+  assert.strictEqual(after.scrollTop, before.scrollTop, 'OFF must not move the view when nothing narrows');
+  assert.strictEqual(after.topLine, before.topLine, 'top line identity unchanged by OFF');
+
+  await click('btn-filter'); // ON
+  await page.waitForTimeout(300);
+  after = await viewPos();
+  assert.strictEqual(after.scrollTop, before.scrollTop, 'ON must not move the view when nothing narrows');
+  assert.strictEqual(after.topLine, before.topLine, 'top line identity unchanged by ON');
+});
+
+test('Filter toggle re-anchors the top visible line when the view set changes', async () => {
+  await fresh();
+  const big = join(os.tmpdir(), 'lt-toggle-anchor-' + Date.now() + '.log');
+  const lines = [];
+  for (let i = 1; i <= 1200; i++) lines.push('09-11 22:14:01.' + String(i % 1000).padStart(3, '0') + '  1000  2000 I VHal: line ' + i);
+  fs.writeFileSync(big, lines.join('\n') + '\n');
+  try {
+    await page.setInputFiles('#file-input', [big]);
+    await page.waitForFunction(() => document.getElementById('st-total').textContent === '1200', null, DEMO_WAIT);
+    await setQuick('line 11'); // matches 11, 110..119, 1100..1199 — a middle subset
+    await page.waitForFunction(() => Number(document.getElementById('st-shown').textContent) > 0 &&
+      Number(document.getElementById('st-shown').textContent) < 1200, null, DEMO_WAIT);
+    const filteredCount = Number(await page.textContent('#st-shown'));
+    // scroll inside the filtered view and anchor on the top visible line
+    await page.evaluate(() => { document.getElementById('viewer').scrollTop = 110; });
+    await page.waitForFunction(() => document.getElementById('viewer').scrollTop === 110, null, DEMO_WAIT);
+    const anchored = await viewPos();
+    assert.ok(anchored.topLine, 'precondition: a top line is visible');
+
+    // OFF: the full log appears with the anchored line at the top of the viewport
+    await click('btn-filter');
+    await page.waitForFunction(() => document.getElementById('st-shown').textContent === '1200', null, DEMO_WAIT);
+    await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false', null, DEMO_WAIT);
+    const off = await viewPos();
+    assert.strictEqual(off.topLine, anchored.topLine,
+      'bypassed view re-anchors on the previously top line, got ' + off.topLine + ' vs ' + anchored.topLine);
+
+    // ON: the filtered set returns with the same anchor still on top
+    await click('btn-filter');
+    await page.waitForFunction((n) => document.getElementById('st-shown').textContent === String(n),
+      filteredCount, DEMO_WAIT);
+    await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false', null, DEMO_WAIT);
+    const on = await viewPos();
+    assert.strictEqual(on.topLine, anchored.topLine,
+      're-filtered view re-anchors on the same line, got ' + on.topLine + ' vs ' + anchored.topLine);
+  } finally { fs.rmSync(big, { force: true }); }
+});
+
+test('while bypassed, quick-filter edits neither filter, nor repaint highlights, nor move the view', async () => {
+  await loadDemo();
+  await click('btn-filter'); // OFF — bypass active
+  await page.waitForFunction(() => document.getElementById('btn-filter').textContent === 'Filter: OFF', null, DEMO_WAIT);
+  // line 1 (visible at scrollTop 0) contains "ActivityManager" — a match of the
+  // pattern we are about to type, so a false highlight repaint is observable
+  await page.evaluate(() => { document.getElementById('viewer').scrollTop = 66; });
+  await page.waitForFunction(() => document.getElementById('viewer').scrollTop === 66, null, DEMO_WAIT);
+  await page.evaluate(() => { const q = document.getElementById('quick'); q.focus(); });
+  await page.keyboard.type('ActivityManager');
+  await page.waitForTimeout(600); // past the 200ms debounce
+  let st = await fstate();
+  assert.strictEqual(st.shown, st.total, 'edit while bypassed must not narrow the view');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('viewer').scrollTop), 66,
+    'editing the quick filter while bypassed must not reset the scroll position');
+  assert.strictEqual(await page.evaluate(() => document.querySelectorAll('mark').length), 0,
+    'bypassed view must not repaint fresh match highlights (false live-filter signal)');
+  await click('btn-filter'); // ON — stored edit applies
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent !== '44' &&
+    document.getElementById('viewer').getAttribute('aria-busy') === 'false', null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.badgeHidden, false);
+  assert.strictEqual(await page.evaluate(() => document.querySelectorAll('mark').length), 5,
+    'the edited pattern highlights all 5 of its matches once the toggle is back ON');
+});

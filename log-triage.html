@@ -5281,7 +5281,9 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   }
 
   function quickMatchSpans(text) {
-    if (!filter._quickRe) return [];
+    // while the master Filter toggle is OFF the view is unfiltered (R1-5) —
+    // fresh match marks would advertise live filtering that is suspended
+    if (!filter._quickRe || !state.filtersEnabled) return [];
     const src = filter._quickRe;
     const re = src.global ? src : new RegExp(src.source, src.flags + 'g');
     const spans = [];
@@ -6670,11 +6672,48 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   /** Master Filter toggle (SPEC-VIEWER-002): OFF suspends every narrowing
    * filter non-destructively (the rebuild builds an unfiltered spec), ON
    * re-applies the stored settings in one pass. Never persisted. */
-  function setFiltersEnabled(on) {
+  async function setFiltersEnabled(on) {
     state.filtersEnabled = !!on;
     syncFilterToggle();
     updateFilterIndication();
-    rebuildView();
+    // identical spec (nothing configured narrows): a rebuild would collapse the
+    // window to page 0 and throw away the scroll position for zero content
+    // change — keep the view exactly as the user left it
+    if (!storedFiltersActive()) return;
+    // the view set changes: anchor on the first fully visible line's identity
+    // and restore it at the top of the viewport in the new view. findIndexAtOffset
+    // floors, which can select a row that is mostly scrolled past (a sliver at
+    // the top edge) — advance to the row the user perceives as the top line.
+    let anchorIdx = view.length ? findIndexAtOffset(viewer().scrollTop) : -1;
+    if (anchorIdx >= 0) {
+      const y = viewer().scrollTop - topOffset();
+      const rowTop = state.wrapOn ? (heightSum[anchorIdx] != null ? heightSum[anchorIdx] : 0) : anchorIdx * ROW_H;
+      if (rowTop < y) anchorIdx = Math.min(anchorIdx + 1, view.length - 1);
+    }
+    const anchor = anchorIdx >= 0 ? { fileId: view[anchorIdx].fileId, lineNo: view[anchorIdx].lineNo } : null;
+    await rebuildView();
+    await restoreAnchor(anchor);
+  }
+  /** Scroll the anchored line back to the top of the viewport after a toggle
+   * rebuilt the view (limitation: when the anchored line is not part of the
+   * new filtered view, the view opens at its top — locate has no nearest-match).
+   * Runs under its own busy token so no intermediate state (window reloaded,
+   * scroll not yet applied) is ever observable. */
+  async function restoreAnchor(anchor) {
+    if (!anchor) return;
+    const bt = busy('Restoring view position…');
+    try {
+      const query = viewToken;
+      const located = await paging.request('locate', { fileId: anchor.fileId, lineNo: anchor.lineNo });
+      if (query !== viewToken || located.at < 0) return;
+      const start = Math.floor(located.at / PAGE_SIZE) * PAGE_SIZE;
+      if (start !== pageStart) { if (!await loadPage(start)) return; }
+      const idx = located.at - pageStart;
+      const v = viewer();
+      const y = state.wrapOn ? ((heightSum && heightSum[idx] != null) ? heightSum[idx] : 0) : idx * ROW_H;
+      v.scrollTop = Math.max(0, topOffset() + y);
+      renderRows(); updateStatus();
+    } finally { doneBusy(bt); }
   }
   /** label/class sync from state — also used at boot without a rebuild (the
    * toggle is session-transient and always starts ON, but the label must
@@ -7110,7 +7149,10 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       if (quickTimer) clearTimeout(quickTimer);
       quickTimer = setTimeout(() => {
         filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null; filter.compileQuick();
-        saveState(); rebuildView();
+        saveState();
+        // while bypassed the edit is stored only: rebuilding would reset the
+        // window to page 0, and the view must stay exactly as the user left it
+        if (state.filtersEnabled) rebuildView(); else renderRows();
       }, 200);
       if (quickHistTimer) clearTimeout(quickHistTimer);
       quickHistTimer = setTimeout(commitQuickHistory, 900);
@@ -7124,7 +7166,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     $('zen-fab').onclick = () => setZen(false);
     $('btn-drawer').onclick = () => setDrawer(!state.drawerOn);
     $('btn-mask').onclick = () => setMask(!state.maskOn);
-    $('btn-filter').onclick = () => setFiltersEnabled(!state.filtersEnabled);
+    $('btn-filter').onclick = () => { setFiltersEnabled(!state.filtersEnabled).catch(pagingError); };
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
     $('view-mode').onchange = () => {
