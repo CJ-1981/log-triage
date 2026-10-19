@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.57.1 (2026-10-19)
+- fix(viewer): keep viewer position on Filter toggle and clean up OFF-state behavior (SPEC-VIEWER-002)
+
 ## 1.57.0 (2026-10-19)
 - feat(ui): add keyboard tab switching and Escape focus release (SPEC-TABS-001)
 
