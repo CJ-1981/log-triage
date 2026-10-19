@@ -78,8 +78,63 @@ const status = () => page.evaluate(`JSON.stringify({
   shown: document.getElementById('st-shown').textContent,
   chips: Array.from(document.querySelectorAll('.chip')).map(c => c.textContent),
   fmt: (document.querySelector('.badge.fmt') || {}).textContent,
+  filtered: (function () { const e = document.getElementById('st-filtered'); return !!e && !e.classList.contains('hidden'); })(),
+  filterBtn: (document.getElementById('btn-filter') || {}).textContent || null,
   errs: window.__errs || []
 })`).then(JSON.parse);
+
+/* SPEC-VIEWER-002 helpers: master Filter toggle + FILTERED badge state */
+const fstate = () => page.evaluate(`JSON.stringify({
+  total: document.getElementById('st-total').textContent,
+  shown: document.getElementById('st-shown').textContent,
+  badgeHidden: (function () { const e = document.getElementById('st-filtered'); return !e || e.classList.contains('hidden'); })(),
+  badgeTitle: (document.getElementById('st-filtered') || {}).title || '',
+  btnLabel: (document.getElementById('btn-filter') || {}).textContent || null,
+  btnOn: (function () { const b = document.getElementById('btn-filter'); return !!b && b.classList.contains('on'); })(),
+  btnTitle: (document.getElementById('btn-filter') || {}).title || '',
+  hud: (document.getElementById('zen-hud') || {}).textContent || ''
+})`).then(JSON.parse);
+
+// add a filter rule through the Filters tab (each edit re-renders the table,
+// so the row is re-queried after every step); back to the viewer afterwards
+async function addRule(pattern, action) {
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await click('btn-add-rule');
+  const patternLoc = page.locator('#rule-rows tr:last-child [data-k=pattern]');
+  await patternLoc.fill(pattern);
+  await patternLoc.press('Tab');
+  if (action) {
+    await page.evaluate((a) => {
+      const sel = document.querySelector('#rule-rows tr:last-child [data-k=action]');
+      sel.value = a;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }, action);
+  }
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+}
+
+async function setQuick(text) {
+  await page.evaluate((t) => {
+    const q = document.getElementById('quick');
+    q.value = t;
+    q.dispatchEvent(new Event('input'));
+  }, text);
+}
+
+async function setTimeRange(from, to) {
+  await page.evaluate((v) => {
+    const t = document.getElementById('time-from');
+    t.value = v[0];
+    t.dispatchEvent(new Event('change', { bubbles: true }));
+  }, [from, to]);
+  if (to) {
+    await page.evaluate((v) => {
+      const t = document.getElementById('time-to');
+      t.value = v;
+      t.dispatchEvent(new Event('change', { bubbles: true }));
+    }, to);
+  }
+}
 
 test('selftest page passes the full shared suite', async () => {
   await page.goto(url() + '?selftest', { waitUntil: 'domcontentloaded' });
@@ -3385,4 +3440,272 @@ test('Meta+Enter runs Search all while the hint is visible', async () => {
   await page.keyboard.type('VHal');
   await page.keyboard.press('Meta+Enter');
   await page.waitForFunction(() => document.getElementById('btn-sall').getAttribute('aria-expanded') === 'true', null, { timeout: 5000 });
+});
+
+/* ---------------- SPEC-VIEWER-002: master Filter toggle, FILTERED badge, tooltip, zen HUD ---------------- */
+
+const DEMO_WAIT = { timeout: 8000 };
+
+async function loadDemo() {
+  await fresh();
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
+}
+
+test('Filter toggle OFF bypasses narrowing and ON restores the exact filtered view', async () => {
+  await loadDemo();
+  await setQuick('heartbeat');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  await addRule('WifiService', 'exclude');
+  await setTimeRange('08-24 15:38');
+  // a level chip: pick the first dynamic (non-star) chip
+  await page.evaluate(() => {
+    const chip = Array.from(document.querySelectorAll('.chip')).find((c) => !c.textContent.includes('★'));
+    chip.click();
+  });
+  // snapshot only after every mutation's rebuild has settled (the time range
+  // zeroes the demo view, so shown !== '44' is true while rebuilds are still
+  // in flight — the baseline must be the fully settled filtered view)
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false', null, DEMO_WAIT);
+  await page.waitForTimeout(150);
+  const before = await status();
+  assert.notStrictEqual(before.shown, '44', 'filters narrow the view before the round-trip');
+  const quickBefore = await page.evaluate(() => document.getElementById('quick').value);
+  const rulesBefore = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#rule-rows tr')).map((tr) => ({
+      pattern: tr.querySelector('[data-k=pattern]').value,
+      action: tr.querySelector('[data-k=action]').value,
+      enabled: tr.querySelector('[data-k=enabled]').checked,
+    })));
+
+  // OFF: every indexed line is shown, nothing destroyed
+  await click('btn-filter');
+  await page.waitForFunction((total) => document.getElementById('st-shown').textContent === total,
+    before.total, DEMO_WAIT);
+  let st = await fstate();
+  assert.strictEqual(st.btnLabel, 'Filter: OFF');
+  assert.strictEqual(st.btnOn, false, 'OFF removes the on class');
+  assert.strictEqual(st.shown, st.total, 'bypass shows every indexed line');
+  assert.strictEqual(st.badgeHidden, true, 'badge hidden while bypassed');
+  // filters tab keeps every setting verbatim
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  assert.strictEqual(await page.evaluate(() => document.getElementById('quick').value), quickBefore, 'quick filter text kept');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('time-from').value), '08-24 15:38', 'time range kept');
+  const rulesKept = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('#rule-rows tr')).map((tr) => ({
+      pattern: tr.querySelector('[data-k=pattern]').value,
+      action: tr.querySelector('[data-k=action]').value,
+      enabled: tr.querySelector('[data-k=enabled]').checked,
+    })));
+  assert.deepStrictEqual(rulesKept, rulesBefore, 'rules kept in order with enabled state');
+  const chipStillSel = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('.chip')).some((c) => c.className.includes('sel')));
+  assert.ok(chipStillSel, 'level chip stays selected while bypassed');
+
+  // ON: identical filtered result set restored
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await click('btn-filter');
+  await page.waitForFunction((shown) => document.getElementById('st-shown').textContent === shown,
+    before.shown, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.btnLabel, 'Filter: ON');
+  assert.strictEqual(st.btnOn, true, 'ON restores the on class');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('quick').value), quickBefore);
+});
+
+test('FILTERED badge visibility matrix (filtered/unfiltered x ON/OFF)', async () => {
+  await loadDemo();
+  // unfiltered + ON
+  let st = await fstate();
+  assert.strictEqual(st.btnLabel, 'Filter: ON');
+  assert.strictEqual(st.badgeHidden, true, 'unfiltered + ON hides the badge');
+  // filtered + ON
+  await setQuick('heartbeat');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.badgeHidden, false, 'filtered + ON shows the badge');
+  // filtered + OFF
+  await click('btn-filter');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent ===
+    document.getElementById('st-total').textContent, null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.badgeHidden, true, 'filtered + OFF hides the badge');
+  // unfiltered + OFF: clear the quick filter while bypassed
+  await setQuick('');
+  await page.waitForTimeout(400);
+  st = await fstate();
+  assert.strictEqual(st.badgeHidden, true, 'unfiltered + OFF hides the badge');
+  // unfiltered + ON
+  await click('btn-filter');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.badgeHidden, true, 'unfiltered + ON hides the badge');
+});
+
+test('badge refreshes on filter mutations from the Filters tab; disabled rules never trigger it', async () => {
+  await loadDemo();
+  let st = await fstate();
+  assert.strictEqual(st.badgeHidden, true, 'no badge without filters');
+  await addRule('WifiService', 'exclude');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForFunction(() => document.getElementById('st-filtered') &&
+    !document.getElementById('st-filtered').classList.contains('hidden'), null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.badgeHidden, false, 'adding a rule from the Filters tab shows the badge');
+  // disabling the only rule removes the narrowing — badge must disappear
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await page.locator('#rule-rows tr:last-child [data-k=enabled]').uncheck();
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.badgeHidden, true, 'disabled rules are not active filters');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await page.locator('#rule-rows tr:last-child [data-k=enabled]').check();
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForFunction(() => document.getElementById('st-filtered') &&
+    !document.getElementById('st-filtered').classList.contains('hidden'), null, DEMO_WAIT);
+});
+
+test('badge and toggle tooltips list active categories in plain language only', async () => {
+  await loadDemo();
+  let st = await fstate();
+  assert.match(st.btnTitle, /OFF suspends/i, 'toggle title explains the OFF state');
+  assert.match(st.btnTitle, /Filters tab/i, 'toggle title points to the Filters tab');
+  assert.match(st.btnTitle, /no filters active/i, 'toggle title states the unfiltered case plainly');
+  st = await fstate();
+  assert.match(st.badgeTitle, /no filters active/i, 'hidden badge still carries the plain unfiltered title');
+
+  await setQuick('heartbeat');
+  await addRule('WifiService', 'exclude');
+  await page.evaluate(() => {
+    const chip = Array.from(document.querySelectorAll('.chip')).find((c) => !c.textContent.includes('★'));
+    chip.click();
+  });
+  await page.waitForFunction(() => document.getElementById('st-filtered') &&
+    !document.getElementById('st-filtered').classList.contains('hidden'), null, DEMO_WAIT);
+  st = await fstate();
+  assert.match(st.badgeTitle, /quick filter/);
+  assert.match(st.badgeTitle, /1 exclude rule/);
+  assert.match(st.badgeTitle, /levels /, 'level chips listed');
+  assert.ok(!/r\d+\b/.test(st.badgeTitle), 'no raw rule ids in the tooltip: ' + st.badgeTitle);
+  assert.ok(!st.badgeTitle.includes('WifiService'), 'no raw patterns in the tooltip');
+  assert.match(st.btnTitle, /1 exclude rule/, 'toggle tooltip carries the same summary');
+});
+
+test('zen HUD gains the FILTERED marker only while filters narrow the view', async () => {
+  await loadDemo();
+  await setQuick('heartbeat');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  await page.click('#btn-zen');
+  await page.waitForFunction(() => /Mask: (ON|OFF) · FILTERED · \d+ shown/.test(
+    (document.getElementById('zen-hud') || {}).textContent || ''), null, DEMO_WAIT);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  // bypassed: marker gone, otherwise the format is unchanged
+  await click('btn-filter');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
+  await page.click('#btn-zen');
+  await page.waitForFunction(() => {
+    const hud = (document.getElementById('zen-hud') || {}).textContent || '';
+    return /Mask: (ON|OFF) · \d+ shown/.test(hud) && !hud.includes('FILTERED');
+  }, null, DEMO_WAIT);
+  await page.keyboard.press('Escape');
+});
+
+test('fresh session starts with filters ON; persisted rules survive, transient filters do not', async () => {
+  await loadDemo();
+  await addRule('WifiService', 'exclude');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForFunction(() => document.getElementById('st-filtered') &&
+    !document.getElementById('st-filtered').classList.contains('hidden'), null, DEMO_WAIT);
+  let st = await fstate();
+  assert.strictEqual(st.badgeHidden, false);
+  // plain reload (localStorage preserved, files not reloaded): rules persist
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.getElementById('st-filtered') &&
+    !document.getElementById('st-filtered').classList.contains('hidden'), null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.btnLabel, 'Filter: ON', 'toggle always comes up ON');
+  assert.strictEqual(st.btnOn, true);
+  assert.strictEqual(st.badgeHidden, false, 'badge reflects the persisted rule');
+  assert.ok(!st.badgeTitle.includes('time range'), 'transient time range not in the tooltip');
+  // bypass does not persist: set OFF, reload, toggle must be ON again
+  await click('btn-filter');
+  await page.waitForFunction(() => document.getElementById('btn-filter').textContent === 'Filter: OFF', null, DEMO_WAIT);
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  // boot completion: updateStatus (via updateZenHud) populates the HUD
+  await page.waitForFunction(() => ((document.getElementById('zen-hud') || {}).textContent || '').length > 0, null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.btnLabel, 'Filter: ON', 'a new session never starts bypassed');
+});
+
+test('edits made while bypassed are stored, not applied, and apply in full on ON', async () => {
+  await loadDemo();
+  await click('btn-filter');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
+  await setQuick('heartbeat');
+  await page.waitForTimeout(400); // past the 200ms quick-filter debounce
+  await addRule('ZZZNOMATCH', 'exclude');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+  await page.waitForTimeout(400);
+  let st = await fstate();
+  assert.strictEqual(st.shown, st.total, 'no partial application while bypassed');
+  assert.strictEqual(st.badgeHidden, true, 'badge stays hidden while bypassed');
+  await click('btn-filter');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.badgeHidden, false, 're-enabled view is filtered again');
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  const ruleVal = await page.evaluate(() =>
+    (document.querySelector('#rule-rows tr:last-child [data-k=pattern]') || {}).value);
+  assert.strictEqual(ruleVal, 'ZZZNOMATCH', 'the edit-while-bypassed rule survived');
+});
+
+test('loading a new file while bypassed keeps the full view; ON re-filters the new data', async () => {
+  await loadDemo();
+  await setQuick('heartbeat');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  await click('btn-filter');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'syslog.log')]);
+  await page.waitForFunction(() => Number(document.getElementById('st-total').textContent) > 44, null, DEMO_WAIT);
+  let st = await fstate();
+  assert.strictEqual(st.shown, st.total, 'new file fully visible while bypassed');
+  assert.strictEqual(st.badgeHidden, true, 'badge stays hidden while bypassed');
+  await click('btn-filter');
+  await page.waitForFunction(() => Number(document.getElementById('st-shown').textContent) <
+    Number(document.getElementById('st-total').textContent), null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.badgeHidden, false, 'ON re-applies the stored filters to the new data');
+});
+
+test('bookmarks-only counts as narrowing for the badge and the toggle bypasses it', async () => {
+  await loadDemo();
+  await page.evaluate(() => document.querySelector('.vrow .bm').dispatchEvent(new MouseEvent('mousedown', { bubbles: true })));
+  await page.waitForTimeout(150);
+  await page.evaluate(() => {
+    const star = Array.from(document.querySelectorAll('.chip')).find((c) => c.textContent.includes('★'));
+    star.click();
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '1', null, DEMO_WAIT);
+  let st = await fstate();
+  assert.strictEqual(st.badgeHidden, false, 'bookmarks-only is a narrowing filter');
+  assert.match(st.badgeTitle, /bookmarks only/);
+  await click('btn-filter');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.badgeHidden, true, 'bypass shows every line');
+});
+
+test('band labels read as unfiltered while bypassed', async () => {
+  await loadDemo();
+  await setQuick('heartbeat');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  const startBand = await page.evaluate(() => (document.querySelector('.vmark.start span') || {}).textContent || '');
+  assert.match(startBand, /first match/, 'filtered wording while ON');
+  await click('btn-filter');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
+  const band = await page.evaluate(() => (document.querySelector('.vmark.start span') || {}).textContent || '');
+  assert.match(band, /start of/, 'unfiltered wording while bypassed');
+  assert.ok(!band.includes('first match'), 'no filtered wording while bypassed');
 });

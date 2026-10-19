@@ -16,6 +16,7 @@
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null, drawerOn: true,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
     timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200, issueGroups: null,
+    filtersEnabled: true, // master Filter toggle — transient, never persisted
     cap: 100000, sallH: null,
     pii: {
       active: 'local',
@@ -32,8 +33,10 @@
     try {
       // transient view state (quick filter, level chips, time range, search
       // pattern) is deliberately NOT persisted: a new session must start
-      // unfiltered, or freshly loaded files can appear invisible
-      const { quick, levels, timeFrom, timeTo, rgPattern, showOnlyBookmarked, zenOn, ...persisted } = state;
+      // unfiltered, or freshly loaded files can appear invisible. The master
+      // Filter toggle belongs to that group — a persisted bypass would make
+      // newly loaded files look empty.
+      const { quick, levels, timeFrom, timeTo, rgPattern, showOnlyBookmarked, zenOn, filtersEnabled, ...persisted } = state;
       const s = Object.assign({}, persisted, { bookmarks: bookmarksStore.toJSON() });
       localStorage.setItem(STATE_KEY, JSON.stringify(s));
     } catch (e) { /* storage may be unavailable on file:// in some browsers */ }
@@ -703,11 +706,15 @@
     // invariant: 'file' mode always displays exactly one file; a restored
     // session may carry viewMode=file with no active file — pick the first
     if (state.viewMode === 'file' && !state.activeFile && files.length) { state.activeFile = files[0].id; $('view-mode').value = 'file'; }
+    // Master Filter toggle (SPEC-VIEWER-002): while OFF the spec omits every
+    // narrowing field, so the view is built as if no filter were configured —
+    // non-destructively, the settings stay in `filter`/state untouched.
+    const flt = state.filtersEnabled ? filter : { rules: [], quick: null, levels: [], timeFrom: '', timeTo: '' };
     const spec = {
       fileId: state.viewMode === 'file' ? state.activeFile : null,
-      rules: filter.rules, quick: filter.quick, levels: filter.levels,
-      timeFrom: filter.timeFrom, timeTo: filter.timeTo,
-      bookmarkOnly: state.showOnlyBookmarked,
+      rules: flt.rules, quick: flt.quick, levels: flt.levels,
+      timeFrom: flt.timeFrom, timeTo: flt.timeTo,
+      bookmarkOnly: state.filtersEnabled && state.showOnlyBookmarked,
       bookmarks: files.map((f) => [f.id, bookmarksStore.list(bookmarkKeyFor(f.id)).map((b) => b.lineNo)]),
     };
     try {
@@ -790,9 +797,44 @@
   const showEndMark = () => view.length > 0 && viewStart + view.length >= filteredCount;
   const topOffset = () => (showStartMark() ? MARK_H : 0);
   // physical-log wording is only truthful without active filters; with any
-  // filter the bands bound the MATCHING results instead
-  const viewIsFiltered = () => !!(filter.quick || state.levels.length || filter.timeFrom || filter.timeTo ||
-    state.showOnlyBookmarked || (state.rules || []).some((r) => r.enabled !== false && String(r.pattern || '').trim()));
+  // filter the bands bound the MATCHING results instead. While the master
+  // Filter toggle is OFF the view IS unfiltered, so derived UI must say so.
+  const narrowingRule = (r) => r.enabled !== false && r.action !== 'highlight' && String(r.pattern || '').trim();
+  const viewIsFiltered = () => !!state.filtersEnabled && !!(filter.quick || state.levels.length ||
+    filter.timeFrom || filter.timeTo || state.showOnlyBookmarked || (state.rules || []).some(narrowingRule));
+  // stored-settings predicate: ignores the bypass flag, so the FILTERED badge
+  // reflects the configured filters even while the toggle suspends them
+  const storedFiltersActive = () => !!(state.quick || state.levels.length || state.timeFrom || state.timeTo ||
+    state.showOnlyBookmarked || (state.rules || []).some(narrowingRule));
+  // plain-language active-category list for the badge/toggle tooltips; '' when
+  // nothing narrows (no raw ids or patterns — tooltips stay human)
+  function filterSummary() {
+    const parts = [];
+    if (state.timeFrom || state.timeTo) parts.push('time range');
+    const count = (action) => (state.rules || []).filter((r) => narrowingRule(r) && r.action === action).length;
+    const inc = count('include'), exc = count('exclude');
+    if (inc) parts.push(inc + ' include rule' + (inc === 1 ? '' : 's'));
+    if (exc) parts.push(exc + ' exclude rule' + (exc === 1 ? '' : 's'));
+    if (state.levels.length) parts.push('levels ' + state.levels.join(' '));
+    if (state.quick) parts.push('quick filter');
+    if (state.showOnlyBookmarked) parts.push('bookmarks only');
+    return parts.join(', ');
+  }
+  // badge + toggle tooltip refresh — same update cycle as the status refresh
+  function updateFilterIndication() {
+    const summary = filterSummary();
+    const badge = $('st-filtered');
+    if (badge) {
+      badge.classList.toggle('hidden', !(summary && state.filtersEnabled));
+      badge.title = summary || 'no filters active — the full log is shown';
+    }
+    const btn = $('btn-filter');
+    if (btn) {
+      btn.title = 'Master Filter toggle. ON applies every configured filter; OFF suspends them without deleting ' +
+        'anything — all settings stay in the Filters tab. ' +
+        (summary ? 'Active now: ' + summary + '.' : 'No filters active — the full log is shown.');
+    }
+  }
   function markLabel(which) {
     const perFile = state.viewMode === 'file' && state.activeFile;
     const fname = perFile ? (files.find((f) => f.id === state.activeFile) || {}).name || 'file' : null;
@@ -1000,6 +1042,7 @@
     if (bmCount) bmCount.textContent = bookmarksStore.all().length;
     $('st-trim').classList.add('hidden');
     updatePager();
+    updateFilterIndication();
     updateZenHud();
   }
 
@@ -1412,7 +1455,10 @@
     filter.timeTo = $('time-to').value.trim();
     state.timeFrom = filter.timeFrom; state.timeTo = filter.timeTo;
     saveState();
-    rebuildView();
+    // while the master toggle is OFF the edits are stored only — the view is
+    // already unfiltered and toggling ON re-applies everything in one rebuild
+    if (state.filtersEnabled) rebuildView();
+    else { renderChips(); updateStatus(); renderRows(); }
     renderRules();
   }
 
@@ -2328,6 +2374,23 @@
     // analysis surfaces render masked text — keep a visible analysis tab in sync
     if ($('tab-analysis').classList.contains('active')) renderAnalysis();
   }
+  /** Master Filter toggle (SPEC-VIEWER-002): OFF suspends every narrowing
+   * filter non-destructively (the rebuild builds an unfiltered spec), ON
+   * re-applies the stored settings in one pass. Never persisted. */
+  function setFiltersEnabled(on) {
+    state.filtersEnabled = !!on;
+    syncFilterToggle();
+    updateFilterIndication();
+    rebuildView();
+  }
+  /** label/class sync from state — also used at boot without a rebuild (the
+   * toggle is session-transient and always starts ON, but the label must
+   * never contradict the state) */
+  function syncFilterToggle() {
+    const on = state.filtersEnabled !== false;
+    $('btn-filter').textContent = 'Filter: ' + (on ? 'ON' : 'OFF');
+    $('btn-filter').classList.toggle('on', on);
+  }
   function setWrap(on) {
     state.wrapOn = on;
     $('btn-wrap').textContent = 'Wrap: ' + (on ? 'ON' : 'OFF');
@@ -2352,10 +2415,13 @@
   let zenHintTimer = null;
   /** Zen HUD: the mask state + shown count stay visible while every other
    * status surface is hidden — the invisible-mask case is most dangerous
-   * exactly when screen-sharing (design review #16). */
+   * exactly when screen-sharing (design review #16). The FILTERED marker
+   * (SPEC-VIEWER-002) covers the same risk for narrowing filters, which the
+   * status bar cannot report while body.zen hides it. */
   function updateZenHud() {
     const hud = $('zen-hud');
-    if (hud) hud.textContent = 'Mask: ' + (state.maskOn ? 'ON' : 'OFF') + ' · ' + filteredCount + ' shown';
+    if (hud) hud.textContent = 'Mask: ' + (state.maskOn ? 'ON' : 'OFF') +
+      (storedFiltersActive() && state.filtersEnabled ? ' · FILTERED' : '') + ' · ' + filteredCount + ' shown';
   }
   function setZen(on) {
     // session-only focus mode: hides header, sidebar, chips, toolbar, pager
@@ -2765,6 +2831,7 @@
     $('zen-fab').onclick = () => setZen(false);
     $('btn-drawer').onclick = () => setDrawer(!state.drawerOn);
     $('btn-mask').onclick = () => setMask(!state.maskOn);
+    $('btn-filter').onclick = () => setFiltersEnabled(!state.filtersEnabled);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
     $('view-mode').onchange = () => {
@@ -2939,6 +3006,7 @@
     $('view-mode').value = state.viewMode;
     if (state.bookmarks) bookmarksStore.fromJSON(state.bookmarks);
     setMask(state.maskOn);
+    syncFilterToggle();
     // a fresh boot on a narrow viewport defaults Wrap ON — clipped lines with
     // no horizontal-scroll cue are the worst mobile reading experience
     if (!HAD_SAVED_STATE && window.innerWidth <= 560) state.wrapOn = true;
