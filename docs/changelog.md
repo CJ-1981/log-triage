@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.56.0 (2026-10-19)
+- feat(viewer): add Filter ON/OFF master toggle with FILTERED indication (SPEC-VIEWER-002)
+
 ## 1.55.0 (2026-10-19)
 - feat(files): guard Demo log button against repeat presses
 - chore(repo): scrub internal project names and example identifiers
