@@ -2810,6 +2810,43 @@ test('Ctrl+F in the viewer focuses the quick filter and explains the page-only b
   assert.ok(await page.evaluate(() => document.getElementById('find-hint').classList.contains('hidden')), 'no interception off the viewer tab');
 });
 
+test('Ctrl+F on the Multifile search tab focuses the search pattern with its text selected', async () => {
+  await loadDemo();
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=search]').click());
+  // pre-fill the pattern, then move focus away so the shortcut must do the work
+  await page.evaluate(() => { document.getElementById('rg-pattern').value = 'error.timeout'; });
+  await page.evaluate(() => document.getElementById('btn-sr-wrap').focus());
+  await page.keyboard.press('Control+f');
+  assert.strictEqual(await page.evaluate(() => document.activeElement && document.activeElement.id),
+    'rg-pattern', 'pattern field focused');
+  const sel = await page.evaluate(() => {
+    const p = document.getElementById('rg-pattern');
+    return { len: p.selectionEnd - p.selectionStart, val: p.value };
+  });
+  assert.strictEqual(sel.len, sel.val.length, 'the whole existing pattern is selected');
+  assert.ok(await page.evaluate(() => document.getElementById('find-hint').classList.contains('hidden')),
+    'no viewer find hint on the search tab');
+  // platform equivalent: Meta+F does the same
+  await page.evaluate(() => document.getElementById('btn-sr-wrap').focus());
+  await page.keyboard.press('Meta+f');
+  assert.strictEqual(await page.evaluate(() => document.activeElement && document.activeElement.id),
+    'rg-pattern', 'Meta+F focuses the pattern field too');
+  // the field advertises the shortcut, platform-aware
+  assert.match(await page.evaluate(() => document.getElementById('rg-pattern').title), /(Ctrl\+F|⌘F)/,
+    'title hints the shortcut');
+});
+
+test('Ctrl+F outside the viewer and search tabs stays with the browser', async () => {
+  await loadDemo();
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await page.evaluate(() => document.getElementById('time-from').focus());
+  await page.keyboard.press('Control+f');
+  assert.strictEqual(await page.evaluate(() => document.activeElement && document.activeElement.id),
+    'time-from', 'no focus steal on the filters tab');
+  assert.ok(await page.evaluate(() => document.getElementById('find-hint').classList.contains('hidden')),
+    'no hint outside viewer/search tabs');
+});
+
 test('regressions: Ctrl+F always select-alls, search-all re-runs and Esc works from fields; panel resizes via grip', async () => {
   await fresh();
   await click('btn-demo');
@@ -3479,15 +3516,16 @@ test('Filter toggle OFF bypasses narrowing and ON restores the exact filtered vi
       enabled: tr.querySelector('[data-k=enabled]').checked,
     })));
 
-  // OFF: every indexed line is shown, nothing destroyed
+  // OFF: the bypassable inputs (rule, time range, level chip) are suspended —
+  // the quick scan is NOT: it keeps narrowing the view on its own
   await click('btn-filter');
-  await page.waitForFunction((total) => document.getElementById('st-shown').textContent === total,
-    before.total, DEMO_WAIT);
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
   let st = await fstate();
   assert.strictEqual(st.btnLabel, 'Filter: OFF');
   assert.strictEqual(st.btnOn, false, 'OFF removes the on class');
-  assert.strictEqual(st.shown, st.total, 'bypass shows every indexed line');
-  assert.strictEqual(st.badgeHidden, true, 'badge hidden while bypassed');
+  assert.strictEqual(st.shown, '4', 'the quick scan still narrows while the toggle is OFF');
+  assert.strictEqual(st.badgeHidden, false, 'badge stays: the quick scan keeps the view narrowed');
+  assert.match(st.badgeTitle, /quick scan/, 'badge names the only active category');
   // filters tab keeps every setting verbatim
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
   assert.strictEqual(await page.evaluate(() => document.getElementById('quick').value), quickBefore, 'quick filter text kept');
@@ -3514,33 +3552,38 @@ test('Filter toggle OFF bypasses narrowing and ON restores the exact filtered vi
   assert.strictEqual(await page.evaluate(() => document.getElementById('quick').value), quickBefore);
 });
 
-test('FILTERED badge visibility matrix (filtered/unfiltered x ON/OFF)', async () => {
+test('FILTERED badge visibility matrix (filtered/unfiltered x ON/OFF, quick scan decoupled)', async () => {
   await loadDemo();
   // unfiltered + ON
   let st = await fstate();
   assert.strictEqual(st.btnLabel, 'Filter: ON');
   assert.strictEqual(st.badgeHidden, true, 'unfiltered + ON hides the badge');
-  // filtered + ON
+  // filtered + ON (quick scan)
   await setQuick('heartbeat');
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
   st = await fstate();
   assert.strictEqual(st.badgeHidden, false, 'filtered + ON shows the badge');
-  // filtered + OFF
+  // filtered + OFF: the quick scan still narrows, so the badge stays
   await click('btn-filter');
-  await page.waitForFunction(() => document.getElementById('st-shown').textContent ===
-    document.getElementById('st-total').textContent, null, DEMO_WAIT);
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false' &&
+    document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
   st = await fstate();
-  assert.strictEqual(st.badgeHidden, true, 'filtered + OFF hides the badge');
-  // unfiltered + OFF: clear the quick filter while bypassed
+  assert.strictEqual(st.badgeHidden, false, 'quick scan + OFF keeps the badge (view still narrowed)');
+  assert.match(st.badgeTitle, /quick scan/);
+  // bypassable-only + OFF: replace the quick scan with a rule — nothing narrows
   await setQuick('');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
+  await addRule('WifiService', 'exclude');
   await page.waitForTimeout(400);
   st = await fstate();
-  assert.strictEqual(st.badgeHidden, true, 'unfiltered + OFF hides the badge');
-  // unfiltered + ON
+  assert.strictEqual(st.shown, st.total, 'the rule is suspended while OFF');
+  assert.strictEqual(st.badgeHidden, true, 'nothing narrowing + OFF hides the badge');
+  // rule-only + ON: the suspended rule applies and the badge returns
   await click('btn-filter');
-  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
+  await page.waitForFunction(() => Number(document.getElementById('st-shown').textContent) <
+    Number(document.getElementById('st-total').textContent), null, DEMO_WAIT);
   st = await fstate();
-  assert.strictEqual(st.badgeHidden, true, 'unfiltered + ON hides the badge');
+  assert.strictEqual(st.badgeHidden, false, 'rule-only + ON shows the badge');
 });
 
 test('badge refreshes on filter mutations from the Filters tab; disabled rules never trigger it', async () => {
@@ -3585,15 +3628,25 @@ test('badge and toggle tooltips list active categories in plain language only', 
   await page.waitForFunction(() => document.getElementById('st-filtered') &&
     !document.getElementById('st-filtered').classList.contains('hidden'), null, DEMO_WAIT);
   st = await fstate();
-  assert.match(st.badgeTitle, /quick filter/);
+  assert.match(st.badgeTitle, /quick scan/);
   assert.match(st.badgeTitle, /1 exclude rule/);
   assert.match(st.badgeTitle, /levels /, 'level chips listed');
   assert.ok(!/r\d+\b/.test(st.badgeTitle), 'no raw rule ids in the tooltip: ' + st.badgeTitle);
   assert.ok(!st.badgeTitle.includes('WifiService'), 'no raw patterns in the tooltip');
   assert.match(st.btnTitle, /1 exclude rule/, 'toggle tooltip carries the same summary');
+
+  // while OFF the badge lists only what ACTUALLY narrows (the quick scan);
+  // the toggle tooltip still lists everything configured
+  await click('btn-filter');
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false' &&
+    document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.badgeHidden, false, 'the quick scan keeps the view narrowed while OFF');
+  assert.strictEqual(st.badgeTitle, 'quick scan', 'suspended categories are not listed as active');
+  assert.match(st.btnTitle, /1 exclude rule/, 'toggle tooltip still lists the configured settings');
 });
 
-test('zen HUD gains the FILTERED marker only while filters narrow the view', async () => {
+test('zen HUD gains the FILTERED marker whenever the view is actually narrowed', async () => {
   await loadDemo();
   await setQuick('heartbeat');
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
@@ -3602,8 +3655,17 @@ test('zen HUD gains the FILTERED marker only while filters narrow the view', asy
     (document.getElementById('zen-hud') || {}).textContent || ''), null, DEMO_WAIT);
   await page.keyboard.press('Escape');
   await page.waitForTimeout(150);
-  // bypassed: marker gone, otherwise the format is unchanged
+  // bypassed: the quick scan still narrows, so the marker STAYS
   await click('btn-filter');
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false' &&
+    document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  await page.click('#btn-zen');
+  await page.waitForFunction(() => /Mask: (ON|OFF) · FILTERED · \d+ shown/.test(
+    (document.getElementById('zen-hud') || {}).textContent || ''), null, DEMO_WAIT);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(150);
+  // nothing narrowing at all: marker gone, otherwise the format is unchanged
+  await setQuick('');
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
   await page.click('#btn-zen');
   await page.waitForFunction(() => {
@@ -3640,38 +3702,43 @@ test('fresh session starts with filters ON; persisted rules survive, transient f
   assert.strictEqual(st.btnLabel, 'Filter: ON', 'a new session never starts bypassed');
 });
 
-test('edits made while bypassed are stored, not applied, and apply in full on ON', async () => {
+test('while bypassed, rule edits are stored not applied; quick scan edits apply immediately', async () => {
   await loadDemo();
   await click('btn-filter');
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
-  await setQuick('heartbeat');
-  await page.waitForTimeout(400); // past the 200ms quick-filter debounce
   await addRule('ZZZNOMATCH', 'exclude');
-  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
   await page.waitForTimeout(400);
   let st = await fstate();
-  assert.strictEqual(st.shown, st.total, 'no partial application while bypassed');
-  assert.strictEqual(st.badgeHidden, true, 'badge stays hidden while bypassed');
-  await click('btn-filter');
+  assert.strictEqual(st.shown, st.total, 'a rule edit while bypassed is stored, not applied');
+  assert.strictEqual(st.badgeHidden, true, 'badge hidden: nothing actually narrows');
+  // the quick scan applies immediately even while the toggle is OFF
+  await setQuick('heartbeat');
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
   st = await fstate();
-  assert.strictEqual(st.badgeHidden, false, 're-enabled view is filtered again');
+  assert.strictEqual(st.badgeHidden, false, 'badge reflects the live quick scan');
+  assert.match(st.badgeTitle, /quick scan/);
+  await click('btn-filter'); // ON — the stored rule applies on top of the quick scan
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false' &&
+    document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  st = await fstate();
+  assert.strictEqual(st.shown, '4', 'ZZZNOMATCH excludes nothing from the heartbeat set');
   await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
   const ruleVal = await page.evaluate(() =>
     (document.querySelector('#rule-rows tr:last-child [data-k=pattern]') || {}).value);
   assert.strictEqual(ruleVal, 'ZZZNOMATCH', 'the edit-while-bypassed rule survived');
 });
 
-test('loading a new file while bypassed keeps the full view; ON re-filters the new data', async () => {
+test('loading a new file while bypassed keeps the bypassable filters suspended; ON re-filters the new data', async () => {
   await loadDemo();
-  await setQuick('heartbeat');
-  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  await addRule('WifiService', 'exclude');
+  await page.waitForFunction(() => Number(document.getElementById('st-shown').textContent) < 44, null, DEMO_WAIT);
   await click('btn-filter');
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
   await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'syslog.log')]);
   await page.waitForFunction(() => Number(document.getElementById('st-total').textContent) > 44, null, DEMO_WAIT);
+  await page.waitForTimeout(400);
   let st = await fstate();
-  assert.strictEqual(st.shown, st.total, 'new file fully visible while bypassed');
+  assert.strictEqual(st.shown, st.total, 'new file fully visible while bypassed (rule suspended)');
   assert.strictEqual(st.badgeHidden, true, 'badge stays hidden while bypassed');
   await click('btn-filter');
   await page.waitForFunction(() => Number(document.getElementById('st-shown').textContent) <
@@ -3698,17 +3765,22 @@ test('bookmarks-only counts as narrowing for the badge and the toggle bypasses i
   assert.strictEqual(st.badgeHidden, true, 'bypass shows every line');
 });
 
-test('band labels read as unfiltered while bypassed', async () => {
+test('band labels read as unfiltered only when nothing actually narrows', async () => {
   await loadDemo();
-  await setQuick('heartbeat');
-  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  await addRule('WifiService', 'exclude');
+  await page.waitForFunction(() => Number(document.getElementById('st-shown').textContent) < 44, null, DEMO_WAIT);
   const startBand = await page.evaluate(() => (document.querySelector('.vmark.start span') || {}).textContent || '');
   assert.match(startBand, /first match/, 'filtered wording while ON');
   await click('btn-filter');
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '44', null, DEMO_WAIT);
   const band = await page.evaluate(() => (document.querySelector('.vmark.start span') || {}).textContent || '');
-  assert.match(band, /start of/, 'unfiltered wording while bypassed');
+  assert.match(band, /start of/, 'unfiltered wording while the rule is bypassed');
   assert.ok(!band.includes('first match'), 'no filtered wording while bypassed');
+  // a quick scan while OFF narrows again — the filtered wording must return
+  await setQuick('heartbeat');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '4', null, DEMO_WAIT);
+  const bandQuick = await page.evaluate(() => (document.querySelector('.vmark.start span') || {}).textContent || '');
+  assert.match(bandQuick, /first match/, 'quick scan + OFF keeps the filtered band wording');
 });
 
 /* ---------------- SPEC-TABS-001: digit tab switching, text-entry guard, Escape blur ---------------- */
@@ -3998,7 +4070,7 @@ test('Filter toggle is a view no-op while no narrowing filter is configured', as
   assert.strictEqual(after.topLine, before.topLine, 'top line identity unchanged by ON');
 });
 
-test('Filter toggle re-anchors the top visible line when the view set changes', async () => {
+test('Filter toggle re-anchors the top visible line when the view set changes (quick scan + rule)', async () => {
   await fresh();
   const big = join(os.tmpdir(), 'lt-toggle-anchor-' + Date.now() + '.log');
   const lines = [];
@@ -4007,9 +4079,15 @@ test('Filter toggle re-anchors the top visible line when the view set changes', 
   try {
     await page.setInputFiles('#file-input', [big]);
     await page.waitForFunction(() => document.getElementById('st-total').textContent === '1200', null, DEMO_WAIT);
-    await setQuick('line 11'); // matches 11, 110..119, 1100..1199 — a middle subset
+    // quick scan (always active) + an exclude rule (suspended while OFF):
+    // ON narrows to lines matching 'line 1' minus 'line 11' (~290), OFF keeps
+    // only the quick scan (~311) — both toggles change the view set
+    await setQuick('line 1');
     await page.waitForFunction(() => Number(document.getElementById('st-shown').textContent) > 0 &&
       Number(document.getElementById('st-shown').textContent) < 1200, null, DEMO_WAIT);
+    await addRule('line 11', 'exclude');
+    await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false', null, DEMO_WAIT);
+    await page.waitForTimeout(150);
     const filteredCount = Number(await page.textContent('#st-shown'));
     // scroll inside the filtered view and anchor on the top visible line
     await page.evaluate(() => { document.getElementById('viewer').scrollTop = 110; });
@@ -4017,15 +4095,16 @@ test('Filter toggle re-anchors the top visible line when the view set changes', 
     const anchored = await viewPos();
     assert.ok(anchored.topLine, 'precondition: a top line is visible');
 
-    // OFF: the full log appears with the anchored line at the top of the viewport
+    // OFF: the rule is lifted (larger set) with the anchored line at the top
     await click('btn-filter');
-    await page.waitForFunction(() => document.getElementById('st-shown').textContent === '1200', null, DEMO_WAIT);
+    await page.waitForFunction((n) => Number(document.getElementById('st-shown').textContent) > n,
+      filteredCount, DEMO_WAIT);
     await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false', null, DEMO_WAIT);
     const off = await viewPos();
     assert.strictEqual(off.topLine, anchored.topLine,
       'bypassed view re-anchors on the previously top line, got ' + off.topLine + ' vs ' + anchored.topLine);
 
-    // ON: the filtered set returns with the same anchor still on top
+    // ON: the rule re-applies (smaller set) with the same anchor still on top
     await click('btn-filter');
     await page.waitForFunction((n) => document.getElementById('st-shown').textContent === String(n),
       filteredCount, DEMO_WAIT);
@@ -4036,28 +4115,26 @@ test('Filter toggle re-anchors the top visible line when the view set changes', 
   } finally { fs.rmSync(big, { force: true }); }
 });
 
-test('while bypassed, quick-filter edits neither filter, nor repaint highlights, nor move the view', async () => {
+test('quick scan narrows and highlights even while the Filter toggle is OFF', async () => {
   await loadDemo();
-  await click('btn-filter'); // OFF — bypass active
+  await click('btn-filter'); // OFF — rules/time/levels/bookmarks-only are bypassed
   await page.waitForFunction(() => document.getElementById('btn-filter').textContent === 'Filter: OFF', null, DEMO_WAIT);
-  // line 1 (visible at scrollTop 0) contains "ActivityManager" — a match of the
-  // pattern we are about to type, so a false highlight repaint is observable
-  await page.evaluate(() => { document.getElementById('viewer').scrollTop = 66; });
-  await page.waitForFunction(() => document.getElementById('viewer').scrollTop === 66, null, DEMO_WAIT);
   await page.evaluate(() => { const q = document.getElementById('quick'); q.focus(); });
   await page.keyboard.type('ActivityManager');
-  await page.waitForTimeout(600); // past the 200ms debounce
-  let st = await fstate();
-  assert.strictEqual(st.shown, st.total, 'edit while bypassed must not narrow the view');
-  assert.strictEqual(await page.evaluate(() => document.getElementById('viewer').scrollTop), 66,
-    'editing the quick filter while bypassed must not reset the scroll position');
-  assert.strictEqual(await page.evaluate(() => document.querySelectorAll('mark').length), 0,
-    'bypassed view must not repaint fresh match highlights (false live-filter signal)');
-  await click('btn-filter'); // ON — stored edit applies
-  await page.waitForFunction(() => document.getElementById('st-shown').textContent !== '44' &&
-    document.getElementById('viewer').getAttribute('aria-busy') === 'false', null, DEMO_WAIT);
-  st = await fstate();
-  assert.strictEqual(st.badgeHidden, false);
+  await page.waitForFunction(() => { const s = Number(document.getElementById('st-shown').textContent);
+    return s > 0 && s < 44; }, null, DEMO_WAIT);
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false', null, DEMO_WAIT);
+  const narrowed = Number(await page.textContent('#st-shown'));
+  const st = await fstate();
   assert.strictEqual(await page.evaluate(() => document.querySelectorAll('mark').length), 5,
-    'the edited pattern highlights all 5 of its matches once the toggle is back ON');
+    'the live quick scan highlights its matches while the toggle is OFF');
+  assert.strictEqual(st.badgeHidden, false, 'badge reflects the quick-scan narrowing while OFF');
+  assert.match(st.badgeTitle, /quick scan/);
+  // toggling ON changes nothing material: the same set stays, the place is kept
+  const before = await viewPos();
+  await click('btn-filter'); // ON
+  await page.waitForFunction(() => document.getElementById('viewer').getAttribute('aria-busy') === 'false', null, DEMO_WAIT);
+  const after = await viewPos();
+  assert.strictEqual(after.shown, String(narrowed), 'ON with only the quick scan active keeps the view set');
+  assert.strictEqual(after.topLine, before.topLine, 'ON with only the quick scan active keeps the top line');
 });

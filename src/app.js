@@ -31,7 +31,7 @@
 
   function saveState() {
     try {
-      // transient view state (quick filter, level chips, time range, search
+      // transient view state (quick scan, level chips, time range, search
       // pattern) is deliberately NOT persisted: a new session must start
       // unfiltered, or freshly loaded files can appear invisible. The master
       // Filter toggle belongs to that group — a persisted bypass would make
@@ -676,7 +676,7 @@
     input.addEventListener('blur', () => setTimeout(close, 120));
   }
 
-  /** The quick filter grows with its typed content (ch-based — the field is
+  /** The quick scan grows with its typed content (ch-based — the field is
    * monospace): 24ch base, +1ch per character plus caret room, 80ch cap.
    * flex-shrink still clamps it to the toolbar row on narrow screens. */
   function autosizeQuick() {
@@ -706,10 +706,11 @@
     // invariant: 'file' mode always displays exactly one file; a restored
     // session may carry viewMode=file with no active file — pick the first
     if (state.viewMode === 'file' && !state.activeFile && files.length) { state.activeFile = files[0].id; $('view-mode').value = 'file'; }
-    // Master Filter toggle (SPEC-VIEWER-002): while OFF the spec omits every
-    // narrowing field, so the view is built as if no filter were configured —
-    // non-destructively, the settings stay in `filter`/state untouched.
-    const flt = state.filtersEnabled ? filter : { rules: [], quick: null, levels: [], timeFrom: '', timeTo: '' };
+    // Master Filter toggle (SPEC-VIEWER-002, amended 2026-10-19): while OFF the
+    // spec omits the bypassable narrowing fields (rules, levels, time range —
+    // bookmarkOnly below), so the view is built as if they were not configured.
+    // The quick scan is decoupled: it narrows in BOTH toggle states.
+    const flt = state.filtersEnabled ? filter : { rules: [], quick: filter.quick, levels: [], timeFrom: '', timeTo: '' };
     const spec = {
       fileId: state.viewMode === 'file' ? state.activeFile : null,
       rules: flt.rules, quick: flt.quick, levels: flt.levels,
@@ -797,17 +798,18 @@
   const showEndMark = () => view.length > 0 && viewStart + view.length >= filteredCount;
   const topOffset = () => (showStartMark() ? MARK_H : 0);
   // physical-log wording is only truthful without active filters; with any
-  // filter the bands bound the MATCHING results instead. While the master
-  // Filter toggle is OFF the view IS unfiltered, so derived UI must say so.
+  // filter the bands bound the MATCHING results instead. The quick scan is
+  // decoupled from the master toggle and narrows in BOTH states; everything
+  // else is suspended while the toggle is OFF, so derived UI must say so.
   const narrowingRule = (r) => r.enabled !== false && r.action !== 'highlight' && String(r.pattern || '').trim();
-  const viewIsFiltered = () => !!state.filtersEnabled && !!(filter.quick || state.levels.length ||
-    filter.timeFrom || filter.timeTo || state.showOnlyBookmarked || (state.rules || []).some(narrowingRule));
-  // stored-settings predicate: ignores the bypass flag, so the FILTERED badge
-  // reflects the configured filters even while the toggle suspends them
+  const viewIsFiltered = () => !!(filter.quick || (state.filtersEnabled && (state.levels.length ||
+    filter.timeFrom || filter.timeTo || state.showOnlyBookmarked || (state.rules || []).some(narrowingRule))));
+  // stored-settings predicate: ignores the bypass flag — anything configured
+  // counts, so the toggle never mistakes a stored (suspended) edit for "empty"
   const storedFiltersActive = () => !!(state.quick || state.levels.length || state.timeFrom || state.timeTo ||
     state.showOnlyBookmarked || (state.rules || []).some(narrowingRule));
-  // plain-language active-category list for the badge/toggle tooltips; '' when
-  // nothing narrows (no raw ids or patterns — tooltips stay human)
+  // plain-language list of every configured category for the toggle tooltip;
+  // '' when nothing is configured (no raw ids or patterns — tooltips stay human)
   function filterSummary() {
     const parts = [];
     if (state.timeFrom || state.timeTo) parts.push('time range');
@@ -816,23 +818,31 @@
     if (inc) parts.push(inc + ' include rule' + (inc === 1 ? '' : 's'));
     if (exc) parts.push(exc + ' exclude rule' + (exc === 1 ? '' : 's'));
     if (state.levels.length) parts.push('levels ' + state.levels.join(' '));
-    if (state.quick) parts.push('quick filter');
+    if (state.quick) parts.push('quick scan');
     if (state.showOnlyBookmarked) parts.push('bookmarks only');
     return parts.join(', ');
   }
+  // plain-language list of what ACTUALLY narrows the view right now: while the
+  // toggle is OFF only the quick scan survives; while ON that is everything
+  function activeFilterSummary() {
+    if (state.filtersEnabled !== false) return filterSummary();
+    return state.quick ? 'quick scan' : '';
+  }
   // badge + toggle tooltip refresh — same update cycle as the status refresh
   function updateFilterIndication() {
-    const summary = filterSummary();
+    const active = activeFilterSummary();
     const badge = $('st-filtered');
     if (badge) {
-      badge.classList.toggle('hidden', !(summary && state.filtersEnabled));
-      badge.title = summary || 'no filters active — the full log is shown';
+      badge.classList.toggle('hidden', !viewIsFiltered());
+      badge.title = active || 'no filters active — the full log is shown';
     }
     const btn = $('btn-filter');
     if (btn) {
-      btn.title = 'Master Filter toggle. ON applies every configured filter; OFF suspends them without deleting ' +
-        'anything — all settings stay in the Filters tab. ' +
-        (summary ? 'Active now: ' + summary + '.' : 'No filters active — the full log is shown.');
+      const configured = filterSummary();
+      btn.title = 'Master Filter toggle. ON applies every configured filter; OFF suspends time range, include/' +
+        'exclude rules, level chips and bookmarks-only — the quick scan always narrows. All settings stay in ' +
+        'the Filters tab. ' +
+        (configured ? 'Configured now: ' + configured + '.' : 'No filters active — the full log is shown.');
     }
   }
   function markLabel(which) {
@@ -996,9 +1006,9 @@
   }
 
   function quickMatchSpans(text) {
-    // while the master Filter toggle is OFF the view is unfiltered (R1-5) —
-    // fresh match marks would advertise live filtering that is suspended
-    if (!filter._quickRe || !state.filtersEnabled) return [];
+    // the quick scan is decoupled from the master Filter toggle: its match
+    // marks are painted in BOTH toggle states, mirroring the live narrowing
+    if (!filter._quickRe) return [];
     const src = filter._quickRe;
     const re = src.global ? src : new RegExp(src.source, src.flags + 'g');
     const spans = [];
@@ -2226,7 +2236,7 @@
   function hideFindHint() { clearTimeout(findHintTimer); $('find-hint').classList.add('hidden'); }
   /** Ctrl+F guard: the browser's find bar only sees the rendered page of the
    * virtualized viewer, so a quick find silently misses most of the log. The
-   * intent is redirected into the quick filter (full-scope live matching) and
+   * intent is redirected into the quick scan (full-scope live matching) and
    * this floating explanation offers Search all for the complete match list. */
   function showFindHint() {
     const el = $('find-hint');
@@ -2259,17 +2269,17 @@
     return true;
   }
 
-  /** List EVERY line matching the quick-filter pattern across the viewer's
+  /** List EVERY line matching the quick scan pattern across the viewer's
    * current scope in a bottom panel (merged view: all loaded files; per-file
    * view: the displayed file). Runs through the worker's full-file search —
    * complete indexed files, not the analysis sample — and reuses the search
    * tab's row markup so clicks jump exactly like search-tab results. */
   async function runSearchAll() {
-    // every click RE-RUNS with the current quick-filter pattern — the former
+    // every click RE-RUNS with the current quick scan pattern — the former
     // "second click toggles the panel shut" behavior read as "it stopped
     // working"; closing is the ✕ / Esc job
     const pattern = $('quick').value;
-    if (!pattern) { flash('Type a pattern in the quick filter first'); return; }
+    if (!pattern) { flash('Type a pattern in the quick scan first'); return; }
     // same semantics as the live quick filter: case-insensitive regex on raw text
     const searcher = LT.buildSearcher(pattern, { fixed: false, word: false, invert: false, caseMode: 'insensitive' });
     if (!searcher.ok) { flash('Bad pattern: ' + searcher.error); return; }
@@ -2468,7 +2478,7 @@
   function updateZenHud() {
     const hud = $('zen-hud');
     if (hud) hud.textContent = 'Mask: ' + (state.maskOn ? 'ON' : 'OFF') +
-      (storedFiltersActive() && state.filtersEnabled ? ' · FILTERED' : '') + ' · ' + filteredCount + ' shown';
+      (viewIsFiltered() ? ' · FILTERED' : '') + ' · ' + filteredCount + ' shown';
   }
   function setZen(on) {
     // session-only focus mode: hides header, sidebar, chips, toolbar, pager
@@ -2865,9 +2875,9 @@
       quickTimer = setTimeout(() => {
         filter.quick = state.quick ? { pattern: state.quick, fixed: false, caseSensitive: false } : null; filter.compileQuick();
         saveState();
-        // while bypassed the edit is stored only: rebuilding would reset the
-        // window to page 0, and the view must stay exactly as the user left it
-        if (state.filtersEnabled) rebuildView(); else renderRows();
+        // the quick scan always rebuilds — it narrows in both toggle states
+        // (the window resets to its top, exactly like a quick edit while ON)
+        rebuildView();
       }, 200);
       if (quickHistTimer) clearTimeout(quickHistTimer);
       quickHistTimer = setTimeout(commitQuickHistory, 900);
@@ -2956,6 +2966,9 @@
     // absence or unrecognized value keeps the Ctrl spelling (R5-3)
     const platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || '';
     $('sall-kbd').textContent = /mac|ipad/i.test(platform) ? '⌘Enter' : 'Ctrl+Enter';
+    // platform-aware shortcut hint on the search pattern field (Ctrl/Cmd+F)
+    $('rg-pattern').title = 'ripgrep-style search over the kept lines — plain text or regular expression — ' +
+      'shortcut: ' + (/mac|ipad/i.test(platform) ? '⌘F' : 'Ctrl+F') + ' focuses this field';
     $('sall-close').onclick = sallClose;
     $('sall-rows').addEventListener('click', (e) => {
       const row = e.target.closest('.sr-row');
@@ -3089,6 +3102,16 @@
         e.preventDefault();
         const q = $('quick'); q.focus(); q.select();
         showFindHint();
+        return;
+      }
+      // Ctrl/Cmd+F on the Multifile search tab reaches the app's find the same
+      // way: focus the pattern field with its text selected (typing then
+      // replaces the stale pattern instead of appending to it). No floating
+      // hint here — the virtualization limitation only concerns the viewer.
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'F') && !e.isComposing && files.length &&
+          $('tab-search').classList.contains('active')) {
+        e.preventDefault();
+        const p = $('rg-pattern'); p.focus(); p.select();
         return;
       }
       // Esc dismisses the Ctrl+F redirect hint immediately — the floating
