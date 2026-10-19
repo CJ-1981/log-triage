@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+## 1.55.0 (2026-10-19)
+- feat(files): guard Demo log button against repeat presses
+- chore(repo): scrub internal project names and example identifiers
+- test(7z): cover uncovered branches in format-7z parsing and writing
+
 ## 1.54.0 (2026-10-18)
 - fix(viewer): fall back to in-page paging twin when Safari blocks file:// worker blob reads
 - docs(viewer): sync docs for continuous scroll window, seq-keyed selection, shortcut hint
