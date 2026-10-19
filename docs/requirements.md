@@ -165,7 +165,7 @@ Status: wrap default implemented (v1.33.1); toggle implemented (v1.34.0).
 
 ### FR-17 — Debounced text inputs and search-term history
 
-Status: debounce implemented (v1.3.0); history dropdown implemented (v1.33.0).
+Status: debounce implemented (v1.3.0); history dropdown implemented (v1.33.0). Since v1.57.1 (SPEC-VIEWER-002 Amendment 1) the viewer quick filter is labeled "quick scan" in every user-facing string and is decoupled from the Filter master toggle (FR-28) — earlier ACs below keep the historical "quick filter" wording.
 
 - AC-1: Instant-search matching is debounced 250 ms and runs after typing pauses.
 - AC-2: The viewer quick filter is debounced 200 ms.
@@ -273,6 +273,24 @@ AUTOSAR DLT logs converted to text by the dlt-viewer ASCII exporter are a first-
 - AC-2: Records map as: timestamp `MM-DD HH:MM:SS.mmm` (year dropped, microseconds truncated to milliseconds), level from the log subtype word (`fatal`→F, `error`→E, `warn`/`warning`→W, `info`→I, `debug`→D, `verbose`→V; `default` and unknown → null), non-log types to trace/control levels (`app_trace`/`nw_trace`→D, `control`→I), tag = `appid:ctid`, pid = session id. The leading index and DLT relative-timestamp columns are optional; the payload is never corrupted by digit-leading text because the mode word fixes the arg-count column.
 - AC-3: Non-dlt lines inside a dlt file (wrapped fragments, header notes) fall back to continuation records that stay visible and bypass level filters, like every other format.
 - AC-4: Masking, quick filter, search, selection copy, and sanitized export apply to DLT payload text unchanged (VIN/email/IP payloads are masked in the viewer, the drawer, and exports).
+
+### FR-28 — Master filter toggle and FILTERED indication
+
+Status: implemented (v1.56.0; quick-scan decoupling amended in v1.57.1, SPEC-VIEWER-002).
+
+- AC-1: A master "Filter: ON/OFF" toggle in the viewer toolbar suspends every bypassable narrowing filter non-destructively while OFF — include/exclude rules, the inclusive time range, level chips, and the ★ only-bookmarks view stay stored in the Filters tab and re-apply untouched when switched back ON. The bypass is session-only and never persisted.
+- AC-2: The quick scan is deliberately decoupled from the toggle (Amendment 1): it ALWAYS narrows and highlights in both toggle states; OFF bypasses only rules, time range, level chips, and bookmarks-only.
+- AC-3: Truthfulness: whenever the view is actually narrowed, the status bar shows a "FILTERED" badge with a plain-language tooltip listing the active categories (e.g. "time range, 2 exclude rules, levels E W, quick scan"), and the zen HUD gains a "· FILTERED" marker so a narrowed log is never mistaken for the full one while screen-sharing. Highlight rules never count as narrowing.
+- AC-4: Toggling preserves the reading position: with nothing configured to narrow, the toggle is an exact view no-op; when the view set changes, the first fully visible line is identity-anchored and restored at the viewport top after the rebuild.
+
+### FR-29 — Keyboard tab switching and focus release
+
+Status: implemented (v1.57.0, SPEC-TABS-001).
+
+- AC-1: Plain digit keys 1–8 switch tabs in tab-bar order (1 Viewer, 2 Multifile search, 3 Filters, 4 Masks, 5 PII, 6 Analysis, 7 Export, 8 Config); each tab button carries a visible digit badge. Modified digits (Ctrl/Cmd/Alt/Shift+digit) are left to the browser.
+- AC-2: Focus guard: digits typed in an input, textarea, select, or contentEditable element are delivered to the field as normal text; IME composition is never interrupted; zen mode ignores digits (Esc leaves zen first).
+- AC-3: Escape releases text-field focus back to the page so the single-key shortcuts (M, W, B, digits, Esc clear-selection) work again without the mouse. The release is ordered AFTER the zen-exit and search-all-panel-close Escape handlers — which keep closing those surfaces first from any focus, even inside a field — and instantly dismisses the floating Ctrl+F find hint.
+- AC-4: On the Multifile search tab Ctrl/Cmd+F focuses the search pattern field with its existing text selected (typing replaces the stale pattern); the viewer's Ctrl+F interception (FR-10 AC-7) is unchanged and every other tab keeps the native browser find.
 
 ## Non-functional requirements
 

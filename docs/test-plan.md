@@ -88,7 +88,7 @@ Note: the G0–G8 records below are historical — they describe the design veri
 | --- | --- |
 | `npm test` | Run the Node unit suites (`node:test`, Node 22): shared logic cases, the selection model suite, and the bump-tooling suite. |
 | `npm run test:gate` | Run unit tests with coverage and enforce ≥ 90% line / ≥ 85% branch per core module. |
-| `npm run e2e` | Run the Playwright end-to-end suite (107 specs: 99 app + 8 stress) against the built `log-triage.html`. |
+| `npm run e2e` | Run the Playwright end-to-end suite (139 specs: 131 app + 8 stress) against the built `log-triage.html`. |
 | `npm run e2e:stress` | Run only the stress suite against the generated big fixture (`tools/genbig.mjs`). |
 | `npm run build` | Rebuild `log-triage.html` from `src/` (inlines CSS, modules, shared cases, demo log). |
 
@@ -100,9 +100,9 @@ Note: the G0–G8 records below are historical — they describe the design veri
 - **Browser:** `build.js` inlines the identical file into `log-triage.html`; opening it with `?selftest` executes the suite and reports pass/fail counts and failing case names.
 - **Guarantee:** any behavior change must be expressed as a case update, so Node CI and the in-browser self-test can never disagree.
 
-## E2e scope (Playwright — 107 specs: 99 app + 8 stress)
+## E2e scope (Playwright — 139 specs: 131 app + 8 stress)
 
-App suite (99 specs) — coverage includes:
+App suite (131 specs) — coverage includes:
 
 1. `?selftest` page runs and reports green.
 2. Demo load: format detection, level chips, and masking indications correct.
@@ -165,6 +165,8 @@ App suite (99 specs) — coverage includes:
 52. Search-all shortcut (v1.53.0, FR-17 AC-5): Ctrl+Enter fires with the cursor still in the quick filter (type 'heartbeat', shortcut → panel with 4 matches — the INPUT focus must not swallow it), from body focus RE-RUNS with the current pattern ('fail' → 2 matches), the button tooltip advertises the shortcut, an empty pattern keeps the panel closed with the "Type a pattern" flash, and the shortcut is inert off the viewer tab (no re-run while Masks is shown).
 53. Light-theme mark ink (v1.53.2, FR-10 AC-4): with quick-filter marks in the viewer, Paper and Solarized Light render the mark text with dark ink on the yellow highlight (computed color avg < 96 — the mark rule used to take its color from the page background, painting near-white on yellow), and Midnight keeps its dark-ink rendering; a shared self-test case additionally pins the --hl-ink rule (dark themes = --bg, light themes = --fg) for every palette.
 54. Continuous scroll window, selection persistence, shortcut hint (Unreleased, SPEC-VIEWER-001): wheeling past a page edge appends/prepends the next page with the viewport anchored (no jump, sub-page window growth past the seam, farthest-page eviction with scroll compensation, ≤ 2,500-row window), start/end marks follow the window's position against the global first/last matching line, and the pager keeps anchor-page semantics; the selection is keyed by global line id — it survives append/prepend/eviction AND loadPage replacement (a row selected then jumped away stays selected off-window with no highlight, excluded from the status count and copy/export, and re-highlights when it re-enters), Esc clears everything including off-window entries, Ctrl+A scopes to the current window; the Search all button renders a platform-aware kbd hint (`⌘Enter` under an emulated macOS platform, `Ctrl+Enter` otherwise), still hidden with the button at ≤ 560 px.
+55. Master filter toggle + FILTERED indication (v1.56.0/v1.57.1, FR-28, SPEC-VIEWER-002): the toolbar "Filter: ON/OFF" toggle suspends rules, time range, level chips, and ★ only-bookmarks non-destructively while OFF (they re-apply untouched on ON; the bypass is session-only); the quick scan keeps narrowing in BOTH states (Amendment 1 decoupling); the status bar shows the FILTERED badge with a plain-language tooltip exactly when the view narrows (highlight rules never counted; a live quick scan keeps the badge while OFF) and the zen HUD gains the "· FILTERED" marker; toggling with nothing configured is an exact view no-op, and a view-set change re-anchors the first fully visible line at the viewport top (OFF→ON with quick+rule).
+56. Keyboard tab switching + Escape focus release (v1.57.0, FR-29, SPEC-TABS-001): plain digits 1–8 switch tabs in tab-bar order (visible digit badges on all eight buttons); modified digits reach the browser; digits typed in input/textarea/select/contentEditable go to the field (IME isComposing untouched); zen mode ignores digits; Escape in a text field blurs it AFTER the zen-exit and search-all-close branches (which still close those surfaces from inside a field) and dismisses the Ctrl+F find hint on the spot; Ctrl/Cmd+F on the Multifile search tab focuses the pattern field with its text selected (typing replaces it) while the viewer interception and every other tab's native find are unchanged.
 
 Stress suite (`tests/e2e/stress.e2e.spec.mjs`, `npm run e2e:stress`), run against a generated 30 MB / ~338k-line fixture (`tools/genbig.mjs`, which plants deterministic RAREJUMPMARKER lines every 100k lines so stress tests 5–6 can assert stable click-to-jump and full-coverage deep-scan behavior):
 
