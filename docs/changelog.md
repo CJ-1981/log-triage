@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.58.0 (2026-10-19)
+- feat(viewer): rename quick filter to quick scan, decouple it from the Filter toggle (SPEC-VIEWER-002 amendment)
+
 ## 1.57.1 (2026-10-19)
 - fix(viewer): keep viewer position on Filter toggle and clean up OFF-state behavior (SPEC-VIEWER-002)
 
