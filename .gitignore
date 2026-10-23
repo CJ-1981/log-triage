@@ -4,3 +4,176 @@ test-results/
 *.log.big
 npm-debug.log*
 .DS_Store
+
+# Purpose: Essential patterns for user projects
+# ---------------------------------------------
+*.backup
+# FIXED: Issue #237 - Replaced overly broad *key* and *secret* patterns
+.uv-cache/
+private-key*
+# User-generated content: logs/, cache/, reports/, etc.
+*.log
+*.bak
+build/
+.claude/local/
+*-api-key.*
+*_secret.*
+Thumbs.db
+.pytest_cache/
+.venv/
+secret-*.*
+# Add to .gitignore if needed per project
+ehthumbs.db
+*.swo
+.github/workflows/*.yml.bak
+*.pyc
+# Logs & Temporary Files
+# CI/CD
+.#*
+*-secret-key.*
+.idea/
+api-key-*
+__pycache__/
+*.sublime-project
+# IDE & Editors
+*.pfx
+.env.*
+# Certificate files
+.gitlab-ci.yml.bak
+.VolumeIcon.icns
+# Claude Code Local Configuration
+.claude/skills/*/*/*key*
+*.pem
+.claude/skills/*/*/*token*
+# Virtual Environments
+# Environment Variables & Secrets
+*.key.*
+out/
+# Private keys and certificates (specific patterns to avoid false positives)
+.aws/credentials
+dist/
+*.njsproj
+.claude/settings.local.json
+.cursor/
+# Old patterns caused false positives for: keyboard-config, hotkey, monkey-patch, etc.
+[Dd]esktop.ini
+*.secret.*
+.fseventsd
+*.suo
+logs/
+*.temp
+*.backup/
+*.dbm
+.directory
+.ruff_cache/
+*.egg-info/
+*.sqlite3
+*.pyd
+.claude/settings.local.*.json
+.TemporaryItems
+*.p12
+# Version: 0.28.0
+# Windows
+*.tmp
+*-key.*
+venv/
+*.sw?
+# Linux
+.netlify/
+.claude/skills/*/.env*
+htmlcov/
+.next/
+*_secret=*
+*_token=*
+*.swp
+# API credentials patterns
+*-secret.*
+.mypy_cache/
+*-backup/
+.Spotlight-V100
+.AppleDouble
+*.rdb
+# Build Artifacts
+.firebase/
+# Python Cache & Database
+# Test Coverage
+secret-key-*
+# Backups
+# OS Files
+.coverage
+# Claude Code Skills Secrets
+.Trashes
+*.sqlite
+.DocumentRevisions-V100
+env/
+!.env.example
+.claude/skills/*/secrets/
+# MoAI-ADK Package Distribution .gitignore
+# uv.lock
+# Cloud provider credentials
+.claude/skills/*/*/*secret*
+*.tsbuildinfo
+# Legacy config format (migrated to YAML in v0.32.0)
+# Node.js (for docs/Nextra)
+.env
+.tscache/
+*.sln
+.vercel/
+# Mac
+.vscode/
+*_key.*
+# uv.lock is intentionally included for reproducible builds
+*.sublime-workspace
+# Package Distribution
+.claude/.env.local*
+*~
+coverage.json
+*.db
+.env/
+.aws/config
+*_backup_*/
+*.pyo
+*.jks
+.LSOverride
+*.egg
+
+# MoAI Directory Management
+# .moai local-only directories (user projects only)
+# git applies the LAST matching rule, so ignore rules must come before the
+# negations that re-include tracked subpaths.
+.moai/*
+.moai/error_logs/
+.moai/archived-skills/
+.moai/backups/
+.moai/analytics/
+.moai/archive/
+.moai/docs/
+.moai/work/
+.moai-backups/
+# Tracked in git: config/, memory/, project/, scripts/, specs/
+!.moai/scripts/
+!.moai/scripts/**
+!.moai/specs/
+!.moai/specs/**
+!.moai/memory/
+!.moai/memory/**
+!.moai/config/
+!.moai/config/**
+!.moai/project/
+!.moai/project/**
+# Must stay local-only (placed after the negations above so they win)
+.moai/config/config.json
+# .moai local development scripts (not distributed)
+.moai/scripts/sync-*.py
+.moai/scripts/phase*.py
+.moai/scripts/phase*.sh
+.moai/scripts/sync-*.sh
+.moai/scripts/*sync*.sh
+.moai/scripts/__pycache__/
+# .moai runtime dirs (never commit)
+.moai/logs/
+.moai/temp/
+.moai/cache/
+.moai/reports/
+# OS junk must never surface inside re-included .moai subtrees
+.DS_Store
