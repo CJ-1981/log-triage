@@ -1,0 +1,62 @@
+{
+  "project": {
+    "name": "log-triage",
+    "mode": "personal",
+    "locale": "en",
+    "language": "generic",
+    "language_detection": {
+      "detected_language": "generic",
+      "detection_method": "cli_default",
+      "confidence": null,
+      "markers": [],
+      "confirmed_by": null
+    }
+  },
+  "language": {
+    "conversation_language": "en",
+    "conversation_language_name": "English"
+  },
+  "constitution": {
+    "enforce_tdd": true,
+    "test_coverage_target": 85
+  },
+  "git_strategy": {
+    "personal": {
+      "auto_checkpoint": "disabled",
+      "checkpoint_events": [
+        "delete",
+        "refactor",
+        "merge",
+        "script",
+        "critical-file"
+      ],
+      "checkpoint_type": "local-branch",
+      "max_checkpoints": 10,
+      "cleanup_days": 7,
+      "push_to_remote": false,
+      "auto_commit": true,
+      "branch_prefix": "feature/SPEC-",
+      "develop_branch": "develop",
+      "main_branch": "main",
+      "prevent_branch_creation": false,
+      "work_on_main": false
+    },
+    "team": {
+      "auto_pr": false,
+      "develop_branch": "develop",
+      "draft_pr": false,
+      "branch_prefix": "feature/SPEC-",
+      "main_branch": "main",
+      "use_gitflow": true,
+      "default_pr_base": "develop",
+      "prevent_main_direct_merge": false
+    }
+  },
+  "session": {
+    "suppress_setup_messages": false,
+    "notes": "suppress_setup_messages: false enables SessionStart output. Set to true to suppress messages (show again after 7 days)"
+  },
+  "moai": {
+    "version": "0.34.0"
+  }
+}
