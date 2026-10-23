@@ -150,6 +150,16 @@ test('sortIds orders by comparator and reports cancellation', async () => {
   assert.strictEqual(empty.length, 0);
 });
 
+test('sortIds merge passes order arrays wider than one RUN block (>8192)', async () => {
+  // Reverse order forces every bottom-up merge pass to move elements, so the
+  // width-doubling loop (never reached at or below the 8192 RUN) is exercised.
+  const n = 30000;
+  const ids = new Float64Array(n);
+  for (let i = 0; i < n; i++) ids[i] = n - i;
+  const sorted = await LT.sortIds(ids, (a, b) => a - b, () => false);
+  for (let i = 0; i < n; i++) assert.strictEqual(sorted[i], i + 1, 'full ascending order at ' + i);
+});
+
 test('PagedLog.index pins BOM handling and flags non-UTF-8 files', async () => {
   const bom = Buffer.from([0xef, 0xbb, 0xbf]);
   const text = LOGCAT.join('\n') + '\n';
@@ -332,6 +342,41 @@ test('binary capture: exhausted resync fails loudly naming offset and record cou
   const log = new LT.PagedLog(new Blob([buf]), 'b6', 0);
   await assert.rejects(() => log.index(null, null, 10), (e) => {
     assert.match(e.message, /no plausible DLT boundary found after byte \d+ \(1 records indexed\)/);
+    return true;
+  });
+});
+
+// Boundary-free filler wider than the 1 MiB read chunk: 'A' runs are never a
+// plausible boundary (htyp & 0xe0 = 0x40), so the resync scan can only leave
+// the window via the starve loop, exercising the slide()/readChunk() rounds
+// the single-chunk fixtures above never reach.
+
+test('binary capture: resync spanning multiple read chunks starves forward and recovers (R5-2)', async () => {
+  const m1 = buildMsg({ msbf: true, mcnt: 1, ueh: { msin: 0x41, argc: 1 }, payload: argStr('first', true) });
+  const m2 = buildMsg({ msbf: true, mcnt: 2, ueh: { msin: 0x41, argc: 1 }, payload: argStr('second', true) }); // adjacency feeds the sniff chain
+  const m3 = buildMsg({ msbf: true, mcnt: 3, ueh: { msin: 0x41, argc: 1 }, payload: argStr('third', true) });
+  const gap = bts(new Array(2 * 1024 * 1024 + 100000).fill(0x41)); // > 2 MiB: two slide/readChunk rounds before the boundary appears
+  const buf = cat(m1, m2, gap, m3);
+  const log = new LT.PagedLog(new Blob([buf]), 'b6a', 0);
+  await log.index(null, null, 10);
+  assert.strictEqual(log.format, 'dlt-binary');
+  assert.strictEqual(log.count, 3, 'records on both sides of the chunk-wide gap survive');
+  assert.strictEqual(log.warnings, 1, 'exactly one recovery warning from the starve loop');
+  const rows = await log.page(0);
+  assert.ok(rows[0].raw.includes('first'), 'records before the corruption are intact');
+  assert.ok(rows[1].raw.includes('second'), 'records before the corruption are intact');
+  assert.ok(rows[2].raw.includes('third'), 'the starve loop recovered the record after the gap');
+  assert.strictEqual(log.offsets.get(2), m1.length + m2.length + gap.length, 'recovery lands byte-exact on the next message start');
+});
+
+test('binary capture: boundary-free tail wider than one chunk starves to EOF and fails loudly (R5-4)', async () => {
+  const m1 = buildMsg({ msbf: true, mcnt: 1, ueh: { msin: 0x41, argc: 1 }, payload: argStr('first', true) });
+  const m2 = buildMsg({ msbf: true, mcnt: 2, ueh: { msin: 0x41, argc: 1 }, payload: argStr('second', true) });
+  const gap = bts(new Array(1024 * 1024 + 100000).fill(0x41)); // no boundary through EOF
+  const buf = cat(m1, m2, gap);
+  const log = new LT.PagedLog(new Blob([buf]), 'b6b', 0);
+  await assert.rejects(() => log.index(null, null, 10), (e) => {
+    assert.match(e.message, /no plausible DLT boundary found after byte \d+ \(2 records indexed\)/);
     return true;
   });
 });
