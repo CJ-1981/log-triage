@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- fix(viewer): detect a silently dead paging worker with a silence watchdog — fail fast with recovery guidance instead of a frozen viewer
 
 ## 1.59.0 (2026-10-23)
 - test(dlt): cover the multi-chunk resync-starve loop and wide sortIds merges

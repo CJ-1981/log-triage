@@ -86,6 +86,10 @@
   const VALVE = 8 * 1024 * 1024;
   let ingestAbort = false;
   const paging = new LT.PagingClient();
+  // The paging client fails fast when its worker dies silently (no error
+  // event — OOM kill or a never-settling await); surface that here instead of
+  // leaving a permanently stuck busy chip with no explanation.
+  window.addEventListener('lt-worker-stall', () => flash('viewer worker stopped responding — reload the page to recover', 15000));
   const PAGE_SIZE = 500;
   const MAX_WINDOW_PAGES = 5; // continuous-scroll window cap (5 * PAGE_SIZE rows)
   let pageStart = 0, viewStart = 0, viewToken = 0, pageToken = 0, busyToken = 0, loadSerial = Promise.resolve();

@@ -87,7 +87,7 @@ Implemented in G2–G8:
 | `src/search.js` | Ripgrep-style search building blocks (`-F -i -w -v`, `-B/-A`, `-c/-l`), capped results; the matcher is shared by the instant tab and the paging worker. |
 | `src/paged.js` | Full-file log index: columnar typed arrays (Float64 byte offsets, packed timestamp keys, level codes), streaming line splitter with time-sliced yields and cancellation, on-demand 256-line pages over `File.slice` with a byte-bounded LRU cache, head+tail analysis sampling, and an async merge sort for timeline order. |
 | `src/app-paging-worker.js` | The dedicated paging worker: owns indexes, matching (filter engine + search), timeline ordering, page fetches, locate, and removal; emits throttled progress and honours per-request cancellation tokens. |
-| `src/app-paging.js` | Browser RPC client for the worker (Blob-URL Worker from the inlined worker bundle; progress-aware promises). |
+| `src/app-paging.js` | Browser RPC client for the worker (Blob-URL Worker from the inlined worker bundle; progress-aware promises; a silence watchdog terminates a worker that died without an error event, rejects its requests with recovery guidance, and raises `lt-worker-stall`). |
 | `src/store.js` | Analysis-sample store and per-file counters (total/kept/bytes, level tally); the viewer scope is the worker index, not this store. |
 | `src/timeline.js` | Merged-timeline ordering (timestamp sort, file-order tiebreak) and the canvas histogram data. |
 | `src/selection.js` | Selection model keyed by global row ids (`seq`): anchor / shift-range / ctrl-toggle / ctrl+A; masked copy with optional `file:lineNo:` prefixes. |

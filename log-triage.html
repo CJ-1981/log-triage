@@ -4578,9 +4578,36 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   }
 
   class PagingClient {
-    constructor() {
+    // @MX:NOTE: stallMs is a SILENCE threshold, not a duration cap — every
+    // worker message for a request (progress included) resets its timer, and
+    // all long operations emit throttled progress at <=60ms, so multi-GB
+    // indexing never trips it. It fires only when the worker died without an
+    // error event (browser OOM kill, a never-settling await inside the
+    // worker), which used to hang every page load until a manual refresh.
+    constructor(stallMs) {
       this.next = 0; this.pending = new Map();
+      this.stallMs = stallMs || 30000;
+      this.dead = false; // a stall was detected; requests fail fast with guidance
       this.worker = this.spawnWorker();
+    }
+    arm(p) {
+      p.timer = setTimeout(() => this.onStall(), this.stallMs);
+      if (p.timer.unref) p.timer.unref(); // keep plain-Node unit runs exitable
+    }
+    onStall() {
+      if (this.dead || !this.pending.size) return;
+      this.dead = true;
+      // Terminate frees the (likely gigabyte-scale) worker heap; the indexes
+      // it held are unrecoverable — a respawned worker has no sources, so
+      // replaying view requests there would return silently empty pages.
+      // Fail-fast with guidance instead, and let the page surface the notice.
+      try { if (this.worker.terminate) this.worker.terminate(); } catch (e) { /* already gone */ }
+      for (const p of this.pending.values()) {
+        clearTimeout(p.timer);
+        p.reject(new Error('viewer worker stopped responding — reload the page to recover'));
+      }
+      this.pending.clear();
+      window.dispatchEvent(new CustomEvent('lt-worker-stall', { detail: { silentMs: this.stallMs } }));
     }
     spawnWorker() {
       let worker;
@@ -4596,7 +4623,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       worker.onerror = (e) => {
         if (this.worker !== worker) return;
         if (!answered) { this.worker = this.useInlineWorker(); return; }
-        for (const p of this.pending.values()) p.reject(new Error(e.message || 'Paging worker failed'));
+        for (const p of this.pending.values()) { clearTimeout(p.timer); p.reject(new Error(e.message || 'Paging worker failed')); }
         this.pending.clear();
       };
       return worker;
@@ -4610,17 +4637,20 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       // fresh ids, so stale responses from the old worker find no pending
       // entry and are ignored instead of rejecting live requests.
       for (const p of Array.from(this.pending.values())) {
+        clearTimeout(p.timer);
         this.pending.delete(p.payload.id);
         p.payload = Object.assign({}, p.payload, { id: ++this.next });
         this.pending.set(p.payload.id, p);
+        this.arm(p);
         this.inline.postMessage(p.payload);
       }
       return this.inline;
     }
     onMessage(data) {
       const p = this.pending.get(data.id); if (!p) return;
-      if (data.progress != null) { if (p.progress) p.progress(data); return; }
+      if (data.progress != null) { if (p.progress) p.progress(data); clearTimeout(p.timer); this.arm(p); return; }
       this.pending.delete(data.id);
+      clearTimeout(p.timer);
       if (data.error) {
         // Worker booted but cannot read Blob data (WebKit on file://): retry
         // on the inline twin once, then surface further errors as before.
@@ -4634,9 +4664,11 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     }
     request(type, payload = {}, progress) {
       return new Promise((resolve, reject) => {
+        if (this.dead) return reject(new Error('viewer worker stopped responding — reload the page to recover'));
         const id = ++this.next;
         const entry = { resolve, reject, progress, payload: Object.assign({ id, type }, payload) };
         this.pending.set(id, entry);
+        this.arm(entry);
         this.worker.postMessage(entry.payload);
       });
     }
@@ -4895,6 +4927,10 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   const VALVE = 8 * 1024 * 1024;
   let ingestAbort = false;
   const paging = new LT.PagingClient();
+  // The paging client fails fast when its worker dies silently (no error
+  // event — OOM kill or a never-settling await); surface that here instead of
+  // leaving a permanently stuck busy chip with no explanation.
+  window.addEventListener('lt-worker-stall', () => flash('viewer worker stopped responding — reload the page to recover', 15000));
   const PAGE_SIZE = 500;
   const MAX_WINDOW_PAGES = 5; // continuous-scroll window cap (5 * PAGE_SIZE rows)
   let pageStart = 0, viewStart = 0, viewToken = 0, pageToken = 0, busyToken = 0, loadSerial = Promise.resolve();
