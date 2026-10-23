@@ -265,7 +265,7 @@ Log files often arrive packed, so the ingestion pipeline transparently looks ins
 
 ### FR-27 — Text-converted DLT (dlt-viewer ASCII export)
 
-Status: implemented (v1.43.0). Binary `.dlt` files and FIBEX/non-verbose payload decoding are explicitly deferred (ADR-0014).
+Status: implemented (v1.43.0). Binary `.dlt` files were deferred here (ADR-0014) and are now implemented as FR-30 (v1.59.0); FIBEX and typed non-verbose payload decoding remain deferred — non-verbose payload bytes render as hex dumps per FR-30.
 
 AUTOSAR DLT logs converted to text by the dlt-viewer ASCII exporter are a first-class format: they are auto-detected, parsed into the shared record model, and flow through the whole pipeline (paging, filters, masking, search, analysis, export) like any other text format. The export line shape is `<index> <yyyy/mm/dd hh:mm:ss>.<µs> <dlt-ts> <counter> <ecuid> <appid> <ctid> <sessionid> <type> <subtype> <mode> <args> <payload>` (authoritative source: dlt-viewer `qdlt/qdltexporter.cpp`).
 
@@ -291,6 +291,18 @@ Status: implemented (v1.57.0, SPEC-TABS-001).
 - AC-2: Focus guard: digits typed in an input, textarea, select, or contentEditable element are delivered to the field as normal text; IME composition is never interrupted; zen mode ignores digits (Esc leaves zen first).
 - AC-3: Escape releases text-field focus back to the page so the single-key shortcuts (M, W, B, digits, Esc clear-selection) work again without the mouse. The release is ordered AFTER the zen-exit and search-all-panel-close Escape handlers — which keep closing those surfaces first from any focus, even inside a field — and instantly dismisses the floating Ctrl+F find hint.
 - AC-4: On the Multifile search tab Ctrl/Cmd+F focuses the search pattern field with its existing text selected (typing replaces the stale pattern); the viewer's Ctrl+F interception (FR-10 AC-7) is unchanged and every other tab keeps the native browser find.
+
+### FR-30 — Binary DLT captures (dlt-binary)
+
+Status: implemented (v1.59.0, SPEC-DLT-BINARY-001). Supersedes the binary half of ADR-0014's deferral; DLTv2 (storage-header version `44 4C 54 02`, variable-length framing) and FIBEX descriptions remain out of scope.
+
+Raw AUTOSAR DLT binary captures are a first-class format: they are auto-detected, decoded per message into the shared record model, and flow through the whole pipeline (paging, filters, masking, search, analysis, export) like any other format.
+
+- AC-1 (detection): a file whose first bytes equal the storage-header magic `44 4C 54 01` classifies as `dlt-binary` unconditionally; a headerless capture classifies only when a plausible DLT v1 standard header passes a chained look-ahead (at least two consecutive plausible boundaries, or a complete first-message decode) AND the head scores below 0.5 text confidence — protocol-version bits alone pass every first byte `0x20`–`0x3F`, so the veto keeps ordinary text out. A capture beginning `44 4C 54 02` never classifies binary and routes to the text path.
+- AC-2 (decode and render): indexing walks message boundaries (optional 16-byte storage header detected per record — a single capture may mix storage-prefixed and headerless messages; standard header with MSBF-selected byte order; optional UEH extended header). Verbose messages render typed arguments (string/boolean/uint/int and kin) with payloadhex fallback for opaque or invalidly-typed payloads; levels map from the msin nibbles to the text-path vocabulary (F/E/W/I/D/V, `default`→null); non-log MSTP types render the text-path keywords (app_trace, nw_trace, control, extension) and reserved MSTP values render a deterministic `mstp=N` literal. Storage-header timestamps normalize to year-less `MM-DD HH:MM:SS.mmm`; headerless messages carry null ts.
+- AC-3 (pipeline parity): filters, quick scan, full search, and export archive scans resolve matches in the decoded record index space via one format-agnostic record iterator; page reads re-decode each message deterministically — identical bytes always produce identical records, offsets, rendered lines, and warning counts.
+- AC-4 (resilience): a truncated final message decodes as a partial record plus one warning; implausible length framing resynchronizes to the next plausible boundary, each desynchronization counted as a warning; resync that finds no plausible boundary anywhere ahead fails loudly with the byte offset and the record count so far; a header-only tail is a clean empty capture.
+- AC-5 (diagnostics): the lossy-decode warning count surfaces as a `warn` badge on the file entry (alongside the existing `enc?` badge); a positive `dlt-binary` classification never shows the `enc?` badge, because rendered text comes from the decoder.
 
 ## Non-functional requirements
 
