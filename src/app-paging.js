@@ -37,7 +37,6 @@
     }
     arm(p) {
       p.timer = setTimeout(() => this.onStall(), this.stallMs);
-      if (p.timer.unref) p.timer.unref(); // keep plain-Node unit runs exitable
     }
     onStall() {
       if (this.dead || !this.pending.size) return;
