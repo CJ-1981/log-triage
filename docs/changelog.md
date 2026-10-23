@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+## 1.59.0 (2026-10-23)
+- test(dlt): cover the multi-chunk resync-starve loop and wide sortIds merges
+- chore(repo): fix .moai gitignore rule order and ignore runtime dirs
+- test(dlt): cover binary .dlt drop flow in e2e app suite
+- feat(dlt): integrate binary .dlt into indexing, detection, and search pipelines (SPEC-DLT-BINARY-001)
+- docs(spec): add SPEC-DLT-BINARY-001 for binary DLT log support
+- feat(dlt): index binary .dlt captures in the paging pipeline (SPEC-DLT-BINARY-001)
+- feat(dlt): pure binary .dlt decoder module with typed args, hex fallback, and resync
+- chore(moai): track project config, docs, and SPEC library
+- docs: sync living documents with SPEC-VIEWER-002 and SPEC-TABS-001
+
 ## 1.58.0 (2026-10-19)
 - feat(viewer): rename quick filter to quick scan, decouple it from the Filter toggle (SPEC-VIEWER-002 amendment)
 
