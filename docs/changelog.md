@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+
+## 1.59.1 (2026-10-23)
+- test(viewer): drop unref from watchdog timers — drains CI Node 22 event loop
+- fix(viewer): add a silence watchdog for the paging worker
+
 - fix(viewer): detect a silently dead paging worker with a silence watchdog — fail fast with recovery guidance instead of a frozen viewer
 
 ## 1.59.0 (2026-10-23)
