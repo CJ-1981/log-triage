@@ -45,6 +45,7 @@ const WORKER_ORDER = [
   'parser.js',
   'filters.js',
   'search.js',
+  'decode-dlt.js',
   'paged.js',
   'app-paging-worker.js',
 ];

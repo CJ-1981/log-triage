@@ -1,0 +1,5 @@
+01-01 00:00:00.000 1 ECU1 APP1:CTX1 1234 log info 4097 3.5 hello world
+01-01 01:01:01.234 2 ECU1 APP1:CTX1 1234 log error 2.718281828459045 -7 true
+01-01 01:02:01.999 3 ECU1 HMI:CAN 777 log warn hex 01ff10
+01-01 01:03:00.000 4 ECU1 ECU1 - control request hex dead
+01-01 01:04:00.500 5 ECU1 APP1:CTX1 1234 app_trace variable 00ff10 café
