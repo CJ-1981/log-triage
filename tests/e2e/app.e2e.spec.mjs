@@ -2426,6 +2426,47 @@ test('binary .dlt drop: lossy capture surfaces warnings and flows chips, full-fi
   );
 });
 
+test('binary .dlt drop: headerless capture renders the pinned expected lines, utf8 pinned with no enc? badge, clean warnings, quick scan and masked export (AC-E.1, AC-1.1, AC-E.8)', async () => {
+  await fresh();
+  // the headerless pinned hex fixture becomes a real binary .dlt file on disk
+  const bin = join(os.tmpdir(), 'lt-binary-nostorage-' + Date.now() + '.dlt');
+  fs.writeFileSync(bin, Buffer.from(fs.readFileSync(join(root, 'tests', 'fixtures', 'dlt-binary-nostorage.hex'), 'utf8').trim(), 'hex'));
+  await page.setInputFiles('#file-input', [bin]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '3', null, { timeout: 8000 });
+  const st = await status();
+  assert.strictEqual(st.fmt, 'dlt-binary', 'format badge is dlt-binary');
+  // utf8 is pinned true on the binary path and this capture is clean, so the
+  // file entry shows neither the enc? quality badge nor a lossy warn badge
+  const encBadges = await page.evaluate(() => Array.from(document.querySelectorAll('.file-item .badge.enc')).map((b) => b.textContent));
+  assert.deepStrictEqual(encBadges, [], 'no enc? badge and no lossy warn badge on the clean binary fixture: ' + JSON.stringify(encBadges));
+  // level chips counted from the decoded records: info + control -> I, warn -> W
+  const chipText = st.chips.join(' ');
+  assert.match(chipText, /I2/, 'info and control rows counted: ' + chipText);
+  assert.match(chipText, /W1/, 'warn row counted: ' + chipText);
+  // every rendered line equals the pinned expected text (hex-dump rows included)
+  const expected = fs.readFileSync(join(root, 'tests', 'fixtures', 'dlt-binary-nostorage-expected.txt'), 'utf8').replace(/\r\n/g, '\n').replace(/\n$/, '').split('\n');
+  const rows = await page.evaluate(() => Array.from(document.querySelectorAll('.vrow .txt')).map((n) => n.textContent));
+  assert.deepStrictEqual(rows, expected, 'rendered lines equal the pinned expected text');
+  // AC-E.8: a quick scan hit on a decoded token narrows to the verbose row
+  await page.fill('#quick', 'hello');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '1', null, { timeout: 5000 });
+  await page.fill('#quick', '');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '3', null, { timeout: 5000 });
+  // sanitized export: plain lines equal the rendered binary lines exactly, so
+  // no raw binary garbage leaks into the downloaded text
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  await page.selectOption('#exp-prefix', 'none'); // plain lines, no file:line prefix
+  const downloadPromise = page.waitForEvent('download', { timeout: 8000 });
+  await click('exp-txt');
+  const download = await downloadPromise;
+  const content = fs.readFileSync(await download.path(), 'utf8');
+  assert.deepStrictEqual(
+    content.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n'),
+    expected,
+    'export carries exactly the rendered binary lines and no binary garbage',
+  );
+});
+
 test('analysis PII census: card buttons open masked sample panels, one at a time, jump to line', async () => {
   await fresh();
   await click('btn-demo');
