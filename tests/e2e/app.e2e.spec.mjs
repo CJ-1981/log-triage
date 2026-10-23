@@ -4035,15 +4035,20 @@ test('Escape blurs a focused field and restores single-key shortcuts (AC-3.1)', 
 });
 
 test('zen exit keeps any-focus Escape precedence over blur (AC-3.2)', async () => {
+  // Focus assertions wait for the transition instead of bare-asserting: the
+  // ingest render tail can still be settling when loadDemo returns on a slow
+  // runner, and a bare read raced it ~50% of CI runs (flaked twice, once on a
+  // docs-only commit). The steady state asserted is unchanged.
+  const focusedQuick = () => document.activeElement === document.getElementById('quick');
   await loadDemo();
   await page.click('#quick');
   await click('btn-zen'); // programmatic click keeps focus in #quick
-  assert.ok(await page.evaluate(() => document.activeElement === document.getElementById('quick')), 'field focused inside zen');
+  await page.waitForFunction(focusedQuick, null, DEMO_WAIT);
   await page.keyboard.press('Escape');
-  assert.ok(await page.evaluate(() => !document.body.classList.contains('zen')), 'first Escape exits zen, does not merely blur');
-  assert.ok(await page.evaluate(() => document.activeElement === document.getElementById('quick')), 'field keeps focus through the zen exit');
+  await page.waitForFunction(() => !document.body.classList.contains('zen'), null, DEMO_WAIT);
+  await page.waitForFunction(focusedQuick, null, DEMO_WAIT);
   await page.keyboard.press('Escape');
-  assert.ok(await page.evaluate(() => document.activeElement === document.body), 'second Escape blurs the field');
+  await page.waitForFunction(() => document.activeElement === document.body, null, DEMO_WAIT);
 });
 
 test('search-all close keeps any-focus Escape precedence over blur (AC-3.3)', async () => {
