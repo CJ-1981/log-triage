@@ -2319,6 +2319,113 @@ test('dlt-viewer text export: badge, chips, drawer fields, masking, quick filter
   await page.fill('#quick', '');
 });
 
+test('binary .dlt drop: dlt-binary badge, level chips, hex-dump rows, drawer fields (AC-E.1, AC-E.4, AC-E.5)', async () => {
+  await fresh();
+  // the pinned hex fixture becomes a real binary .dlt file on disk
+  const bin = join(os.tmpdir(), 'lt-binary-sample-' + Date.now() + '.dlt');
+  fs.writeFileSync(bin, Buffer.from(fs.readFileSync(join(root, 'tests', 'fixtures', 'dlt-binary-sample.hex'), 'utf8').trim(), 'hex'));
+  await page.setInputFiles('#file-input', [bin]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '5', null, { timeout: 8000 });
+  const st = await status();
+  assert.strictEqual(st.fmt, 'dlt-binary', 'format badge is dlt-binary');
+  const chipText = st.chips.join(' ');
+  assert.match(chipText, /I2/, 'level chips counted from decoded records: ' + chipText);
+  assert.match(chipText, /E1/, 'error chip counted: ' + chipText);
+  assert.match(chipText, /W1/, 'warn chip counted: ' + chipText);
+  assert.match(chipText, /D1/, 'debug chip counted: ' + chipText);
+  // hex-dump rows are visible in the viewer (AC-E.4/AC-E.5)
+  const rowsText = await page.evaluate(() => Array.from(document.querySelectorAll('.vrow .txt')).map((n) => n.textContent).join('\n'));
+  assert.match(rowsText, /log warn hex 01ff10/, 'non-verbose hex-dump row visible');
+  assert.match(rowsText, /control request hex dead/, 'control keyword row visible');
+  assert.match(rowsText, /app_trace variable 00ff10/, 'app_trace keyword row visible');
+  // drawer fields decode from the binary record: tag is appid:ctid, pid is the
+  // session id, ts the storage-header timestamp
+  await page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('.vrow'));
+    const target = rows.find((r) => r.textContent.includes('hello world'));
+    if (target) target.querySelector('.txt').dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+  await page.waitForFunction(() => document.getElementById('drawer').classList.contains('open'), null, { timeout: 5000 });
+  const drawerText = await page.evaluate(() => document.getElementById('drawer').textContent);
+  assert.ok(drawerText.includes('APP1:CTX1'), 'tag is appid:ctid');
+  assert.ok(drawerText.includes('1234'), 'pid holds the session id');
+  assert.ok(drawerText.includes('01-01 00:00:00.000'), 'drawer carries the storage-header timestamp');
+});
+
+test('binary .dlt drop: lossy capture surfaces warnings and flows chips, full-file search, mask, export (AC-E.2, AC-5.5, AC-E.8)', async () => {
+  await fresh();
+  // byte-built lossy capture: a valid verbose info line with a VIN, implausible
+  // framing (resync), a non-verbose hex row, and a truncated tail -> 3 records,
+  // exactly 2 warnings, levels I1/E2
+  const enc = (s) => new TextEncoder().encode(s);
+  const bcat = (...xs) => { const n = xs.reduce((s, a) => s + a.length, 0); const out = new Uint8Array(n); let p = 0; for (const a of xs) { out.set(a, p); p += a.length; } return out; };
+  const bb = (a) => new Uint8Array(a);
+  const ba4 = (s) => { const out = new Uint8Array(4); out.set(enc(s).slice(0, 4)); return out; };
+  const bu16 = (v) => bb([v & 255, (v >> 8) & 255]);
+  const bu32 = (v) => bb([v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255]);
+  const bmsg = (o) => {
+    const payload = o.str != null ? bcat(bu32(0x200 | 0x8000), bu16(o.str.length + 1), enc(o.str), bb([0])) : bb(o.payload || []);
+    const body = bcat(bb([0x21, o.mcnt]), bu16(4 + 10 + payload.length), bb([o.msin, o.str != null ? 1 : 0]), ba4('APP1'), ba4('CTX1'), payload);
+    return o.storage === undefined ? body : bcat(bb([0x44, 0x4c, 0x54, 0x01]), ba4('ECU1'), bu32(o.storage), bu32(0), body);
+  };
+  const good = bmsg({ storage: 0, mcnt: 1, msin: 0x41, str: 'VIN read: YV4AB9CD12EF34567 ok' });
+  const bad = bcat(bb([0x20, 9, 0, 0]), bb(new Array(40).fill(0xaa))); // declared length below minLen
+  const hexRow = bmsg({ mcnt: 2, msin: 0x20, payload: [0xde, 0xad, 0xbe, 0xef] });
+  const tail = bmsg({ mcnt: 3, msin: 0x20, payload: [1, 2, 3, 4, 5, 6] }).slice(0, -2); // truncated at EOF
+  const lossy = join(os.tmpdir(), 'lt-binary-lossy-' + Date.now() + '.dlt');
+  fs.writeFileSync(lossy, Buffer.from(bcat(good, bad, hexRow, tail)));
+  await page.setInputFiles('#file-input', [lossy]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '3', null, { timeout: 8000 });
+  const st = await status();
+  assert.strictEqual(st.fmt, 'dlt-binary');
+  const warn = await page.evaluate(() => { const b = document.querySelector('.file-item .badge.enc'); return b ? b.textContent : ''; });
+  assert.strictEqual(warn, '2 warn', 'lossy decode warning badge shown on the file entry: ' + JSON.stringify(warn));
+  // level chip filters the decoded records: E narrows to the two error rows
+  const chipE = () => page.evaluate(() => {
+    const c = Array.from(document.querySelectorAll('.chip')).find((n) => n.textContent.startsWith('E'));
+    if (c) c.click();
+    return !!c;
+  });
+  assert.ok(await chipE(), 'E chip present');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '2', null, { timeout: 5000 });
+  assert.ok(await chipE());
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '3', null, { timeout: 5000 });
+  // full-file search runs over the decoded record space and resolves the
+  // rendered-only hex row (R3-2)
+  await page.evaluate(() => {
+    const q = document.getElementById('quick');
+    q.value = 'deadbeef';
+    q.dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '1', null, { timeout: 5000 });
+  await click('btn-sall');
+  await page.waitForFunction(() => /1 match\(es\) for \/deadbeef\/ in all files/.test(document.getElementById('sall-note').textContent), null, { timeout: 8000 });
+  const sallText = await page.evaluate(() => document.getElementById('sall-rows').textContent);
+  assert.ok(sallText.includes('hex deadbeef'), 'search-all resolves the rendered hex-dump row');
+  // masking applies to the rendered binary line in the viewer
+  await page.fill('#quick', '');
+  await page.waitForFunction(() => document.getElementById('st-shown').textContent === '3', null, { timeout: 5000 });
+  const viewerText = await page.evaluate(() => document.querySelectorAll('.vrow .txt')[0].textContent);
+  assert.ok(viewerText.includes('YV4**********4567'), 'VIN masked in the binary viewer row');
+  assert.ok(!viewerText.includes('YV4AB9CD12EF34567'), 'no raw VIN in the viewer');
+  // sanitized export equals the rendered binary lines, masked
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=export]').click());
+  await page.selectOption('#exp-prefix', 'none'); // plain lines, no file:line prefix
+  const downloadPromise = page.waitForEvent('download', { timeout: 8000 });
+  await click('exp-txt');
+  const download = await downloadPromise;
+  const content = fs.readFileSync(await download.path(), 'utf8');
+  assert.deepStrictEqual(
+    content.replace(/\r\n/g, '\n').replace(/\n+$/, '').split('\n'),
+    [
+      '01-01 00:00:00.000 1 ECU1 APP1:CTX1 - log info VIN read: YV4**********4567 ok',
+      '2 - APP1:CTX1 - log error hex deadbeef',
+      '3 - APP1:CTX1 - log error hex 01020304',
+    ],
+    'export carries exactly the rendered binary lines, masked',
+  );
+});
+
 test('analysis PII census: card buttons open masked sample panels, one at a time, jump to line', async () => {
   await fresh();
   await click('btn-demo');

@@ -1396,5 +1396,91 @@
     eq(found[0].file, 'f1', 'fileId passthrough when no formatter given');
   });
 
+  /* ============================== G10: dlt-binary (SPEC-DLT-BINARY-001) ============================== */
+
+  /* Byte builders for the binary DLT cases (pure — no DOM, no fs), mirroring
+   * the wire layout of tests/decode-dlt.test.js in miniature: an optional
+   * 16-byte storage header, a UEH standard header with little-endian lengths
+   * (HTYP 0x21), and one payload — a verbose UTF-8 string argument or opaque
+   * non-verbose bytes. */
+  const dltCat = (...xs) => {
+    const n = xs.reduce((s, a) => s + a.length, 0);
+    const out = new Uint8Array(n);
+    let p = 0;
+    for (const a of xs) { out.set(a, p); p += a.length; }
+    return out;
+  };
+  const dltBytes = (a) => new Uint8Array(a);
+  const dltEnc = (s) => new TextEncoder().encode(String(s));
+  const dltAscii4 = (s) => { const out = new Uint8Array(4); out.set(dltEnc(s).slice(0, 4)); return out; };
+  const dltU16 = (v) => dltBytes([v & 255, (v >> 8) & 255]);
+  const dltU32 = (v) => dltBytes([v & 255, (v >> 8) & 255, (v >> 16) & 255, (v >>> 24) & 255]);
+  const dltMsg = (o) => {
+    const payload = o.str != null
+      ? dltCat(dltU32(0x200 | 0x8000), dltU16(o.str.length + 1), dltEnc(o.str), dltBytes([0]))
+      : dltBytes(o.payload || []);
+    const msin = o.msin != null ? o.msin : 0x41; // verbose log info
+    const body = dltCat(dltBytes([0x21, o.mcnt || 1]), dltU16(4 + 10 + payload.length), dltBytes([msin, o.str != null ? 1 : 0]), dltAscii4('APP1'), dltAscii4('CTX1'), payload);
+    if (o.storage == null) return body;
+    return dltCat(dltBytes([0x44, 0x4c, 0x54, 0x01]), dltAscii4('ECU1'), dltU32(o.storage), dltU32(o.micros || 0), body);
+  };
+
+  T('dlt-binary', 'storage magic classifies dlt-binary; DLTv2 magic, logcat heads and dlt-viewer text never do (AC-1.1, AC-1.3, AC-1.6)', () => {
+    const good = dltMsg({ storage: 0, mcnt: 1, str: 'hello' });
+    eq(SRC.dltSniff(good, good.length).binary, true, 'storage magic classifies binary');
+    eq(SRC.dltSniff(good, good.length).storageHeader, true, 'storage-header flag set');
+    const v2 = dltCat(dltBytes([0x44, 0x4c, 0x54, 0x02]), dltBytes([0x20, 0x00, 0x00, 0x08, 1, 2, 3, 4]));
+    eq(SRC.dltSniff(v2, v2.length).binary, false, 'DLTv2 magic is version-exact and never binary');
+    const line = '08-24 15:37:01.123  1234  5678 I ActivityManager: Start proc for broadcast';
+    let text = '';
+    while (text.length < 16384) text += line + '\n';
+    const textHead = dltEnc(text);
+    eq(SRC.dltSniff(textHead, textHead.length).binary, false, '16 KiB logcat-style head never classifies binary');
+    eq(SRC.detectFormat(text.split('\n')).format, 'logcat', 'the same head stays logcat');
+    const dltLine = '1 2026/09/03 14:06:00.100 1788444.3630 10872 ECU1 APP1 CTX1 1234 log info verbose 1 LTE attached';
+    eq(SRC.detectFormat([dltLine, dltLine, dltLine]).format, 'dlt', 'dlt-viewer text keeps the dlt text format');
+  });
+
+  T('dlt-binary', 'storage timestamps normalize year-less; timestamp-less records carry null ts (AC-2.3, AC-2.4)', () => {
+    eq(SRC.dltEpochToTimeText(1577840461, 234567), '01-01 01:01:01.234', 'epoch sec/micros normalize to MM-DD time text');
+    eq(SRC.dltEpochToTimeText(1577840521, 999999), '01-01 01:02:01.999', 'microseconds truncate to milliseconds');
+    // adjacent storage-header and headerless messages: only the carriers get ts
+    const scan = SRC.dltScanMessages(dltCat(
+      dltMsg({ storage: 1577840461, micros: 234567, mcnt: 1, str: 'one' }),
+      dltMsg({ mcnt: 2, str: 'two' }),
+      dltMsg({ storage: 1577840521, micros: 999999, mcnt: 3, str: 'three' }),
+      dltMsg({ mcnt: 4, str: 'four' }),
+    ));
+    eq(scan.warnings, 0);
+    deepEq(scan.records.map((r) => r.record.ts), ['01-01 01:01:01.234', null, '01-01 01:02:01.999', null], 'ts only where the storage header carries one');
+  });
+
+  T('dlt-binary', 'log levels and MSTP keywords keep the text-path vocabulary (AC-3.4, AC-3.5)', () => {
+    const dec = (msin) => SRC.dltDecodeMessage(dltMsg({ msin, str: 'x' }));
+    eq(dec(0x11).record.level, 'F'); eq(dec(0x21).record.level, 'E');
+    eq(dec(0x31).record.level, 'W'); eq(dec(0x41).record.level, 'I');
+    eq(dec(0x51).record.level, 'D'); eq(dec(0x61).record.level, 'V');
+    eq(dec(0x01).record.level, null, 'log default has no level');
+    // line layout without a timestamp: [mcnt, ecu, tag, pid, typeWord, ...]
+    const wordOf = (msin) => dec(msin).line.split(' ')[4];
+    eq(wordOf(0x01), 'log');
+    eq(wordOf(0x01 | (1 << 1)), 'app_trace');
+    eq(wordOf(0x01 | (2 << 1)), 'nw_trace');
+    eq(wordOf(0x01 | (3 << 1)), 'control');
+    eq(wordOf(0x01 | (4 << 1)), 'extension');
+    eq(wordOf(0x01 | (5 << 1)), 'mstp=5', 'reserved MSTP renders the deterministic literal');
+  });
+
+  T('dlt-binary', 'masks apply to rendered binary lines; hex-dump rows stay intact (AC-3.6)', () => {
+    const vin = SRC.dltDecodeMessage(dltMsg({ storage: 0, mcnt: 1, str: 'VIN read: YV4AB9CD12EF34567 ok' }));
+    eq(vin.record.msg, 'VIN read: YV4AB9CD12EF34567 ok', 'the argument renders unmasked at decode time');
+    const masked = SRC.maskLine(vin.line);
+    ok(masked.indexOf('YV4**********4567') >= 0, 'VIN masked in the rendered binary line');
+    ok(masked.indexOf('YV4AB9CD12EF34567') < 0, 'no raw VIN survives masking');
+    const hex = SRC.dltDecodeMessage(dltMsg({ mcnt: 2, msin: 0x04, payload: [0xde, 0xad, 0xbe, 0xef] }));
+    eq(hex.record.msg, 'hex deadbeef', 'non-verbose payload renders as hex');
+    eq(SRC.maskLine(hex.line), hex.line, 'hex-dump rows carry no PII and stay intact');
+  });
+
   return { CASES, eq, deepEq, ok };
 }));

@@ -10,6 +10,7 @@ const MODULE_ORDER = [
   'util.js',
   'detect.js',
   'parser.js',
+  'decode-dlt.js',
   'masks.js',
   'pii-provider.js',
   'pii-remote.js',

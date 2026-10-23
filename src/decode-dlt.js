@@ -243,12 +243,12 @@
   }
 
   /* Walk a whole buffer message by message (index-time reference semantics,
-   * SPEC R5). Returns { records: [{ offset, record, line }], warnings } where
-   * offset is the standard-header position (storage headers are framing and
-   * per-record optional, R1-5 / AC-E.9). Throws one loud error when damage
-   * leaves no plausible boundary anywhere ahead (R5-4). Record offsets are
-   * message starts: the storage header when present, else the standard
-   * header (AC-E.9). */
+   * SPEC R5). Returns { records: [{ offset, record, line }], warnings }.
+   * Record offsets are message starts: the storage-header position when the
+   * record carries one, else the standard header (AC-E.9) — so a storage
+   * header is framing that precedes its record's offset and is never an
+   * offset itself (R1-5). Throws one loud error when damage leaves no
+   * plausible boundary anywhere ahead (R5-4). */
   function dltScanMessages(bytes) {
     const records = [];
     let warnings = 0;
@@ -436,6 +436,7 @@
     else if (c < 0xf0) {
       n = 3;
       if (c === 0xe0) { lo = 0xa0; hi = 0xbf; } // overlong lead: tighter floor
+      else if (c === 0xed) { lo = 0x80; hi = 0x9f; } // surrogate-half lead: tighter ceiling
     } else if (c < 0xf5) {
       n = 4;
       if (c === 0xf0) { lo = 0x90; hi = 0xbf; }       // overlong lead: tighter floor

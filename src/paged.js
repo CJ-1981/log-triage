@@ -2,6 +2,14 @@
 (function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(require('./parser.js'), require('./detect.js'), require('./decode-dlt.js')); else Object.assign(root.LT || (root.LT = {}), factory(root.LT, root.LT, root.LT)); }(typeof self !== 'undefined' ? self : this, function (parser, detector, dlt) {
   'use strict';
   const BLOCK = 65536;
+  // Retained tail when the resync window slides (dltRecordLines): a boundary
+  // candidate is undecided while its declared 16-bit total length (at most
+  // 65535) — or the 16 storage-header bytes ahead of it — could still fit once
+  // more bytes arrive, i.e. while it lies within 65551 bytes of the window
+  // end. Keeping 64 KiB plus slack means every byte a slide drops was already
+  // probed and can never become acceptable, so the target the scan eventually
+  // picks matches a whole-buffer dltFindResync over the same bytes (R5-6).
+  const RESYNC_KEEP = 65536 + 64;
   const pause = () => new Promise((resolve) => setTimeout(resolve, 0));
   class Column {
     constructor(Type) { this.Type = Type; this.blocks = []; this.length = 0; }
@@ -46,9 +54,12 @@
   // header is skipped as framing, a trailing next-record one is ignored via
   // the declared-length bound). Resync, truncation and loud-failure
   // semantics mirror dltScanMessages exactly so identical bytes index
-  // identically (R5-6); warnings accumulate into `stats` only when the
-  // caller passes one — page/worker re-decodes pass none, so the index-time
-  // warning count is never mutated (R5-5).
+  // identically (R5-6) — when no boundary exists in the buffered window the
+  // scan runs as a bounded sliding window (RESYNC_KEEP): each appended chunk
+  // is probed once, decided bytes are dropped, and the buffer stays ~1 MiB
+  // even on boundary-free tails. Warnings accumulate into `stats` only when
+  // the caller passes one — page/worker re-decodes pass none, so the
+  // index-time warning count is never mutated (R5-5).
   async function* dltRecordLines(file, onProgress, cancelled, stats) {
     const warn = (n) => { if (stats) stats.warnings += n; };
     let buf = new Uint8Array(0), base = 0, pos = 0, indexed = 0;
@@ -64,14 +75,55 @@
       buf = merged;
       if (onProgress) onProgress(Math.min(file.size, from + chunk.length));
     };
+    // Resync state (R5-2/R5-4): `resyncing` probes each appended chunk exactly
+    // once from the retained band and slides the window forward, so a
+    // boundary-free tail costs one linear pass over a bounded ~1 MiB window
+    // instead of a full rescan and file-sized retention per chunk.
+    // `scanFrom` is the window-relative resume offset: it stays pinned just
+    // past the original implausible boundary until the slide frontier passes
+    // it, then reaches 0 so the retained band is re-probed in full — a
+    // candidate length-blocked in an earlier round is never skipped.
+    // `throwAt` anchors the loud R5-4 error at the original boundary across
+    // slides.
+    let resyncing = false, throwAt = 0, scanFrom = 0;
+    // Drop the consumed/scanned prefix, retaining the RESYNC_KEEP band whose
+    // length-blocked candidates a grown window could still accept; `limit`
+    // clamps the entry slide so the band never reaches back past the
+    // implausible boundary itself (nothing at or before it may be re-probed).
+    const slide = (limit) => {
+      const drop = Math.min(limit, Math.max(0, buf.length - RESYNC_KEEP));
+      if (drop > 0) { buf = buf.slice(drop); base += drop; }
+      scanFrom = Math.max(0, scanFrom - drop);
+      pos = 0;
+    };
     for (;;) {
+      if (resyncing) {
+        const at = dlt.dltFindResync(buf, scanFrom);
+        if (at >= 0) { warn(1); resyncing = false; pos = at; }
+        else {
+          if (base + buf.length >= file.size) {
+            // Every remaining byte probed, no boundary anywhere ahead: loud
+            // failure anchored at the original implausible boundary (R5-4).
+            throw new Error('dlt: no plausible DLT boundary found after byte ' + throwAt + ' (' + indexed + ' records indexed)');
+          }
+          if (cancelled && cancelled()) return;
+          if (performance.now() > deadline) {
+            if (onProgress) onProgress(Math.min(file.size, base + buf.length));
+            await pause();
+            if (cancelled && cancelled()) return;
+            deadline = performance.now() + 8;
+          }
+          slide(Infinity);
+          await readChunk();
+          continue;
+        }
+      }
       if (pos >= buf.length) {
         if (base + buf.length >= file.size) break; // every byte consumed
         if (cancelled && cancelled()) return;
         await readChunk();
         continue;
       }
-      let starved = false;
       while (pos < buf.length) {
         const m = dlt.dltDecodeMessage(buf.subarray(pos));
         const storage = dlt.dltIsStorageMagic(buf, pos);
@@ -81,10 +133,18 @@
           // bytes before failing loudly, so starve for chunks until EOF.
           const at = dlt.dltFindResync(buf, pos + 1);
           if (at >= 0) { warn(1); pos = at; continue; }
-          if (base + buf.length < file.size) { starved = true; break; }
+          if (base + buf.length < file.size) {
+            // No boundary in this window and bytes are still pending: enter
+            // the bounded resync-starve loop at the top of the outer loop.
+            throwAt = base + pos;
+            scanFrom = pos + 1;
+            resyncing = true;
+            slide(pos + 1);
+            break;
+          }
           throw new Error('dlt: no plausible DLT boundary found after byte ' + (base + pos) + ' (' + indexed + ' records indexed)');
         }
-        if (!m || (m.truncated && base + buf.length < file.size)) { starved = true; break; } // message spans the chunk boundary
+        if (!m || (m.truncated && base + buf.length < file.size)) break; // message spans the chunk boundary
         if (m.truncated) {
           // At EOF a declared length that overshoots the buffer is either a
           // corrupt length with a plausible boundary inside the span (R5-2
@@ -107,8 +167,10 @@
           deadline = performance.now() + 8;
         }
       }
-      if (!starved) break;
-      if (base + buf.length >= file.size) break; // defensive: no more bytes will arrive
+      // A message ending exactly on the read boundary leaves pos ==
+      // buf.length without any starvation: fall through so the tail refills
+      // from the file instead of ending the stream with records still unread.
+      if (base + buf.length >= file.size) break; // no more bytes will arrive
       if (cancelled && cancelled()) return;
       await readChunk();
     }

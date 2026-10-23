@@ -126,3 +126,30 @@ test('worker text scans still run over byteLines after the iterator switch', asy
   const page = await w.send({ type: 'page', search: true, start: 0, size: 10 }, (d) => d.rows !== undefined || d.error);
   assert.match(page.rows[0].raw, /CAN bus status ok/);
 });
+
+test('mixed binary + text sources in one worker classify per file and merge by timeKey (AC-E.7)', async () => {
+  const w = makeWorker();
+  const bin = await w.send({ type: 'index', fileId: 'f1', file: new Blob([hexFile('dlt-binary-sample.hex')]) }, (d) => d.count !== undefined || d.error);
+  assert.equal(bin.format, 'dlt-binary', 'per-file classification: binary source stays dlt-binary');
+  assert.equal(bin.count, 5);
+  const txt = await w.send({ type: 'index', fileId: 'f2', file: new Blob([fs.readFileSync(path.join(FX, 'dlt-viewer-sample.txt'))]) }, (d) => d.count !== undefined || d.error);
+  assert.equal(txt.format, 'dlt', 'per-file classification: text source stays dlt');
+  assert.equal(txt.count, 42);
+  // quick scan spans both sources through the format-agnostic record iterator
+  const spec = Object.assign({}, emptySpec, { quick: { pattern: 'ECU1', fixed: true } });
+  const res = await w.send({ type: 'query', spec }, (d) => d.total !== undefined || d.error || d.cancelled);
+  assert.equal(res.total, 47, '5 binary + 42 text rows match in decoded record space');
+  const page = await w.send({ type: 'page', start: 0, size: 50 }, (d) => d.rows !== undefined || d.error);
+  assert.equal(page.total, 47);
+  const rows = page.rows;
+  // merged timeKey sort: every binary record (01-01 storage timestamps)
+  // precedes the text capture (09-03 timestamps), each group in time order
+  assert.deepEqual(rows.slice(0, 5).map((r) => r.fileId), ['f1', 'f1', 'f1', 'f1', 'f1']);
+  assert.deepEqual(rows.slice(0, 5).map((r) => r.lineNo), [1, 2, 3, 4, 5]);
+  assert.deepEqual(rows.slice(5).map((r) => r.fileId), new Array(42).fill('f2'));
+  assert.deepEqual(rows.slice(5).map((r) => r.lineNo), Array.from({ length: 42 }, (_, i) => i + 1), 'per-file lineNo restarts after the source switch');
+  assert.equal(rows[0].seq, 1);
+  assert.equal(rows[5].seq, 6, 'seq stays global while lineNo is per file (nextBase accumulation)');
+  assert.match(rows[0].raw, /APP1:CTX1/, 'binary rows render decoded');
+  assert.match(rows[5].raw, /camera service starting/, 'text rows follow the binary block by timeKey');
+});

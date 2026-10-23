@@ -270,6 +270,15 @@ test('args: UTF-8 strings decode; each invalid byte renders as a lowercase \\xNN
   assert.strictEqual(DLT.dltDecodeMessage(buf).record.msg, 'héllo café bad\\xff!');
 });
 
+test('args: UTF-16 surrogate-half bytes (ED A0 80) render as pinned \\xNN escapes, never a lone surrogate (AC-4.3/R4-3)', () => {
+  // 48 'H' + ED A0 80 (3-byte lead 0xED with a continuation byte in the
+  // surrogate range D800-DFFF) + 00 NUL terminator
+  const buf = buildMsg({ ueh: { msin: 0x41, argc: 1 }, payload: argStrBytes([0x48, 0xed, 0xa0, 0x80, 0x00], true, false) });
+  const msg = DLT.dltDecodeMessage(buf).record.msg;
+  assert.strictEqual(msg, 'H\\xed\\xa0\\x80');
+  assert.ok(!/[\uD800-\uDFFF]/.test(msg), 'no lone surrogate code point survives rendering');
+});
+
 test('args: raw payload renders as lowercase hex', () => {
   const buf = buildMsg({ ueh: { msin: 0x41, argc: 1 }, payload: argRaw([0x00, 0xff, 0x10], false) });
   assert.strictEqual(DLT.dltDecodeMessage(buf).record.msg, '00ff10');
