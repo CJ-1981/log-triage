@@ -145,6 +145,11 @@
       case 'iso8601': return parseWithTs(line);
       case 'mmdd': return parseWithTs(line);
       case 'dlt': return parseDlt(line);
+      // Defensive only: binary-rendered DLT lines always arrive pre-parsed
+      // from the decoder (src/decode-dlt.js), so a future re-parse must
+      // degrade to the null-field continuation shape instead of running the
+      // dlt text regex (RE_DLT_LINE) over binary-rendered text.
+      case 'dlt-binary': return record(null, null, null, null, line);
       default: return parseFallback(line);
     }
   }

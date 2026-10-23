@@ -324,6 +324,7 @@
       if (ingestAbort || !files.includes(entry)) return;
       entry.format = result.format; entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
       entry.utf8 = result.utf8 !== false; // false => head failed strict UTF-8 validation
+      entry.warnings = result.warnings || 0; // lossy binary decode count (dlt-binary, R5-5)
       const f = store._files[entry.id];
       Object.assign(f, { total: result.count, kept: result.count, dropped: 0, bytes: entry.size, levelCounts: result.counts });
       store._keptTotal += result.count;
@@ -483,6 +484,7 @@
         '<div class="fname">' + esc(f.name) + '</div>' +
         '<div class="fmeta"><span class="badge fmt">' + esc(f.format) + '</span>' +
         (f.utf8 === false ? '<span class="badge enc" title="not valid UTF-8 — decoded with replacement characters; text may be garbled">enc?</span>' : '') +
+        (f.warnings ? '<span class="badge enc" title="lossy binary decode — ' + f.warnings + ' resynchronization/decode warning' + (f.warnings === 1 ? '' : 's') + ' while indexing">' + f.warnings + ' warn</span>' : '') +
         '<span>' + LT.fmtBytes(f.size) + '</span><span>' + st.total + ' lines</span>' +
         '<span>' + st.kept + ' kept</span></div>';
       div.onclick = (e) => {

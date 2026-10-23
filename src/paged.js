@@ -1,5 +1,5 @@
 /* File-backed log index. Offsets are Float64, not 32-bit byte positions. */
-(function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(require('./parser.js'), require('./detect.js')); else Object.assign(root.LT || (root.LT = {}), factory(root.LT, root.LT)); }(typeof self !== 'undefined' ? self : this, function (parser, detector) {
+(function (root, factory) { if (typeof module === 'object' && module.exports) module.exports = factory(require('./parser.js'), require('./detect.js'), require('./decode-dlt.js')); else Object.assign(root.LT || (root.LT = {}), factory(root.LT, root.LT, root.LT)); }(typeof self !== 'undefined' ? self : this, function (parser, detector, dlt) {
   'use strict';
   const BLOCK = 65536;
   const pause = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -34,11 +34,92 @@
     if (length) { const bytes = new Uint8Array(length); let p = 0; for (const part of parts) { bytes.set(part, p); p += part.length; } yield { raw: decoder.decode(bytes).replace(/\r$/, ''), offset: start }; }
   }
 
+  // Binary DLT record iterator (SPEC-DLT-BINARY-001 R2-5). Mirrors byteLines'
+  // streaming contract — 1 MiB chunks, 8 ms deadline + pause(), cancellation,
+  // byte-based onProgress — but walks DLT message boundaries instead of LF
+  // splits, buffering a message that spans a chunk boundary. Each yielded
+  // entry is one decoded message { raw: rendered line, offset: message start,
+  // record: pre-parsed fields }; `offset` is the storage-header position when
+  // the record carries one, else the standard header — the dltScanMessages
+  // convention, so the page-time [offset, nextOffset) window re-decodes with
+  // the same bytes the index-time decode saw (R5-6/AC-3.1: a leading storage
+  // header is skipped as framing, a trailing next-record one is ignored via
+  // the declared-length bound). Resync, truncation and loud-failure
+  // semantics mirror dltScanMessages exactly so identical bytes index
+  // identically (R5-6); warnings accumulate into `stats` only when the
+  // caller passes one — page/worker re-decodes pass none, so the index-time
+  // warning count is never mutated (R5-5).
+  async function* dltRecordLines(file, onProgress, cancelled, stats) {
+    const warn = (n) => { if (stats) stats.warnings += n; };
+    let buf = new Uint8Array(0), base = 0, pos = 0, indexed = 0;
+    let deadline = performance.now() + 8;
+    // Pull the next 1 MiB chunk, dropping the already-consumed prefix so the
+    // buffer stays bounded; mirrors byteLines' chunking and progress reports.
+    const readChunk = async () => {
+      if (pos) { buf = buf.slice(pos); base += pos; pos = 0; }
+      const from = base + buf.length;
+      const chunk = new Uint8Array(await file.slice(from, Math.min(file.size, from + 1024 * 1024)).arrayBuffer());
+      const merged = new Uint8Array(buf.length + chunk.length);
+      merged.set(buf); merged.set(chunk, buf.length);
+      buf = merged;
+      if (onProgress) onProgress(Math.min(file.size, from + chunk.length));
+    };
+    for (;;) {
+      if (pos >= buf.length) {
+        if (base + buf.length >= file.size) break; // every byte consumed
+        if (cancelled && cancelled()) return;
+        await readChunk();
+        continue;
+      }
+      let starved = false;
+      while (pos < buf.length) {
+        const m = dlt.dltDecodeMessage(buf.subarray(pos));
+        const storage = dlt.dltIsStorageMagic(buf, pos);
+        if (m && m.implausible) {
+          // Broken framing at this boundary: scan forward to the next
+          // plausible boundary (R5-2). The scan must cover the remaining
+          // bytes before failing loudly, so starve for chunks until EOF.
+          const at = dlt.dltFindResync(buf, pos + 1);
+          if (at >= 0) { warn(1); pos = at; continue; }
+          if (base + buf.length < file.size) { starved = true; break; }
+          throw new Error('dlt: no plausible DLT boundary found after byte ' + (base + pos) + ' (' + indexed + ' records indexed)');
+        }
+        if (!m || (m.truncated && base + buf.length < file.size)) { starved = true; break; } // message spans the chunk boundary
+        if (m.truncated) {
+          // At EOF a declared length that overshoots the buffer is either a
+          // corrupt length with a plausible boundary inside the span (R5-2
+          // resync) or the truncated final message, which decodes as one
+          // partial record plus a single warning (R5-1).
+          const at = dlt.dltFindResync(buf, pos + 1);
+          if (at >= 0) { warn(1); pos = at; continue; }
+          warn(m.warnings);
+          if (m.record) { indexed++; yield { raw: m.line, offset: base + pos, record: m.record }; }
+          pos = buf.length;
+          break;
+        }
+        warn(m.warnings);
+        if (m.record) { indexed++; yield { raw: m.line, offset: base + pos, record: m.record }; }
+        pos = Math.min(buf.length, pos + (storage ? 16 : 0) + m.consumed);
+        if (performance.now() > deadline) {
+          if (onProgress) onProgress(Math.min(file.size, base + pos));
+          await pause();
+          if (cancelled && cancelled()) return;
+          deadline = performance.now() + 8;
+        }
+      }
+      if (!starved) break;
+      if (base + buf.length >= file.size) break; // defensive: no more bytes will arrive
+      if (cancelled && cancelled()) return;
+      await readChunk();
+    }
+  }
+
   class PagedLog {
     constructor(file, id, base) {
       this.file = file; this.id = id; this.base = base || 0; this.count = 0;
       this.offsets = new Column(Float64Array); this.times = new Column(Float64Array); this.levels = new Column(Uint8Array);
       this.format = 'plain'; this.counts = {}; this.firstLine = ''; this.maxLength = 0;
+      this.warnings = 0; this.storageHeader = false; // dlt-binary diagnostics (R1-5, R5-5)
       this.cache = new Map(); this.cacheBytes = 0;
       this.utf8 = true; // set false by index() when the head fails strict UTF-8 validation
     }
@@ -47,20 +128,31 @@
       // files that decode with replacement characters (garbled text). A
       // sequence truncated at the slice boundary is buffered by {stream:true}
       // instead of throwing; the BOM is stripped by the decoder itself.
+      // The same head feeds the dlt-binary sniff below, so only one head
+      // read happens (plan.md Design Decisions).
+      const head = new Uint8Array(await this.file.slice(0, 65536).arrayBuffer());
       try {
-        const head = new Uint8Array(await this.file.slice(0, 65536).arrayBuffer());
         new TextDecoder('utf-8', { fatal: true }).decode(head, { stream: true });
         this.utf8 = true;
       } catch (e) { this.utf8 = false; }
-      const pending = []; let detected = false, lastTime = 0;
+      // Binary DLT classification (R1-1/R1-2), layered above the text scorer
+      // and mutually exclusive with it (R1-3/R1-4): the storage-header magic
+      // classifies unconditionally; a headerless capture additionally needs
+      // dltSniff's chained plausibility look-ahead AND the text veto — the
+      // HTYP protocol-version bits alone pass every first byte 0x20-0x3F, so
+      // a head the text scorer rates at 0.5 confidence or higher is ordinary
+      // text and never dlt-binary.
+      const sniffed = dlt.dltSniff(head, this.file.size);
+      let binary = sniffed.binary;
+      if (binary && !sniffed.storageHeader && detector.detectFormat(new TextDecoder().decode(head).split('\n')).confidence >= 0.5) binary = false;
       // analysis sample = first half of the budget (file head: format intro,
       // boot lines) + a ring of the newest rest (crashes usually land late).
       // A first-N-only sample would miss end-of-file issues on big logs.
       const headCap = Math.ceil(sampleLimit / 2), tailCap = sampleLimit - headCap;
       const sample = [], tail = new Array(tailCap);
-      let tailPos = 0, tailFilled = 0;
-      const add = ({ raw, offset }) => {
-        const rec = parser.parseLine(raw, this.format);
+      let tailPos = 0, tailFilled = 0, lastTime = 0;
+      const add = ({ raw, offset, record }) => {
+        const rec = record || parser.parseLine(raw, this.format);
         if (!this.count) this.firstLine = raw.slice(0, 200);
         this.offsets.push(offset);
         if (rec.ts) lastTime = timeKey(rec.ts);
@@ -71,6 +163,17 @@
         if (sample.length < headCap) sample.push(this.record(this.count - 1, raw, rec));
         else { tail[tailPos] = this.record(this.count - 1, raw, rec); tailPos = (tailPos + 1) % tailCap; if (tailFilled < tailCap) tailFilled++; }
       };
+      if (binary) {
+        this.format = 'dlt-binary';
+        this.utf8 = true; // rendered text comes from the decoder, never enc? (R1-1)
+        this.storageHeader = sniffed.storageHeader;
+        const stats = { warnings: 0 };
+        for await (const rec of dltRecordLines(this.file, onProgress, cancelled, stats)) add(rec);
+        if (cancelled && cancelled()) throw new Error('Cancelled');
+        this.warnings = stats.warnings;
+        return sample.concat(tail.slice(tailPos), tail.slice(0, tailPos)).filter(Boolean);
+      }
+      const pending = []; let detected = false;
       for await (const line of byteLines(this.file, onProgress, cancelled)) {
         if (!detected) { pending.push(line); if (pending.length < 1000) continue; this.format = detector.detectFormat(pending.map((r) => r.raw)).format; pending.forEach(add); pending.length = 0; detected = true; }
         else add(line);
@@ -84,6 +187,15 @@
       return { ts: code & 128 ? null : timeText(this.times.get(i)), level: code & 127 ? String.fromCharCode(code & 127) : null };
     }
     record(i, raw, parsed) { return Object.assign({ fileId: this.id, file: this.id, lineNo: i + 1, seq: this.base + i + 1, raw }, parsed || parser.parseLine(raw, this.format)); }
+    // Format-agnostic record iterator (R3-2): the byteLines text splitter for
+    // text formats, the decoded binary record iterator for dlt-binary, so the
+    // worker raw-scan loops (full search, quick scan, non-highlight filter
+    // rules, export archive scan) resolve their matches in the decoded record
+    // index space instead of raw byte-line space.
+    async *recordLines(onProgress, cancelled) {
+      if (this.format === 'dlt-binary') { yield* dltRecordLines(this.file, onProgress, cancelled, null); return; }
+      yield* byteLines(this.file, onProgress, cancelled);
+    }
     async page(block) {
       if (this.cache.has(block)) { const value = this.cache.get(block); this.cache.delete(block); this.cache.set(block, value); return value.rows; }
       const first = block * 256, end = Math.min(this.count, first + 256);
@@ -95,6 +207,16 @@
       for (let i = first; i < end; i++) {
         const from = this.offsets.get(i) - a;
         let to = (i + 1 === this.count ? this.file.size : this.offsets.get(i + 1)) - a;
+        if (this.format === 'dlt-binary') {
+          // Per-message re-decode replaces CR/LF stripping (R3-1): the window
+          // starts at the standard header and every read is bounded by the
+          // declared total length, so a trailing next-record storage header
+          // inside the window is ignored as framing (AC-3.1). Re-decode is a
+          // pure function of the bytes and never touches this.warnings.
+          const m = dlt.dltDecodeMessage(bytes.subarray(from, to));
+          rows.push(this.record(i, m && m.line != null ? m.line : '', m && m.record ? m.record : { ts: null, level: null, tag: null, pid: null, msg: '' }));
+          continue;
+        }
         if (bytes[to - 1] === 10) to--;
         if (bytes[to - 1] === 13) to--;
         rows.push(this.record(i, decoder.decode(bytes.subarray(from, to))));

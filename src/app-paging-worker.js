@@ -46,7 +46,9 @@ async function query(id, spec, search) {
     const progress = (bytes) => { if (performance.now() - lastProgress > 60) { emit(id, { progress: (search ? 'Searching' : 'Filtering') + '… ' + Math.floor(bytes / Math.max(1, s.file.size) * 100) + '%' }); lastProgress = performance.now(); } };
     const accepts = (rec, index) => (!spec.bookmarkOnly || (bookmarkSets.get(s.id) || new Set()).has(index + 1)) && (search ? LT.matchLine(searcher, rec.raw) : filter.evaluate(rec).kept);
     if (rawNeeded) {
-      for await (const line of LT.byteLines(s.file, progress, cancelled)) { const rec = Object.assign({ raw: line.raw }, s.metadata(i)); if (accepts(rec, i)) matches.push(s.base + i); i++; }
+      // Format-agnostic record iterator (R3-2): byteLines for text formats,
+      // decoded DLT records for dlt-binary, so matches land in record index space.
+      for await (const line of s.recordLines(progress, cancelled)) { const rec = Object.assign({ raw: line.raw }, s.metadata(i)); if (accepts(rec, i)) matches.push(s.base + i); i++; }
     } else {
       for (; i < s.count; i++) { if (accepts(s.metadata(i), i)) matches.push(s.base + i); if ((i & 16383) === 0) { progress(i / Math.max(1, s.count) * s.file.size); await new Promise((r) => setTimeout(r, 0)); if (cancelled()) break; } }
     }
@@ -75,7 +77,9 @@ self.onmessage = async ({ data: m }) => {
       let last = 0;
       const sample = await s.index((bytes) => { if (performance.now() - last > 60) { emit(id, { progress: 'Indexing… ' + Math.floor(bytes / Math.max(1, m.file.size) * 100) + '%', bytes }); last = performance.now(); } }, () => token !== indexToken, m.sampleLimit);
       nextBase += s.count; sources.push(s); allOrder = null; version++; orderRevision++;
-      emit(id, { count: s.count, counts: s.counts, format: s.format, firstLine: s.firstLine, maxLength: s.maxLength, utf8: s.utf8 !== false, sample });
+      // warnings: lossy binary decode count (R5-5); a positive dlt-binary
+      // classification pins utf8 true in paged.js, so no enc? badge appears.
+      emit(id, { count: s.count, counts: s.counts, format: s.format, firstLine: s.firstLine, maxLength: s.maxLength, utf8: s.utf8 !== false, warnings: s.warnings || 0, sample });
     } else if (type === 'query' || type === 'search') await query(id, m.spec, type === 'search');
     else if (type === 'page') {
       // export callers pin the result set: reject if the scope changed since
@@ -107,7 +111,7 @@ self.onmessage = async ({ data: m }) => {
       const progress = (frac) => { if (performance.now() - last > 60) { last = performance.now(); emit(id, { progress: 'Preparing ' + (Math.floor(frac * 100)) + '%' }); } };
       const accepts = (rec, index) => (!bm || bm.has(index + 1)) && filter.evaluate(rec).kept;
       if (rawNeeded) {
-        for await (const line of LT.byteLines(s.file, null, cancelled)) { const rec = Object.assign({ raw: line.raw }, s.metadata(i)); if (accepts(rec, i)) matches.push(s.base + i); i++; progress(i / Math.max(1, s.count)); }
+        for await (const line of s.recordLines(null, cancelled)) { const rec = Object.assign({ raw: line.raw }, s.metadata(i)); if (accepts(rec, i)) matches.push(s.base + i); i++; progress(i / Math.max(1, s.count)); }
       } else {
         for (; i < s.count; i++) { if (accepts(s.metadata(i), i)) matches.push(s.base + i); if ((i & 16383) === 0) { progress(i / Math.max(1, s.count)); await new Promise((r) => setTimeout(r, 0)); if (cancelled()) break; } }
       }
