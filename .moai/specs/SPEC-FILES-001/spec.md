@@ -2,7 +2,7 @@
 id: SPEC-FILES-001
 title: "Files Panel Tooltips and Single-Line Name Truncation"
 version: "0.1.0"
-status: in-progress
+status: completed
 created: 2026-10-24
 updated: 2026-10-24
 author: CJ-1981

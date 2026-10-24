@@ -25,7 +25,16 @@ _<pending run-phase>_
 
 ## §E.4 Sync-phase Audit-Ready Signal
 
-_<pending sync-phase>_
+- sync_complete_at: 2026-10-24
+- sync_commit_sha: pending-backfill
+- sync_status: complete
+- changelog_entry: docs/changelog.md `## Unreleased` — feat(files) SPEC-FILES-001 bullet (note: this repo's changelog SSOT is `docs/changelog.md`, NOT a root `CHANGELOG.md`, which does not exist; B12 gates target docs/changelog.md)
+- docs_synced: [README.md (Files panel filter & sort bullet), docs/requirements.md FR-19 AC-7, docs/test-plan.md item 31.2]
+- b12_self_test_a: pre-emission grep -c SPEC-FILES-001 docs/changelog.md == 0
+- b12_self_test_b: distinct AC count == 8 (AC-FILES-001..008) — changelog bullet covers the single feature; docs/requirements.md AC-7 carries the user-facing criterion
+- b12_self_test_c: all cited file paths verified via Read/ls in the sync worktree (head 86ff74b)
+- mx_validation: no @MX tags added or removed — diff is one CSS rule + title attributes; zero @MX in touched files; no new exported functions, no complexity change
+- product.md / docs/architecture.md: intentionally untouched (below their abstraction granularity; verified against product.md lines 34-41)
 
 ## §F Phase 4 Mode Selection
 
