@@ -1,6 +1,7 @@
 # Changelog
 
 ## Unreleased
+- feat(viewer): add markdown (.md) viewer support with on/off switch and pure-JS Mermaid rendering (SPEC-VIEWER-003)
 
 ## 1.60.1 (2026-10-24)
 - fix(SPEC-FILES-001): instant in-panel tooltip for truncated files-panel names

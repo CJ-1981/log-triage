@@ -62,6 +62,7 @@ Core logic modules (all covered by the coverage gate):
 - `themes.js` — single source of truth for the six themes; the build generates CSS variable blocks from it.
 - `issues.js` — issue-scan groups (crash/ANR/suspend/memory/etc.) and rule editor support.
 - `droptree.js` — recursive dropped-folder walking with folder-relative entry names.
+- `markdown.js` — lightweight pure-JS Markdown tokenizer, HTML formatter, and standalone Mermaid SVG diagram generator (flowcharts and sequence diagrams).
 - `_src.js` — Node-only aggregator exporting all modules for tests and the coverage gate (not in the browser bundle).
 
 Browser-only glue modules (exempt from the coverage gate):

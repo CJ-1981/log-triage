@@ -2,7 +2,7 @@
 id: SPEC-VIEWER-003
 title: "Markdown File (.md) Viewer with Switch and Mermaid Rendering"
 version: "0.1.0"
-status: implemented
+status: completed
 created: 2026-10-24
 updated: 2026-10-24
 author: "CJ-1981"

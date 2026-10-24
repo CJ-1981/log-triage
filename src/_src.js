@@ -24,6 +24,7 @@ module.exports = Object.assign({},
   require('./lzma.js'),
   require('./format-7z.js'),
   require('./archive.js'),
+  require('./markdown.js'),
 );
 
 // Register the built-in local provider on load (idempotent).

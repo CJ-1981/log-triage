@@ -56,3 +56,14 @@
   - `npm run test:gate`: PASS (markdown.js line 98.69%, branch 85.64%)
   - `npm run e2e`: 149 passing, 0 failing
   - `npm run build`: built `log-triage.html` 555.2 KB
+
+### Phase 16: Sync & Documentation
+- sync_status: completed
+- sync_complete_at: 2026-10-24T15:32:30Z
+- updated_documents:
+  - `README.md`: feature overview (Format autodetection, Viewer toggle, source tree)
+  - `docs/changelog.md`: Unreleased entry for SPEC-VIEWER-003
+  - `.moai/project/product.md`: format autodetection & viewer markdown capabilities
+  - `.moai/project/structure.md`: added `src/markdown.js` module description
+  - `src/_src.js`: registered `markdown.js` in test aggregator
+- final_status: completed
