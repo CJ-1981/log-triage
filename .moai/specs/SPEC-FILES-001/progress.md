@@ -26,7 +26,7 @@ _<pending run-phase>_
 ## §E.4 Sync-phase Audit-Ready Signal
 
 - sync_complete_at: 2026-10-24
-- sync_commit_sha: pending-backfill
+- sync_commit_sha: 104a67928d80eb1e80814eb406d4d14493709678 (rebased onto 41dcd2b chore(release): v1.60.0 after a push non-fast-forward; original pre-rebase sync commit defa89a)
 - sync_status: complete
 - changelog_entry: docs/changelog.md `## Unreleased` — feat(files) SPEC-FILES-001 bullet (note: this repo's changelog SSOT is `docs/changelog.md`, NOT a root `CHANGELOG.md`, which does not exist; B12 gates target docs/changelog.md)
 - docs_synced: [README.md (Files panel filter & sort bullet), docs/requirements.md FR-19 AC-7, docs/test-plan.md item 31.2]
