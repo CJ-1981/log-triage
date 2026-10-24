@@ -28,6 +28,7 @@
 - b12_self_test_c: all cited file paths verified via Read/ls in the sync worktree (head 86ff74b)
 - mx_validation: no @MX tags added or removed — diff is one CSS rule + title attributes; zero @MX in touched files; no new exported functions, no complexity change
 - product.md / docs/architecture.md: intentionally untouched (below their abstraction granularity; verified against product.md lines 34-41)
+- amendment 2026-10-24 (re-close): in-place amendment per amendment_of: SPEC-FILES-001 — amendment commit 884c792, fix commit 921f802; mechanism: instant truncation-gated `#fname-tip` singleton replacing the native `title` tooltip per Safari feedback (native titles are delayed/unreliable on truncated elements); re-verification: npm test 429 pass / 0 fail; e2e 147 tests / 145 pass / 0 fail / 2 pre-existing skips; bundle rebuilt at 921f802; phase label advanced to "v1.61.0 target" (v1.60.1 is the latest released version on docs/changelog.md at re-close time)
 
 ## §F Phase 4 Mode Selection
 
