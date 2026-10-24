@@ -1,7 +1,7 @@
 # Changelog
 
 ## Unreleased
-- feat(files): show native full-name tooltips and single-line ellipsis truncation on files-panel entries (SPEC-FILES-001)
+- feat(files): show instant full-name tooltips on truncated files-panel names with single-line ellipsis (SPEC-FILES-001)
 
 ## 1.60.0 (2026-10-24)
 - feat(SPEC-FILES-001): plan-phase artifacts (S, 4 artifacts) + run-phase lifecycle evidence

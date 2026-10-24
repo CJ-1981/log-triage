@@ -1,6 +1,8 @@
 'use strict';
 /* E2E suite (SPEC-FILES-001): files-panel single-line name truncation and
- * native full-name tooltips on live / cached / missing entries.
+ * instant full-name tooltips on live / cached / missing entries (custom
+ * JS tip — native title is delayed/unreliable in Safari and only shows
+ * while a name is actually truncated).
  * Run: npm run build && npm run e2e  (wired into package.json scripts.e2e). */
 import { test, before, after, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
@@ -80,6 +82,17 @@ async function waitCachedStored(name) {
     name, { timeout: 8000 });
 }
 
+// fire the delegated mouseover on a .fname and read the instant tip state
+// (dispatchEvent exercises the real #file-list delegation path deterministically)
+async function hoverFname(selector) {
+  return page.evaluate((sel) => {
+    const el = document.querySelector(sel);
+    el.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+    const t = document.getElementById('fname-tip');
+    return t ? { display: t.style.display, text: t.textContent, children: t.children.length } : { display: 'none', text: null, children: 0 };
+  }, selector);
+}
+
 test('AC-FILES-001/002: a long live-entry name renders on one clipped line and the tooltip carries the exact stored name', async () => {
   await fresh();
   const name = longName();
@@ -107,8 +120,12 @@ test('AC-FILES-001/002: a long live-entry name renders on one clipped line and t
     assert.strictEqual(info.textOverflow, 'ellipsis', 'ellipsis is the truncation indicator');
     assert.ok(info.height <= info.oneLineLimit, 'single-line height: ' + info.height + ' <= ' + info.oneLineLimit);
     assert.ok(info.clipped, 'a ~130-char name overflows the panel (scrollWidth > clientWidth)');
-    assert.strictEqual(info.title, name, 'tooltip equals the exact stored name');
+    assert.strictEqual(info.title, null, 'no native title on the name (instant custom tip replaces it)');
     assert.strictEqual(info.text, name, 'visible text is the unshortened name');
+    const tip = await hoverFname('.file-item .fname');
+    assert.strictEqual(tip.display, 'block', 'instant tooltip appears on hover of a truncated name');
+    assert.strictEqual(tip.text, name, 'tooltip equals the exact stored name');
+    assert.strictEqual(tip.children, 0, 'tooltip holds plain text, no injected markup');
   } finally {
     fs.rmSync(p, { force: true });
   }
@@ -116,7 +133,8 @@ test('AC-FILES-001/002: a long live-entry name renders on one clipped line and t
 
 test('AC-FILES-005: HTML-special characters — tooltip decodes to the exact raw name with no injected markup', async () => {
   await fresh();
-  const name = 'lt-a<b>c&d"e\'f.log';
+  // special characters AND long enough to truncate, so the instant tip engages
+  const name = 'lt-a<b>c&d"e\'f-' + 'overflow'.repeat(12) + '.log';
   const p = join(os.tmpdir(), name);
   fs.writeFileSync(p, SAMPLE);
   try {
@@ -126,7 +144,7 @@ test('AC-FILES-005: HTML-special characters — tooltip decodes to the exact raw
       const el = document.querySelector('.file-item .fname');
       const item = document.querySelector('.file-item');
       return {
-        title: el.getAttribute('title'),
+        clipped: el.scrollWidth > el.clientWidth,
         text: el.textContent,
         childNodes: el.childNodes.length,
         childNodeTypes: Array.from(el.childNodes).map((n) => n.nodeType),
@@ -135,11 +153,15 @@ test('AC-FILES-005: HTML-special characters — tooltip decodes to the exact raw
       };
     })())`).then(JSON.parse);
     assert.strictEqual(info.items, 1, 'one entry rendered');
-    assert.strictEqual(info.title, name, 'title attribute decodes to the exact raw name');
+    assert.ok(info.clipped, 'the special-char name is truncated (tip path exercised)');
     assert.strictEqual(info.text, name, 'visible text is the exact raw name');
     assert.strictEqual(info.childNodes, 1, 'fname holds a single text node (no injected elements)');
     assert.deepStrictEqual(info.childNodeTypes, [3], 'the only child is a text node');
     assert.ok(info.badges >= 1, 'metadata badges still render (DOM shape intact)');
+    const tip = await hoverFname('.file-item .fname');
+    assert.strictEqual(tip.display, 'block', 'tooltip appears for the truncated special-char name');
+    assert.strictEqual(tip.text, name, 'tooltip text decodes to the exact raw name');
+    assert.strictEqual(tip.children, 0, 'tooltip injects no markup for markup-like names');
   } finally {
     fs.rmSync(p, { force: true });
   }
@@ -160,12 +182,13 @@ test('AC-FILES-003: cached entry keeps the ↻ suffix and container tooltip whil
       const item = document.querySelector('.file-item.cached');
       const fname = item.querySelector('.fname');
       return {
-        title: fname.getAttribute('title'),
         after: getComputedStyle(fname, '::after').content,
         containerTitle: item.getAttribute('title'),
       };
     })())`).then(JSON.parse);
-    assert.strictEqual(info.title, name, 'cached name tooltip equals the stored name');
+    const tip = await hoverFname('.file-item.cached .fname');
+    assert.strictEqual(tip.display, 'block', 'instant tooltip appears on the truncated cached name');
+    assert.strictEqual(tip.text, name, 'cached name tooltip equals the stored name');
     assert.ok(info.after.includes('↻'), '↻ suffix rule intact, got ' + info.after);
     assert.strictEqual(info.containerTitle, 'cached — click to load', 'container tooltip unchanged');
     await page.evaluate(() => document.querySelector('.file-item.cached').click());
@@ -177,7 +200,7 @@ test('AC-FILES-003: cached entry keeps the ↻ suffix and container tooltip whil
 
 test('AC-FILES-004: missing entry keeps the line-through and container tooltip while the name tooltip carries the stored name', async () => {
   await fresh();
-  const name = 'missed-archive_src-gone.log';
+  const name = 'missed-archive_src-' + 'overflow'.repeat(10) + '-gone.log';
   const stored = await page.evaluate(
     (n) => LT.cachePut({ id: 'cache_missing_e2e', name: n, size: 12, format: '—', ts: 1 }),
     name);
@@ -188,12 +211,13 @@ test('AC-FILES-004: missing entry keeps the line-through and container tooltip w
     const item = document.querySelector('.file-item.missing');
     const fname = item.querySelector('.fname');
     return {
-      title: fname.getAttribute('title'),
       decoration: getComputedStyle(fname).textDecorationLine,
       containerTitle: item.getAttribute('title'),
     };
   })())`).then(JSON.parse);
-  assert.strictEqual(info.title, name, 'missing name tooltip equals the stored name');
+  const tip = await hoverFname('.file-item.missing .fname');
+  assert.strictEqual(tip.display, 'block', 'instant tooltip appears on the truncated missing name');
+  assert.strictEqual(tip.text, name, 'missing name tooltip equals the stored name');
   assert.ok(info.decoration.includes('line-through'), 'line-through intact, got ' + info.decoration);
   assert.strictEqual(info.containerTitle, 'this file could not be restored', 'container tooltip unchanged');
 });
@@ -211,4 +235,6 @@ test('AC-FILES-006: a short cached name does not clip and the ↻ suffix stays v
   })())`).then(JSON.parse);
   assert.ok(!info.clipped, 'short name is not clipped (scrollWidth <= clientWidth)');
   assert.ok(info.after.includes('↻'), '↻ suffix still rendered, got ' + info.after);
+  const tip = await hoverFname('.file-item.cached .fname');
+  assert.strictEqual(tip.display, 'none', 'no tooltip for an untruncated name (tip is truncation-gated)');
 });

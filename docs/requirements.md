@@ -191,7 +191,7 @@ Status: collapse implemented (v1.3.0); filter and sort implemented (v1.35.0).
 - AC-4: A text box filters the list by file name — live files and cached entries, case-insensitive substring; an unmatched filter shows a "no files match the filter" hint, and Clear-all resets it.
 - AC-5: A dropdown sorts the list by load order (default), name A→Z / Z→A, size ↑/↓, or line count ↑/↓ (using per-file totals); sorting reorders only the rendered list, not the underlying load order.
 - AC-6: The list mirrors the viewer scope: in merged-timeline mode every loaded file entry is highlighted; in per-file mode only the displayed file is. Switching modes keeps the invariant (per-file always has exactly one displayed file; loading a file while in per-file mode makes it the displayed one), and cached-not-loaded entries are never highlighted.
-- AC-7: Each file name (live, cached, and missing entries) renders on a single line, clipped with an ellipsis when wider than the panel, and carries a native tooltip with the full stored name (exact, unshortened, HTML-escaped).
+- AC-7: Each file name (live, cached, and missing entries) renders on a single line, clipped with an ellipsis when wider than the panel, and shows its full stored name (exact, unshortened, HTML-escaped) instantly in an in-panel tooltip while hovered — the tip appears only while the name is actually truncated, since native title tooltips are delayed and unreliable in Safari.
 
 ### FR-20 — File cache / session restore
 

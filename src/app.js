@@ -485,7 +485,7 @@
       const div = document.createElement('div');
       div.className = 'file-item' + (mergedView || state.activeFile === f.id ? ' active' : '');
       div.innerHTML = '<button class="fx" data-remove="' + esc(f.id) + '" title="remove this file">✕</button>' +
-        '<div class="fname" title="' + esc(f.name) + '">' + esc(f.name) + '</div>' +
+        '<div class="fname">' + esc(f.name) + '</div>' +
         '<div class="fmeta"><span class="badge fmt">' + esc(f.format) + '</span>' +
         (f.utf8 === false ? '<span class="badge enc" title="not valid UTF-8 — decoded with replacement characters; text may be garbled">enc?</span>' : '') +
         (f.warnings ? '<span class="badge enc" title="lossy binary decode — ' + f.warnings + ' resynchronization/decode warning' + (f.warnings === 1 ? '' : 's') + ' while indexing">' + f.warnings + ' warn</span>' : '') +
@@ -518,7 +518,7 @@
       if (c.data) {
         div.className = 'file-item cached';
         div.title = 'cached — click to load';
-        div.insertAdjacentHTML('beforeend', '<div class="fname" title="' + esc(c.name) + '">' + esc(c.name) + '</div>' +
+        div.insertAdjacentHTML('beforeend', '<div class="fname">' + esc(c.name) + '</div>' +
           '<div class="fmeta"><span class="badge fmt">' + esc(c.format || '—') + '</span>' +
           (c.utf8 === false ? '<span class="badge enc" title="not valid UTF-8 — decoded with replacement characters; text may be garbled">enc?</span>' : '') +
           '<span>' + LT.fmtBytes(c.size) + '</span><span>cached — click to load</span></div>');
@@ -526,7 +526,7 @@
       } else {
         div.className = 'file-item missing';
         div.title = 'this file could not be restored';
-        div.insertAdjacentHTML('beforeend', '<div class="fname muted" title="' + esc(c.name) + '">' + esc(c.name) + '</div>' +
+        div.insertAdjacentHTML('beforeend', '<div class="fname muted">' + esc(c.name) + '</div>' +
           '<div class="fmeta"><span class="badge miss">file not found</span>' +
           '<span>' + LT.fmtBytes(c.size) + '</span></div>');
       }
@@ -536,6 +536,30 @@
       el.insertAdjacentHTML('beforeend', '<div class="muted" style="padding:8px 10px">no files match the filter</div>');
     }
   }
+
+  // instant tooltip for truncated file names — native title is delayed and
+  // often suppressed in Safari, so truncated names show a JS-drawn tip instead
+  let fnameTip = null;
+  function showFnameTip(target) {
+    if (target.scrollWidth <= target.clientWidth) { hideFnameTip(); return; }
+    if (!fnameTip) {
+      fnameTip = document.createElement('div');
+      fnameTip.id = 'fname-tip';
+      document.body.appendChild(fnameTip);
+    }
+    // CSS clipping is visual-only; textContent always holds the full stored name
+    fnameTip.textContent = target.textContent;
+    fnameTip.style.display = 'block';
+    const r = target.getBoundingClientRect();
+    const tr = fnameTip.getBoundingClientRect();
+    let top = r.top - tr.height - 4;
+    if (top < 4) top = r.bottom + 4;
+    fnameTip.style.top = top + 'px';
+    fnameTip.style.left = Math.max(4, Math.min(r.left, window.innerWidth - tr.width - 4)) + 'px';
+  }
+  function hideFnameTip() { if (fnameTip) fnameTip.style.display = 'none'; }
+  window.addEventListener('scroll', hideFnameTip, true);
+  window.addEventListener('resize', hideFnameTip);
 
   async function loadCachedFile(c) {
     if (!c.data) { flash('file not found: ' + c.name); return; }
@@ -2834,6 +2858,12 @@
     };
     $('file-filter').oninput = (e) => { fileFilterText = e.target.value; renderFiles(); };
     $('file-sort').onchange = (e) => { fileSortMode = e.target.value; renderFiles(); };
+    const fileListEl = $('file-list');
+    fileListEl.addEventListener('mouseover', (e) => {
+      const t = e.target.closest ? e.target.closest('.fname') : null;
+      if (t) showFnameTip(t); else hideFnameTip();
+    });
+    fileListEl.addEventListener('mouseleave', hideFnameTip);
     $('reload-cached').onclick = () => reloadAllCached();
     $('clear-files').onclick = async () => {
       ++viewToken; ++pageToken; ingestAbort = true;
