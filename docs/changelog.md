@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+
+## 1.64.0 (2026-10-24)
+- feat(format): add built-in Qualcomm QXDM / QCAT text export log format (SPEC-FORMAT-002) (#64)
+
 - feat(format): add built-in Qualcomm QXDM / QCAT text export log format (SPEC-FORMAT-002)
 - docs(SPEC-FORMAT-002): sync-phase documentation, FR-34, and ADR-0020
 
