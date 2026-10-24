@@ -1,0 +1,214 @@
+'use strict';
+/* E2E suite (SPEC-FILES-001): files-panel single-line name truncation and
+ * native full-name tooltips on live / cached / missing entries.
+ * Run: npm run build && npm run e2e  (wired into package.json scripts.e2e). */
+import { test, before, after, afterEach } from 'node:test';
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
+import { join, dirname } from 'node:path';
+import fs from 'node:fs';
+import os from 'node:os';
+import { chromium } from 'playwright';
+
+const root = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+let PORT = 0; // OS-assigned free port
+let server;
+let browser;
+let page;
+const url = () => `http://127.0.0.1:${PORT}/log-triage.html`;
+
+before(async () => {
+  server = spawn(process.execPath, [join(root, 'tools', 'serve.mjs')], {
+    env: { ...process.env, PORT: String(PORT) },
+  });
+  // wait until the server reports its bound port (works for OS-assigned ports too)
+  await new Promise((res, rej) => {
+    const onData = (d) => {
+      const m = String(d).match(/SERVER_PORT:(\d+)/);
+      if (m) res(Number(m[1]));
+    };
+    server.stdout.on('data', onData);
+    server.stderr.on('data', onData);
+    setTimeout(() => rej(new Error('static server did not report SERVER_PORT within 3s')), 3000);
+  }).then((p) => { PORT = p; });
+  await new Promise((res) => { server.stdout.on('data', () => res()); setTimeout(res, 300); });
+  browser = await chromium.launch();
+  const ctx = await browser.newContext();
+  page = await ctx.newPage();
+  page.on('pageerror', (e) => { page.__pageErrors = (page.__pageErrors || []).concat(String(e)); });
+});
+
+after(async () => {
+  if (browser) await browser.close();
+  if (server) server.kill();
+});
+
+// zero uncaught page errors in every test (shared suite invariant)
+afterEach(async () => {
+  const errs = page && page.__pageErrors ? page.__pageErrors.splice(0) : [];
+  assert.strictEqual(errs.length, 0, 'uncaught page errors: ' + errs.join(' | '));
+});
+
+async function fresh(hash) {
+  await page.goto(url() + (hash || ''), { waitUntil: 'domcontentloaded' });
+  await page.evaluate(() => new Promise((res) => {
+    const r = indexedDB.deleteDatabase('log-triage-cache');
+    r.onsuccess = r.onerror = r.onblocked = () => res();
+  }));
+  await page.evaluate(() => localStorage.removeItem('log_triage_state_v1'));
+  await page.reload({ waitUntil: 'domcontentloaded' });
+}
+
+const SAMPLE = [
+  '09-11 10:10:22.100  1234  5678 D WifiHal: associated rssi=-50',
+  '09-11 10:10:22.200  1234  5678 I WifiHal: scan complete',
+  '09-11 10:10:22.300  1234  5678 E WifiHal: timeout waiting for driver',
+].join('\n') + '\n';
+
+// ~130-char real-disk fixture name: far past the ~250px panel width, yet
+// under the 255-byte OS filename cap on every dev/CI platform (plan R2)
+function longName() {
+  return 'lt-truncate-' + 'overflow'.repeat(13) + '-' + Date.now() + '.log';
+}
+
+// never reload against a racing IDB write (CI #53 pattern): poll until the
+// entry reads back durably from cacheGetAll
+async function waitCachedStored(name) {
+  await page.waitForFunction(
+    (n) => LT.cacheGetAll().then((es) => es.some((e) => e.name === n && e.data)),
+    name, { timeout: 8000 });
+}
+
+test('AC-FILES-001/002: a long live-entry name renders on one clipped line and the tooltip carries the exact stored name', async () => {
+  await fresh();
+  const name = longName();
+  const p = join(os.tmpdir(), name);
+  fs.writeFileSync(p, SAMPLE);
+  try {
+    await page.setInputFiles('#file-input', [p]);
+    await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 1, null, { timeout: 8000 });
+    const info = await page.evaluate(`JSON.stringify((() => {
+      const el = document.querySelector('.file-item .fname');
+      const cs = getComputedStyle(el);
+      return {
+        whiteSpace: cs.whiteSpace,
+        overflow: cs.overflow,
+        textOverflow: cs.textOverflow,
+        height: el.getBoundingClientRect().height,
+        oneLineLimit: (parseFloat(cs.fontSize) || 12.5) * 1.75,
+        clipped: el.scrollWidth > el.clientWidth,
+        title: el.getAttribute('title'),
+        text: el.textContent,
+      };
+    })())`).then(JSON.parse);
+    assert.strictEqual(info.whiteSpace, 'nowrap', 'name is forced onto a single line');
+    assert.strictEqual(info.overflow, 'hidden', 'overflow is clipped, not wrapped');
+    assert.strictEqual(info.textOverflow, 'ellipsis', 'ellipsis is the truncation indicator');
+    assert.ok(info.height <= info.oneLineLimit, 'single-line height: ' + info.height + ' <= ' + info.oneLineLimit);
+    assert.ok(info.clipped, 'a ~130-char name overflows the panel (scrollWidth > clientWidth)');
+    assert.strictEqual(info.title, name, 'tooltip equals the exact stored name');
+    assert.strictEqual(info.text, name, 'visible text is the unshortened name');
+  } finally {
+    fs.rmSync(p, { force: true });
+  }
+});
+
+test('AC-FILES-005: HTML-special characters — tooltip decodes to the exact raw name with no injected markup', async () => {
+  await fresh();
+  const name = 'lt-a<b>c&d"e\'f.log';
+  const p = join(os.tmpdir(), name);
+  fs.writeFileSync(p, SAMPLE);
+  try {
+    await page.setInputFiles('#file-input', [p]);
+    await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 1, null, { timeout: 8000 });
+    const info = await page.evaluate(`JSON.stringify((() => {
+      const el = document.querySelector('.file-item .fname');
+      const item = document.querySelector('.file-item');
+      return {
+        title: el.getAttribute('title'),
+        text: el.textContent,
+        childNodes: el.childNodes.length,
+        childNodeTypes: Array.from(el.childNodes).map((n) => n.nodeType),
+        badges: item.querySelectorAll('.fmeta .badge').length,
+        items: document.querySelectorAll('.file-item').length,
+      };
+    })())`).then(JSON.parse);
+    assert.strictEqual(info.items, 1, 'one entry rendered');
+    assert.strictEqual(info.title, name, 'title attribute decodes to the exact raw name');
+    assert.strictEqual(info.text, name, 'visible text is the exact raw name');
+    assert.strictEqual(info.childNodes, 1, 'fname holds a single text node (no injected elements)');
+    assert.deepStrictEqual(info.childNodeTypes, [3], 'the only child is a text node');
+    assert.ok(info.badges >= 1, 'metadata badges still render (DOM shape intact)');
+  } finally {
+    fs.rmSync(p, { force: true });
+  }
+});
+
+test('AC-FILES-003: cached entry keeps the ↻ suffix and container tooltip while the name tooltip carries the stored name; click still loads', async () => {
+  await fresh();
+  const name = longName();
+  const p = join(os.tmpdir(), name);
+  fs.writeFileSync(p, SAMPLE);
+  try {
+    await page.setInputFiles('#file-input', [p]);
+    await page.waitForFunction(() => document.getElementById('st-total').textContent === '3', null, { timeout: 8000 });
+    await waitCachedStored(name);
+    await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForFunction(() => document.querySelectorAll('.file-item.cached').length === 1, null, { timeout: 20000 });
+    const info = await page.evaluate(`JSON.stringify((() => {
+      const item = document.querySelector('.file-item.cached');
+      const fname = item.querySelector('.fname');
+      return {
+        title: fname.getAttribute('title'),
+        after: getComputedStyle(fname, '::after').content,
+        containerTitle: item.getAttribute('title'),
+      };
+    })())`).then(JSON.parse);
+    assert.strictEqual(info.title, name, 'cached name tooltip equals the stored name');
+    assert.ok(info.after.includes('↻'), '↻ suffix rule intact, got ' + info.after);
+    assert.strictEqual(info.containerTitle, 'cached — click to load', 'container tooltip unchanged');
+    await page.evaluate(() => document.querySelector('.file-item.cached').click());
+    await page.waitForFunction(() => document.getElementById('st-total').textContent === '3', null, { timeout: 20000 });
+  } finally {
+    fs.rmSync(p, { force: true });
+  }
+});
+
+test('AC-FILES-004: missing entry keeps the line-through and container tooltip while the name tooltip carries the stored name', async () => {
+  await fresh();
+  const name = 'missed-archive_src-gone.log';
+  const stored = await page.evaluate(
+    (n) => LT.cachePut({ id: 'cache_missing_e2e', name: n, size: 12, format: '—', ts: 1 }),
+    name);
+  assert.strictEqual(stored, true, 'metadata-only cache entry seeded');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelectorAll('.file-item.missing').length === 1, null, { timeout: 8000 });
+  const info = await page.evaluate(`JSON.stringify((() => {
+    const item = document.querySelector('.file-item.missing');
+    const fname = item.querySelector('.fname');
+    return {
+      title: fname.getAttribute('title'),
+      decoration: getComputedStyle(fname).textDecorationLine,
+      containerTitle: item.getAttribute('title'),
+    };
+  })())`).then(JSON.parse);
+  assert.strictEqual(info.title, name, 'missing name tooltip equals the stored name');
+  assert.ok(info.decoration.includes('line-through'), 'line-through intact, got ' + info.decoration);
+  assert.strictEqual(info.containerTitle, 'this file could not be restored', 'container tooltip unchanged');
+});
+
+test('AC-FILES-006: a short cached name does not clip and the ↻ suffix stays visible', async () => {
+  await fresh();
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  await waitCachedStored('demo.log');
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  await page.waitForFunction(() => document.querySelectorAll('.file-item.cached').length === 1, null, { timeout: 20000 });
+  const info = await page.evaluate(`JSON.stringify((() => {
+    const el = document.querySelector('.file-item.cached .fname');
+    return { clipped: el.scrollWidth > el.clientWidth, after: getComputedStyle(el, '::after').content };
+  })())`).then(JSON.parse);
+  assert.ok(!info.clipped, 'short name is not clipped (scrollWidth <= clientWidth)');
+  assert.ok(info.after.includes('↻'), '↻ suffix still rendered, got ' + info.after);
+});
