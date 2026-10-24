@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.62.1 (2026-10-24)
+- fix(viewer): activate per-file mode for single file and show instant tooltip on truncated viewer filename
+
 ## 1.62.0 (2026-10-24)
 - chore(SPEC-VIEWER-004): backfill sync_commit_sha
 - docs(SPEC-VIEWER-004): sync-phase documentation and living doc updates
