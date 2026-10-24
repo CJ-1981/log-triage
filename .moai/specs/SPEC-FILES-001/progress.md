@@ -15,18 +15,11 @@
 - git: no branch, no worktree, no issue, no commit created (plan-phase artifacts only, per delegation)
 - revision 2026-10-24 (plan-audit iteration 2): iteration 1 verdict FAIL (0.86; blocking D1 e2e-wiring, D2 REQ-004-unmapped; report `.moai/reports/plan-audit/SPEC-FILES-001-review-1.md`) — user approved fixing ALL defects. Applied: D1 (new spec wired into `package.json` `scripts.e2e`; `package.json` added to spec.md Touching + plan.md M3/§A), D2 (REQ-FILES-004 mapped into AC-002/AC-005 Requirement columns + §G line, mirrored in spec.md AC summary), D3 (fixture rewritten: ~120-char runtime-generated temp file under OS filename limits; in-memory `{name, mimeType, buffer}` form rejected — zero repo precedent, verified by grep over tests/e2e/), D4 (AC-006 asserts `getComputedStyle(…,'::after').content`, the AC-003 mechanism), audit-O8 (plan.md E5 uses the precise `fname" title=` grep). Skipped per coordinator disposition: audit-O5 (priority casing, repo convention), O6 (related_specs), O7 (TDD MAY wording stays). REQ/AC counts unchanged (8/8); frontmatter unchanged.
 
-## §E.2 Run-phase Evidence
-
-_<pending run-phase>_
-
-## §E.3 Run-phase Audit-Ready Signal
-
-_<pending run-phase>_
-
 ## §E.4 Sync-phase Audit-Ready Signal
 
 - sync_complete_at: 2026-10-24
-- sync_commit_sha: 104a67928d80eb1e80814eb406d4d14493709678 (rebased onto 41dcd2b chore(release): v1.60.0 after a push non-fast-forward; original pre-rebase sync commit defa89a)
+- sync_commit_sha: 104a67928d80eb1e80814eb406d4d14493709678
+- sync_sha_provenance: the SHA above is the post-rebase sync commit — rebased onto 41dcd2b (chore(release): v1.60.0) after a push non-fast-forward; the original pre-rebase sync commit was defa89a
 - sync_status: complete
 - changelog_entry: docs/changelog.md `## Unreleased` — feat(files) SPEC-FILES-001 bullet (note: this repo's changelog SSOT is `docs/changelog.md`, NOT a root `CHANGELOG.md`, which does not exist; B12 gates target docs/changelog.md)
 - docs_synced: [README.md (Files panel filter & sort bullet), docs/requirements.md FR-19 AC-7, docs/test-plan.md item 31.2]

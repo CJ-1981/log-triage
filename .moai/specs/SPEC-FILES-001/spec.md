@@ -2,7 +2,7 @@
 id: SPEC-FILES-001
 title: "Files Panel Tooltips and Single-Line Name Truncation"
 version: "0.1.0"
-status: completed
+status: in-progress
 created: 2026-10-24
 updated: 2026-10-24
 author: CJ-1981
@@ -13,6 +13,7 @@ lifecycle: spec-anchored
 tags: "files-panel, tooltip, truncation, css, ux"
 tier: S
 related_specs: [SPEC-VIEWER-002]
+amendment_of: SPEC-FILES-001
 ---
 
 # SPEC-FILES-001: Files Panel Tooltips and Single-Line Name Truncation
@@ -23,6 +24,37 @@ related_specs: [SPEC-VIEWER-002]
 |---|---|---|---|
 | 2026-10-24 | 0.1.0 | CJ-1981 | Initial draft. Files-panel-only UX change: a native `title` tooltip carrying the full stored name on every entry (live / cached / missing), and single-line CSS ellipsis truncation replacing the multi-line `word-break: break-all` wrap. All design decisions resolved at delegation time (user clarity 10/10). |
 | 2026-10-24 | 0.1.0 | CJ-1981 | Plan-audit iteration 2 (revision, all defects user-approved): new e2e spec wired into `package.json` `scripts.e2e` and `package.json` added to Touching (D1); REQ-FILES-004 mapped into AC-002/AC-005 (D2); 300+ char fixture replaced by a ~120-char runtime-generated temp fixture under OS filename limits (D3); AC-006 asserts via `getComputedStyle(…,'::after').content` (D4). REQ/AC counts unchanged (8/8). |
+| 2026-10-24 | 0.1.0 | CJ-1981 | Amendment 1 (user decision, in-place): Safari delays native `title` tooltips ~1s and often suppresses them, making the full path unreachable. The `.fname` title attribute is replaced by an instant, truncation-gated JS singleton tip (`#fname-tip`, text via `textContent`), landed in 921f802. See "Amendment 1" below — it overrides the touched requirements. |
+
+## Amendment 1 — Instant truncation-gated tooltip (#fname-tip) (2026-10-24, overrides below)
+
+User decision after real-world Safari feedback: native `title` tooltips are
+delayed ~1s and often suppressed there, so the full stored path was effectively
+unreachable — violating the business constraint that the full name must never
+be unreachable. In-place amendment of the completed SPEC (user-approved).
+
+- Prior completed version: 0.1.0 — shipped cycle closed by sync commit 104a679
+  (3-phase close), `sync_commit_sha` backfilled by 1dacf03.
+- prior_completed_sha: 1dacf03
+- Mechanism (commit 921f802): the `.fname` native `title` attribute is replaced
+  by an instant JS-drawn singleton tip `#fname-tip` (`src/app.js:542-562`,
+  styles at `template.html:97`) — shown on hover ONLY while the name is
+  actually truncated (`scrollWidth > clientWidth`), text set via `textContent`
+  holding the full stored name (CSS clipping is visual-only), hidden on
+  leave/scroll/resize. Truncation itself (REQ-001/002) is unchanged.
+- Requirement overrides: REQ-FILES-003 — "native `title` tooltip" reads as "the
+  instant truncation-gated `#fname-tip` singleton whose `textContent` is
+  exactly the full stored name"; REQ-FILES-004 — unchanged in substance
+  (name-only, no metadata, no shortening), now enforced via `textContent`
+  equality; REQ-FILES-007 — the "no custom tooltip component" clause is
+  superseded by this user-approved amendment (the singleton tip IS the approved
+  mechanism; the clause's intent — no heavyweight tooltip framework — is
+  preserved).
+- Scope: tooltip mechanism + AC-FILES-002..006 rewording (acceptance.md is the
+  AC SSOT) + docs wording (README.md, docs/changelog.md, docs/requirements.md
+  FR-19 AC-7, docs/test-plan.md — landed in 921f802). Behavior preservation
+  (REQ-005/006) and the files-panel-only scope (REQ-008) are unchanged.
+- Re-close belongs to manager-docs: `status` rides the next sync commit.
 
 ## User Story
 
@@ -79,11 +111,11 @@ Full Given-When-Then enumeration with evidence commands: `acceptance.md`. Eight 
 | ID | One-line contract | Verifies |
 |---|---|---|
 | AC-FILES-001 | Long live-entry name renders single-line with the ellipsis CSS triplet | REQ-001/002 |
-| AC-FILES-002 | Live `.fname` `title` equals the stored full name | REQ-003/004 |
-| AC-FILES-003 | Cached `.fname` `title` equals stored name; `↻` rule, container tooltip, click-to-load intact | REQ-003/005 |
-| AC-FILES-004 | Missing `.fname` `title` equals stored name; line-through, opacity, container tooltip intact | REQ-003/006 |
-| AC-FILES-005 | Name with HTML-special characters: `title` decodes to the exact raw name, no markup injected | REQ-003/004 |
-| AC-FILES-006 | Short (non-overflowing) names are visually unchanged; cached `name ↻` still visible | REQ-001/005 |
+| AC-FILES-002 | Hovering a truncated live `.fname` shows the `#fname-tip` singleton with the exact stored name; no native `title` attribute | REQ-003/004 |
+| AC-FILES-003 | Hovering a truncated cached `.fname` shows the tip with the stored name; `↻` rule, container tooltip, click-to-load intact | REQ-003/005 |
+| AC-FILES-004 | Hovering a truncated missing `.fname` shows the tip with the stored name; line-through, opacity, container tooltip intact | REQ-003/006 |
+| AC-FILES-005 | Name with HTML-special characters: tip `textContent` equals the exact raw name, zero child elements (injection-proof) | REQ-003/004 |
+| AC-FILES-006 | Short (non-overflowing) names are visually unchanged; cached `name ↻` still visible; hovering an untruncated name shows NO tip | REQ-001/005 |
 | AC-FILES-007 | Regression: existing files-panel behaviors and e2e specs pass; `npm test` exit 0 | REQ-005..008 |
 | AC-FILES-008 | `template.html` carries the ellipsis triplet and no `word-break` on `.fname`; `npm run build && npm run e2e` passes incl. the new spec | REQ-001/002/007 |
 
