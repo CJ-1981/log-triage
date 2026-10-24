@@ -1,14 +1,13 @@
 # Changelog
 
 ## Unreleased
+- feat(viewer): add source code syntax color highlighter for scripts and config files (.py, .sh, .bat, .json, .yaml, .js) with dynamic toolbar switch (SPEC-VIEWER-004)
 
 ## 1.61.0 (2026-10-24)
 - test(e2e): eliminate layout race in zen Escape precedence spec (AC-3.2)
 - feat(viewer): add markdown (.md) viewer support with on/off switch and pure-JS Mermaid rendering (SPEC-VIEWER-003) (#62)
 - docs(SPEC-FILES-001): amendment re-close — instant tooltip mechanism
 - feat(SPEC-FILES-001): in-place amendment — instant tooltip mechanism (Safari)
-
-- feat(viewer): add markdown (.md) viewer support with on/off switch and pure-JS Mermaid rendering (SPEC-VIEWER-003)
 
 ## 1.60.1 (2026-10-24)
 - fix(SPEC-FILES-001): instant in-panel tooltip for truncated files-panel names

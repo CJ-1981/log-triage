@@ -1,8 +1,8 @@
 ---
 id: SPEC-VIEWER-004
 title: "Source Code Syntax Color Highlighter for Scripts and Config Files (.py, .sh, .bat, .json, .yaml, .js)"
-version: "0.1.0"
-status: implemented
+version: "1.0.0"
+status: completed
 created: 2026-10-24
 updated: 2026-10-24
 author: "CJ-1981"
@@ -20,6 +20,7 @@ tier: S
 
 | Date | Version | Author | Change |
 |---|---|---|---|
+| 2026-10-24 | 1.0.0 | CJ-1981 | Completed. Implemented pure-JS tokenizer (src/syntax.js) supporting Python, Shell, Batch, JSON, YAML, and JavaScript. Added dynamic #btn-syntax toolbar switch, theme-aware CSS styles across all 6 themes, and multi-layer rendering beneath search and user highlight rules in viewer and detail drawer. Verified with 18 unit tests, coverage gate PASS (99.3% line, 79.7% branch), and 6 Playwright E2E tests. |
 | 2026-10-24 | 0.1.0 | CJ-1981 | Initial draft. User-requested syntax color highlighting for script and configuration files (.py, .sh, .bat, .json, .yaml, .js) with auto-detection, toolbar switch ('Syntax: ON/OFF'), theme-aware CSS styling, and zero external dependencies. Tier S lean specification with inline acceptance criteria. |
 
 ## 1. User Story

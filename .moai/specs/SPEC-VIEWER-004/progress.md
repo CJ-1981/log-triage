@@ -48,7 +48,27 @@
   - `tests/syntax.test.js`: 15 unit tests covering language detection, all 6 tokenizers, HTML escaping, and robustness
   - `tests/e2e/syntax-highlighter.e2e.spec.mjs`: 2 Playwright e2e tests covering ingestion, badge, switch toggle, DOM visibility, and file switching
 - verification:
-  - `npm test`: 471 passing, 0 failing, 11 skipped
-  - `npm run test:gate`: GATE PASS (`src/syntax.js` line 99.33%, branch 79.37%)
-  - `npm run e2e`: 149 passing, 0 failing, 2 skipped
+  - `npm test`: 474 passing, 0 failing, 11 skipped
+  - `npm run test:gate`: GATE PASS (`src/syntax.js` line 99.33%, branch 79.69%)
+  - `npm run e2e`: 155 passing, 0 failing, 2 skipped
   - `npm run build`: built `log-triage.html` 569.1 KB v1.60.0
+
+### Phase 16-17: Sync & Documentation (manager-docs)
+- sync_status: completed
+- completed_at: 2026-10-24T16:10:00Z
+- deliverables:
+  - `docs/changelog.md`: logged under Unreleased (feat: source code syntax color highlighter)
+  - `README.md`: updated format list, viewer toolbar toggle, and src module tree
+  - `.moai/project/product.md`: updated core features with syntax color highlighting
+  - `.moai/project/structure.md`: added `src/syntax.js` to module directory and test suites
+  - `docs/architecture.md`: documented `src/markdown.js` and `src/syntax.js` in module table
+  - `docs/requirements.md`: added FR-31 (Markdown viewer) and FR-32 (Syntax color highlighter)
+  - `docs/test-plan.md`: registered syntax unit test suite, coverage gate, and Playwright E2E suite
+  - `src/_src.js`: aggregated `syntax.js` into flat Node exports for test runner
+- verification:
+  - `npm test`: 474 passing, 0 failing, 11 skipped
+  - `npm run test:gate`: GATE PASS (`src/syntax.js` line 99.33%, branch 79.69%)
+  - `npm run e2e`: 155 passing, 0 failing, 2 skipped
+  - `npm run build`: built `log-triage.html` 569.1 KB v1.60.0
+- audit_status: pass
+- spec_status: completed

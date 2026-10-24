@@ -98,6 +98,8 @@ Implemented in G2–G8:
 | `src/format-7z.js` | 7z container (FR-26): signature + CRC32 verification, plain and `kEncodedHeader` (compressed) headers, pack/folder/substream/file-info parsing, UTF-16 names, empty files/dirs, digest verification; folder decoding for Copy/LZMA/LZMA2/Deflate coders; stored-entry `.7z` writer. |
 | `src/lzma.js` | Pure-JS LZMA1/LZMA2 decoder (ADR-0011): canonical range decoder + probability model, LZMA1 raw streams and chunked LZMA2 with dictionary-reset semantics; no WASM, no external code. |
 | `src/themes.js` | Six themes via `body[data-theme]` CSS variables (Midnight default). |
+| `src/markdown.js` | Lightweight pure-JS Markdown tokenizer, HTML formatter, and standalone Mermaid SVG diagram generator (flowcharts and sequence diagrams). |
+| `src/syntax.js` | Lightweight pure-JS line tokenizer for source code scripts and config files (.py, .sh, .bat, .json, .yaml, .js) with theme-aware styling. |
 | `src/app.js` (selftest section) | In-browser runner for the shared case suite (`?selftest`) — no separate module; it is part of the app glue. |
 | `src/app-*.js` | UI glue: file list, viewer, analysis tab, search results panel, presets UI (exempt from coverage gates). |
 

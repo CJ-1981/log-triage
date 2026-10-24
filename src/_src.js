@@ -25,6 +25,7 @@ module.exports = Object.assign({},
   require('./format-7z.js'),
   require('./archive.js'),
   require('./markdown.js'),
+  require('./syntax.js'),
 );
 
 // Register the built-in local provider on load (idempotent).

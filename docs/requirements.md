@@ -305,6 +305,25 @@ Raw AUTOSAR DLT binary captures are a first-class format: they are auto-detected
 - AC-4 (resilience): a truncated final message decodes as a partial record plus one warning; implausible length framing resynchronizes to the next plausible boundary, each desynchronization counted as a warning; resync that finds no plausible boundary anywhere ahead fails loudly with the byte offset and the record count so far; a header-only tail is a clean empty capture.
 - AC-5 (diagnostics): the lossy-decode warning count surfaces as a `warn` badge on the file entry (alongside the existing `enc?` badge); a positive `dlt-binary` classification never shows the `enc?` badge, because rendered text comes from the decoder.
 
+### FR-31 — Dedicated Markdown document view
+
+Status: implemented (v1.60.0, SPEC-VIEWER-003).
+
+Dedicated formatted document view for Markdown files (`.md`, `.markdown`) with pure-JS Mermaid flowchart and sequence diagram SVG rendering and dynamic 'Markdown: ON/OFF' toolbar switch.
+
+### FR-32 — Source code syntax color highlighter for scripts and configs
+
+Status: implemented (v1.60.0, SPEC-VIEWER-004).
+
+Client-side syntax color highlighting in the virtualized viewer for Python (`.py`), Shell (`.sh`, `.bash`, `.zsh`), Windows Batch (`.bat`, `.cmd`), JSON (`.json`), YAML (`.yaml`, `.yml`), and JavaScript (`.js`) files.
+
+- AC-1 (detection & badge): code files auto-detect format badges (`python`, `shell`, `batch`, `json`, `yaml`, `javascript`) by file extension.
+- AC-2 (toolbar toggle): dedicated `#btn-syntax` button ("Syntax: ON/OFF") dynamically appears in toolbar when a code file is active, defaulting to ON.
+- AC-3 (tokenization): pure-JS regex line tokenizer highlights keywords (`.syn-kwd`), builtins (`.syn-builtin`), definitions (`.syn-def`), strings (`.syn-str`), comments (`.syn-cmt`), numbers (`.syn-num`), and variables (`.syn-var`).
+- AC-4 (multi-layer visual precedence): Search matches (`<mark>`) > User highlight rules (`.rule-highlight-text`) > Syntax token spans (`.syn-*`).
+- AC-5 (drawer detail): clicking a line opens the detail drawer and renders syntax-highlighted code.
+- AC-6 (themes): all 6 themes define dedicated `--syn-*` CSS variables with compliant contrast.
+
 ## Non-functional requirements
 
 ### NFR-1 — Performance

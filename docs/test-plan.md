@@ -75,6 +75,12 @@ Note: the G0–G8 records below are historical — they describe the design veri
 - **Coverage gate:** green on all touched gated modules; the seq-keyed selection helpers added to `src/selection.js` (`addValues`, `selectAllValues`, anchor getter) are unit-covered by the new `tests/selection.test.js` (5 tests, wired into the `npm test` script). A pre-existing, SPEC-unrelated shortfall stands: `src/format-7z.js` branch coverage measures 82.1% (< 85).
 - **E2e scope:** the app suite grows from 87 to 99 specs (item 54) and the wheel stress spec (stress item 2) now pins the seamless-window contract; totals are listed in the E2e scope header above.
 
+## Verification evidence (Unreleased, SPEC-VIEWER-004)
+
+- **Unit tests:** 18 unit tests in `tests/syntax.test.js` covering extension detection, all 6 tokenizers (Python, Shell, Batch, JSON, YAML, JavaScript), HTML/XSS neutralization, throughput performance (>10,000 lines in <30ms), and boundary resistance on ultra-long lines.
+- **Coverage gate:** `src/syntax.js` measures 99.33% line coverage (>=95) and 79.69% branch coverage (>=75) — GATE PASS.
+- **E2e:** 6 Playwright tests in `tests/e2e/syntax-highlighter.e2e.spec.mjs` verifying Python/Batch tokenization, dynamic toolbar toggle, standard log auto-hiding, multi-layer visual precedence (`<mark>` > `.rule-highlight-text` > `.syn-*`), line-click detail drawer rendering, multi-file format switching, and CSS variables across all 6 themes. All 155 Playwright E2E tests passing green.
+
 ## Coverage policy
 
 - Enforced by `node tools/coverage-gate.mjs` on Node 22 using `node:test`.

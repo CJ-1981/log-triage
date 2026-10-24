@@ -63,6 +63,7 @@ Core logic modules (all covered by the coverage gate):
 - `issues.js` — issue-scan groups (crash/ANR/suspend/memory/etc.) and rule editor support.
 - `droptree.js` — recursive dropped-folder walking with folder-relative entry names.
 - `markdown.js` — lightweight pure-JS Markdown tokenizer, HTML formatter, and standalone Mermaid SVG diagram generator (flowcharts and sequence diagrams).
+- `syntax.js` — lightweight pure-JS line tokenizer for source code scripts and config files (.py, .sh, .bat, .json, .yaml, .js) with theme-aware styling.
 - `_src.js` — Node-only aggregator exporting all modules for tests and the coverage gate (not in the browser bundle).
 
 Browser-only glue modules (exempt from the coverage gate):
@@ -75,15 +76,17 @@ Browser-only glue modules (exempt from the coverage gate):
 
 Build-time module sets defined in `build.js`:
 
-- `MODULE_ORDER` — the 26 application modules concatenated into the page bundle.
+- `MODULE_ORDER` — the 27 application modules concatenated into the page bundle.
 - `WORKER_ORDER` — the pure-logic subset (`util`, `detect`, `parser`, `filters`, `search`, `paged`, `app-paging-worker`) inlined as a string for the Blob-URL worker; the worker must run standalone without UI glue.
 
 ## TESTS (tests/)
 
 - `core-cases.js` — shared UMD case suite (input → expected) powering both `node --test` and the in-browser `?selftest` page.
-- Unit suites: `core.test.js`, `scaffold.test.js`, `bump.test.js`, `archive.test.js`, `format-7z.test.js`, `pii-remote.test.js`, `paged.test.js`, `selection.test.js`, `droptree.test.js`, `highlights.test.js`, `exporter.test.js`, `export-stream.test.js`, `export-archive.test.js`.
-- `e2e/app.e2e.spec.mjs` — Playwright end-to-end specs (99 app specs).
+- Unit suites: `core.test.js`, `scaffold.test.js`, `bump.test.js`, `archive.test.js`, `format-7z.test.js`, `pii-remote.test.js`, `paged.test.js`, `selection.test.js`, `droptree.test.js`, `highlights.test.js`, `exporter.test.js`, `export-stream.test.js`, `export-archive.test.js`, `decode-dlt.test.js`, `dlt-paging-worker.test.js`, `markdown.test.js`, `syntax.test.js`.
+- `e2e/app.e2e.spec.mjs` — Playwright end-to-end specs.
 - `e2e/stress.e2e.spec.mjs` — stress suite (8 specs) over a generated big fixture.
+- `e2e/markdown-viewer.e2e.spec.mjs` — Markdown viewer toggle and Mermaid diagram specs.
+- `e2e/syntax-highlighter.e2e.spec.mjs` — source code syntax highlighting, toggle, multi-layer precedence, drawer, multi-file and theme specs.
 - `fixtures/` — `demo.log`, `syslog.log`, `apache.log`, `service.log`, `suspend.log`, `dlt-viewer-sample.txt`, `sample7z.txt`, and LZMA hex fixtures. The 7z/zip container tests build real archives with the local 7-Zip CLI when available (`p7zip-full` in CI; `SEVENZIP_BIN` override on Windows) and skip cleanly without it.
 
 ## TOOLS (tools/)
