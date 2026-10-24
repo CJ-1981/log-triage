@@ -8,6 +8,7 @@ const path = require('path');
 
 const MODULE_ORDER = [
   'util.js',
+  'custom-format.js',
   'detect.js',
   'parser.js',
   'decode-dlt.js',
@@ -44,6 +45,7 @@ const MODULE_ORDER = [
  * from MODULE_ORDER — the worker must run standalone, without UI glue. */
 const WORKER_ORDER = [
   'util.js',
+  'custom-format.js',
   'detect.js',
   'parser.js',
   'filters.js',

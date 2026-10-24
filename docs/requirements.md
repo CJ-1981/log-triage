@@ -324,6 +324,23 @@ Client-side syntax color highlighting in the virtualized viewer for Python (`.py
 - AC-5 (drawer detail): clicking a line opens the detail drawer and renders syntax-highlighted code.
 - AC-6 (themes): all 6 themes define dedicated `--syn-*` CSS variables with compliant contrast.
 
+### FR-33 — Custom log format definitions and viewer format override
+
+Status: implemented (v1.63.0, SPEC-FORMAT-001).
+
+User-defined custom log formats using regular expressions with named capture groups (`(?<ts>...)`, `(?<level>...)`, `(?<tag>...)`, `(?<pid>...)`, `(?<msg>...)`), configurable timestamp normalization, custom severity level mapping, and an active file format override dropdown in the viewer toolbar.
+
+- AC-1 (regex engine & capture groups): user can define regex patterns with named capture groups (`ts`, `level`, `tag`, `pid`, `tid`, `msg`). Definitions without `ts` or `msg` are rejected with descriptive validation errors. Bad regex patterns fail validation safely without throwing.
+- AC-2 (timestamp normalization): supports standard timestamp formats (`YYYY-MM-DD HH:mm:ss`, `ISO-8601`, `epoch-ms`, `epoch-s`, `custom-tokens`), normalized to the year-less fixed-width `MM-DD HH:MM:SS.mmm` representation.
+- AC-3 (level mapping): custom severity strings (e.g. `CRIT`, `FATAL`, `ERR`, `WARNING`, `INFO`, `DEBUG`, `TRACE`) map to canonical internal levels (`F`, `E`, `W`, `I`, `D`, `V`), with unmapped levels or continuation lines falling back to `—`.
+- AC-4 (priority autodetection): enabled custom formats are evaluated during `detectFormat` before built-in formats in user-configured priority order. The format with the highest match ratio (threshold >= 0.4) is detected.
+- AC-5 (single-line fallback): parsing applies single-line regex matching. Non-matching lines fall back to continuation records (`parseFallback`), preserving raw line content with null timestamp and null level.
+- AC-6 (viewer toolbar override): a format dropdown in the viewer toolbar (`#sel-format-override`) allows explicitly overriding the active file's detected format to any built-in format or custom format, re-indexing and updating the timeline immediately without page reload.
+- AC-7 (worker boundary): custom format definitions are JSON-serializable plain objects that transfer seamlessly across `postMessage` to the paging worker for full-file indexing, filtering, and page reads.
+- AC-8 (config lifecycle): custom formats persist in `localStorage` under `state.customFormats`, round-trip through Config-tab JSON export/import (`exportConfig`/`importConfig`), and are preserved in named presets.
+- AC-9 (format management UI): Config tab provides an intuitive format manager with add/edit modal, live interactive preview with syntax verification, duplicate/delete actions, and a button to restore standard starter examples (Spring Boot, Nginx Error, etc.).
+- AC-10 (file-format memory): viewer format overrides persist per file identity (`name + size + firstLineHash`) in `localStorage`.
+
 ## Non-functional requirements
 
 ### NFR-1 — Performance

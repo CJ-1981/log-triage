@@ -2,7 +2,13 @@
  * Timestamp model is year-less and UTC-naive: 'MM-DD HH:MM:SS.mmm'
  * (lexicographic order == chronological order). Detection order matches the
  * android-log-analysis skill: ISO -> syslog -> CLF -> bare MM-DD. */
-(function (root, factory) { if (typeof module === 'object' && module.exports) { module.exports = factory(); } else { Object.assign((root.LT || (root.LT = {})), factory()); } }(typeof self !== 'undefined' ? self : this, function () {
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) {
+    module.exports = factory(require('./custom-format.js'));
+  } else {
+    Object.assign((root.LT || (root.LT = {})), factory(root.LT));
+  }
+}(typeof self !== 'undefined' ? self : this, function (custom) {
   'use strict';
 
   const MONTHS = {
@@ -136,8 +142,8 @@
     return record(ts, level, m[13] + ':' + m[14], m[15], rest);
   }
 
-  /** parseLine(line, format) -> { ts, level, tag, pid, tid, msg } (tid only for logcat threadtime) */
-  function parseLine(line, format) {
+  /** parseLine(line, format, customFormats) -> { ts, level, tag, pid, tid, msg } (tid only for logcat threadtime) */
+  function parseLine(line, format, customFormats) {
     switch (format) {
       case 'logcat': return parseLogcat(line);
       case 'syslog': return parseSyslog(line);
@@ -150,7 +156,19 @@
       // degrade to the null-field continuation shape instead of running the
       // dlt text regex (RE_DLT_LINE) over binary-rendered text.
       case 'dlt-binary': return record(null, null, null, null, line);
-      default: return parseFallback(line);
+      default: {
+        if (customFormats && custom) {
+          const match = customFormats.find((f) => f && f.name === format);
+          if (match) {
+            const compiled = match.regex ? match : custom.compileCustomFormat(match);
+            if (compiled && compiled.regex) {
+              const res = custom.parseCustomLine(line, compiled);
+              if (res) return record(res.ts, res.level, res.tag, res.pid, res.msg, res.tid);
+            }
+          }
+        }
+        return parseFallback(line);
+      }
     }
   }
 

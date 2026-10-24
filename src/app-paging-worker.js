@@ -73,7 +73,7 @@ self.onmessage = async ({ data: m }) => {
   try {
     if (type === 'index') {
       const token = ++indexToken;
-      const s = new LT.PagedLog(m.file, m.fileId, nextBase);
+      const s = new LT.PagedLog(m.file, m.fileId, nextBase, m.customFormats, m.forcedFormat);
       let last = 0;
       const sample = await s.index((bytes) => { if (performance.now() - last > 60) { emit(id, { progress: 'Indexing… ' + Math.floor(bytes / Math.max(1, m.file.size) * 100) + '%', bytes }); last = performance.now(); } }, () => token !== indexToken, m.sampleLimit);
       nextBase += s.count; sources.push(s); allOrder = null; version++; orderRevision++;
@@ -127,6 +127,20 @@ self.onmessage = async ({ data: m }) => {
       emit(id, { rows, start: m.start, total: exportOrder.length });
     }
     else if (type === 'locate') { let at = -1; const s = sources.find((s) => s.id === m.fileId && !s.removed); if (s) { const value = s.base + m.lineNo - 1; for (let i = 0; i < order.length; i++) { if (order[i] === value) { at = i; break; } if ((i & 65535) === 0) await new Promise((r) => setTimeout(r, 0)); } } emit(id, { at }); }
+    else if (type === 'reformat') {
+      const idx = sources.findIndex((s) => s.id === m.fileId && !s.removed);
+      if (idx >= 0) {
+        const old = sources[idx];
+        const s = new LT.PagedLog(old.file, old.id, old.base, m.customFormats, m.format);
+        const sample = await s.index(null, null, m.sampleLimit || 2000);
+        sources[idx] = s;
+        old.cache.clear(); old.offsets = old.times = old.levels = null;
+        allOrder = null; version++; orderRevision++;
+        emit(id, { count: s.count, counts: s.counts, format: s.format, firstLine: s.firstLine, maxLength: s.maxLength, utf8: s.utf8 !== false, warnings: s.warnings || 0, sample });
+      } else {
+        emit(id, { error: 'File not found' });
+      }
+    }
     else if (type === 'remove') { queryToken++; searchToken++; indexToken++; orderRevision++; const s = sources.find((s) => s.id === m.fileId); if (s) { s.removed = true; s.cache.clear(); s.offsets = s.times = s.levels = null; } allOrder = null; version++; emit(id, {}); }
     else if (type === 'cancel') { queryToken++; searchToken++; indexToken++; emit(id, {}); }
     else if (type === 'cancelExport') { exportToken++; emit(id, {}); }

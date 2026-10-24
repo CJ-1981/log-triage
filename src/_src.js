@@ -4,6 +4,7 @@
  * of the browser bundle — in the browser the UMD modules populate window.LT. */
 module.exports = Object.assign({},
   require('./util.js'),
+  require('./custom-format.js'),
   require('./detect.js'),
   require('./parser.js'),
   require('./decode-dlt.js'),

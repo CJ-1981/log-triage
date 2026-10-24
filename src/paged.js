@@ -177,10 +177,12 @@
   }
 
   class PagedLog {
-    constructor(file, id, base) {
+    constructor(file, id, base, customFormats, forcedFormat) {
       this.file = file; this.id = id; this.base = base || 0; this.count = 0;
+      this.customFormats = customFormats || [];
+      this.forcedFormat = forcedFormat || null;
       this.offsets = new Column(Float64Array); this.times = new Column(Float64Array); this.levels = new Column(Uint8Array);
-      this.format = 'plain'; this.counts = {}; this.firstLine = ''; this.maxLength = 0;
+      this.format = forcedFormat || 'plain'; this.counts = {}; this.firstLine = ''; this.maxLength = 0;
       this.warnings = 0; this.storageHeader = false; // dlt-binary diagnostics (R1-5, R5-5)
       this.cache = new Map(); this.cacheBytes = 0;
       this.utf8 = true; // set false by index() when the head fails strict UTF-8 validation
@@ -205,8 +207,9 @@
       // a head the text scorer rates at 0.5 confidence or higher is ordinary
       // text and never dlt-binary.
       const sniffed = dlt.dltSniff(head, this.file.size);
-      let binary = sniffed.binary;
-      if (binary && !sniffed.storageHeader && detector.detectFormat(new TextDecoder().decode(head).split('\n')).confidence >= 0.5) binary = false;
+      let binary = !this.forcedFormat && sniffed.binary;
+      if (this.forcedFormat === 'dlt-binary') binary = true;
+      if (binary && !sniffed.storageHeader && detector.detectFormat(new TextDecoder().decode(head).split('\n'), this.customFormats).confidence >= 0.5) binary = false;
       // analysis sample = first half of the budget (file head: format intro,
       // boot lines) + a ring of the newest rest (crashes usually land late).
       // A first-N-only sample would miss end-of-file issues on big logs.
@@ -214,7 +217,7 @@
       const sample = [], tail = new Array(tailCap);
       let tailPos = 0, tailFilled = 0, lastTime = 0;
       const add = ({ raw, offset, record }) => {
-        const rec = record || parser.parseLine(raw, this.format);
+        const rec = record || parser.parseLine(raw, this.format, this.customFormats);
         if (!this.count) this.firstLine = raw.slice(0, 200);
         this.offsets.push(offset);
         if (rec.ts) lastTime = timeKey(rec.ts);
@@ -235,20 +238,21 @@
         this.warnings = stats.warnings;
         return sample.concat(tail.slice(tailPos), tail.slice(0, tailPos)).filter(Boolean);
       }
-      const pending = []; let detected = false;
+      const pending = []; let detected = !!this.forcedFormat;
+      if (this.forcedFormat) this.format = this.forcedFormat;
       for await (const line of byteLines(this.file, onProgress, cancelled)) {
-        if (!detected) { pending.push(line); if (pending.length < 1000) continue; this.format = detector.detectFormat(pending.map((r) => r.raw)).format; pending.forEach(add); pending.length = 0; detected = true; }
+        if (!detected) { pending.push(line); if (pending.length < 1000) continue; this.format = detector.detectFormat(pending.map((r) => r.raw), this.customFormats).format; pending.forEach(add); pending.length = 0; detected = true; }
         else add(line);
       }
       if (cancelled && cancelled()) throw new Error('Cancelled');
-      if (!detected) { this.format = detector.detectFormat(pending.map((r) => r.raw)).format; pending.forEach(add); }
+      if (!detected) { this.format = detector.detectFormat(pending.map((r) => r.raw), this.customFormats).format; pending.forEach(add); }
       return sample.concat(tail.slice(tailPos), tail.slice(0, tailPos)).filter(Boolean);
     }
     metadata(i) {
       const code = this.levels.get(i);
       return { ts: code & 128 ? null : timeText(this.times.get(i)), level: code & 127 ? String.fromCharCode(code & 127) : null };
     }
-    record(i, raw, parsed) { return Object.assign({ fileId: this.id, file: this.id, lineNo: i + 1, seq: this.base + i + 1, raw }, parsed || parser.parseLine(raw, this.format)); }
+    record(i, raw, parsed) { return Object.assign({ fileId: this.id, file: this.id, lineNo: i + 1, seq: this.base + i + 1, raw }, parsed || parser.parseLine(raw, this.format, this.customFormats)); }
     // Format-agnostic record iterator (R3-2): the byteLines text splitter for
     // text formats, the decoded binary record iterator for dlt-binary, so the
     // worker raw-scan loops (full search, quick scan, non-highlight filter
