@@ -485,7 +485,7 @@
       const div = document.createElement('div');
       div.className = 'file-item' + (mergedView || state.activeFile === f.id ? ' active' : '');
       div.innerHTML = '<button class="fx" data-remove="' + esc(f.id) + '" title="remove this file">✕</button>' +
-        '<div class="fname">' + esc(f.name) + '</div>' +
+        '<div class="fname" title="' + esc(f.name) + '">' + esc(f.name) + '</div>' +
         '<div class="fmeta"><span class="badge fmt">' + esc(f.format) + '</span>' +
         (f.utf8 === false ? '<span class="badge enc" title="not valid UTF-8 — decoded with replacement characters; text may be garbled">enc?</span>' : '') +
         (f.warnings ? '<span class="badge enc" title="lossy binary decode — ' + f.warnings + ' resynchronization/decode warning' + (f.warnings === 1 ? '' : 's') + ' while indexing">' + f.warnings + ' warn</span>' : '') +
@@ -518,7 +518,7 @@
       if (c.data) {
         div.className = 'file-item cached';
         div.title = 'cached — click to load';
-        div.insertAdjacentHTML('beforeend', '<div class="fname">' + esc(c.name) + '</div>' +
+        div.insertAdjacentHTML('beforeend', '<div class="fname" title="' + esc(c.name) + '">' + esc(c.name) + '</div>' +
           '<div class="fmeta"><span class="badge fmt">' + esc(c.format || '—') + '</span>' +
           (c.utf8 === false ? '<span class="badge enc" title="not valid UTF-8 — decoded with replacement characters; text may be garbled">enc?</span>' : '') +
           '<span>' + LT.fmtBytes(c.size) + '</span><span>cached — click to load</span></div>');
@@ -526,7 +526,7 @@
       } else {
         div.className = 'file-item missing';
         div.title = 'this file could not be restored';
-        div.insertAdjacentHTML('beforeend', '<div class="fname muted">' + esc(c.name) + '</div>' +
+        div.insertAdjacentHTML('beforeend', '<div class="fname muted" title="' + esc(c.name) + '">' + esc(c.name) + '</div>' +
           '<div class="fmeta"><span class="badge miss">file not found</span>' +
           '<span>' + LT.fmtBytes(c.size) + '</span></div>');
       }
