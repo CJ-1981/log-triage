@@ -16,10 +16,16 @@
    * type words keep this disjoint from logcat/syslog/ISO/CLF/MM-DD shapes. */
   const RE_DLT = /^(?:\d+\s+)?\d{4}\/\d{2}\/\d{2}\s+([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{1,6})?\s+(?:\d+\.\d{1,4}\s+)?\d+\s+\S{1,10}\s+\S{1,10}\s+\S{1,10}\s+\d+\s+(?:log|app_trace|nw_trace|control|extension|junction)\s+\S+\s/;
 
+  /* Qualcomm QXDM / QCAT text export:
+   * `[date] time [LOG|MSG|EV|EVENT] [0xXXXX] payload`. Bracketed category
+   * ensures disjointness from logcat/syslog/ISO/DLT formats. */
+  const RE_QXDM = /^(?:(?:\d{4}\s+[A-Za-z]{3}\s+\d{1,2}|\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01]))\s+)?([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.\d{1,6})?\s+\[(LOG|MSG|EV|EVENT)\]/;
+
   const FORMATS = [
     ['logcat', RE_LOGCAT],
     ['syslog', RE_SYSLOG],
     ['clf', RE_CLF],
+    ['qxdm', RE_QXDM],
     ['iso8601', RE_ISO],
     ['mmdd', RE_MMDD],
     ['dlt', RE_DLT],
@@ -65,9 +71,17 @@
     }
     let best = 'plain';
     let bestRatio = 0;
+    const nonContLines = samples.filter((l) => !/^\s/.test(l) && !/^%/.test(l));
     for (const [fmt] of allFormats) {
-      const ratio = hits[fmt] / samples.length;
+      let ratio = hits[fmt] / samples.length;
+      if (fmt === 'qxdm' && nonContLines.length && (hits[fmt] / nonContLines.length) >= 0.5) {
+        ratio = Math.max(ratio, hits[fmt] / nonContLines.length);
+      }
       if (ratio > bestRatio) { bestRatio = ratio; best = fmt; }
+    }
+    if (samples.some((l) => /^%(MOBILE PARSED MESSAGE FILE|QCAT VERSION)/i.test(l))) {
+      best = 'qxdm';
+      bestRatio = Math.max(bestRatio, 0.9);
     }
     const format = bestRatio >= 0.5 ? best : 'plain';
     return { format, confidence: bestRatio, hits, samples: samples.length };

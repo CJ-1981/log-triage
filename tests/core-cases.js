@@ -78,6 +78,16 @@
     ok(r.confidence >= 0.5);
   });
 
+  T('detect', 'qxdm text export majority', () => {
+    const r = SRC.detectFormat([
+      '19:28:12.345  [LOG]  0x11AB  LTE RRC OTA Message',
+      '19:28:12.512  [MSG]  0x133C  [0x0000] 3GPP_NAS / HIGH / NAS_MM: [nas_emm_proc.c Line 432] EMM State: EMM-REGISTERED',
+      '19:28:13.001  [EV]   0x038A  LTE_RRC_STATE_CHANGE',
+    ]);
+    eq(r.format, 'qxdm');
+    ok(r.confidence >= 0.5);
+  });
+
   T('detect', 'dlt lines are not claimed by other formats and vice versa', () => {
     const dlt = '1 2026/09/03 14:06:03.123456 1788444.3630 10872 ECU1 APP1 CTX1 1234 log info verbose 1 LTE attached';
     const hits = SRC.detectFormat([dlt, dlt, dlt]).hits;
@@ -223,6 +233,23 @@
     eq(r.ts, null);
     eq(r.level, null);
     eq(r.msg, '    wrapped payload fragment');
+  });
+
+  T('parse', 'qxdm text export maps timestamps, levels, tags and continuation lines', () => {
+    const rLog = SRC.parseLine('2024 Oct 24  19:28:12.345  [LOG]  0x11AB  LTE RRC OTA Message', 'qxdm');
+    deepEq(rLog, { ts: '10-24 19:28:12.345', level: 'I', tag: '0x11AB', pid: null, tid: null, msg: 'LTE RRC OTA Message' });
+
+    const rMsg = SRC.parseLine('19:28:12.512  [MSG]  0x133C  [0x0000] 3GPP_NAS / HIGH / NAS_MM: [nas_emm.c:10] EMM State', 'qxdm');
+    eq(rMsg.level, 'W');
+    eq(rMsg.tag, '0x133C');
+
+    const rEv = SRC.parseLine('19:28:13.001  [EV]   0x038A  LTE_RRC_STATE_CHANGE', 'qxdm');
+    eq(rEv.level, 'I');
+    eq(rEv.tag, '0x038A');
+
+    const rTree = SRC.parseLine('    Protocol Discriminator: LTE RRC (3)', 'qxdm');
+    eq(rTree.ts, null);
+    eq(rTree.level, null);
   });
 
   T('parse', 'syslog with PRI maps severity to ladder', () => {

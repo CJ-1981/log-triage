@@ -1,6 +1,8 @@
 # Changelog
 
 ## Unreleased
+- feat(format): add built-in Qualcomm QXDM / QCAT text export log format (SPEC-FORMAT-002)
+- docs(SPEC-FORMAT-002): sync-phase documentation, FR-34, and ADR-0020
 
 ## 1.63.0 (2026-10-24)
 - ci: re-trigger CI after runner hang

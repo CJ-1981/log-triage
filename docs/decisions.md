@@ -142,3 +142,15 @@ Architecture decision records (ADRs). Status values: proposed, accepted, superse
   7. Keep all custom format definitions strictly JSON-serializable so they cross the worker `postMessage` boundary cleanly without external dependencies.
   8. Integrate custom format management in the Config tab with live preview and syntax checking, round-tripping through `exportConfig`/`importConfig` and presets.
 - **Consequences:** Any single-line log format can be parsed, filtered, searched, and analyzed with zero code changes; parsing and reformatting remain 100% offline and execute inside the dedicated paging worker without UI freezes; complex multi-line formats (e.g. multi-line JSON or custom block headers) remain out of scope for this single-line regex contract.
+
+## ADR-0020 — Qualcomm QXDM / QCAT text export log support
+
+- **Status:** accepted (v1.64.0)
+- **Context:** Qualcomm QXDM and QCAT are standard tools for cellular protocol analysis (LTE, 5G NR, IMS, NAS, WCDMA) and modem diagnostics. Diagnostic captures exported to text files contain structured packet records (`[LOG]`, `[MSG]`, `[EV]`) with hexadecimal packet codes (`0xXXXX`), timestamped air-interface messages, and indented ASN.1 protocol tree breakdowns. Users need instant triage, filtering, search, and PII masking for QXDM text export files without manual conversion or configuration.
+- **Decision:**
+  1. Add built-in format `qxdm` recognized by `src/detect.js` and parsed by `src/parser.js`.
+  2. Autodetection: Disjoint bracketed category syntax `\[(LOG|MSG|EV|EVENT)\]` ensures zero false positives against classic log formats (logcat, syslog, ISO-8601, CLF, DLT). Comment headers (`%MOBILE PARSED MESSAGE FILE`, `%QCAT VERSION`) provide instant high-confidence classification.
+  3. Record extraction: Normalizes timestamps (`HH:MM:SS.mmm` or date-bearing `YYYY Mon DD`) to standard `MM-DD HH:MM:SS.mmm`. Maps `[MSG]` severity levels (`FATAL`→`F`, `ERROR`→`E`, `HIGH`→`W`, `MED`/`MEDIUM`→`I`, `LOW`→`D`) and extracts hex codes (`0x11AB`, `0x133C`, `0x038A`) into the record `tag` for instant tag filtering.
+  4. Continuation lines: Indented payload lines (`    Protocol Discriminator: ...`) and `%` comment lines fall back to continuation records (`parseFallback`), preserving raw text and attaching to the preceding diagnostic packet in merged timeline views.
+  5. Format override: Registered in `#sel-format-override` as a built-in format option.
+- **Consequences:** Qualcomm modem triage works out of the box with zero external dependencies, preserving the 100% offline single-file deliverable. Binary `.qmdl`/`.isf` captures remain deferred in favor of text exports (mirroring ADR-0014 for DLT).

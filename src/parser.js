@@ -49,6 +49,17 @@
     debug: 'D', trace: 'V',
   };
 
+  /* Qualcomm QXDM / QCAT text export:
+   * `[YYYY Mon DD | YYYY-MM-DD] HH:MM:SS.mmm [LOG|MSG|EV|EVENT] [0xXXXX] payload` */
+  const RE_QXDM_LINE = /^(?:(?:(\d{4})\s+([A-Za-z]{3})\s+(\d{1,2})|(\d{4})-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01]))\s+)?([01]\d|2[0-3]):([0-5]\d):([0-5]\d)(?:\.(\d{1,6}))?\s+\[(LOG|MSG|EV|EVENT)\](?:\s+(0x[0-9A-Fa-f]{1,8}|\[0x[0-9A-Fa-f]{1,8}\]))?(?:\s+(.*))?$/;
+  const QXDM_LEVELS = {
+    fatal: 'F', critical: 'F', error: 'E', err: 'E',
+    high: 'W', warning: 'W', warn: 'W',
+    med: 'I', medium: 'I', info: 'I',
+    low: 'D', debug: 'D', trace: 'V',
+  };
+  const RE_QXDM_SEV = /\b(FATAL|CRITICAL|ERROR|ERR|HIGH|WARNING|WARN|MED|MEDIUM|INFO|LOW|DEBUG|TRACE)\b/i;
+
   function padMs(ms) { return ((ms || '0') + '000').slice(0, 3); }
 
   function p2(n) { return ('0' + n).slice(-2); }
@@ -142,6 +153,35 @@
     return record(ts, level, m[13] + ':' + m[14], m[15], rest);
   }
 
+  function parseQxdm(line) {
+    if (!line || line.charCodeAt(0) === 37 || line.charCodeAt(0) === 32 || line.charCodeAt(0) === 9) {
+      return parseFallback(line);
+    }
+    const m = RE_QXDM_LINE.exec(line);
+    if (!m) return parseFallback(line);
+    let ts;
+    if (m[2]) {
+      const mon = MONTHS[m[2].toLowerCase()] || '01';
+      ts = mon + '-' + p2(m[3]) + ' ' + m[7] + ':' + m[8] + ':' + m[9] + '.' + padMs(m[10]);
+    } else if (m[5]) {
+      ts = m[5] + '-' + m[6] + ' ' + m[7] + ':' + m[8] + ':' + m[9] + '.' + padMs(m[10]);
+    } else {
+      ts = '01-01 ' + m[7] + ':' + m[8] + ':' + m[9] + '.' + padMs(m[10]);
+    }
+    const type = m[11];
+    const code = m[12] ? m[12].replace(/^\[|\]$/g, '') : null;
+    const msg = m[13] || '';
+    let level;
+    if (type === 'MSG') {
+      const sm = RE_QXDM_SEV.exec(msg);
+      level = sm ? (QXDM_LEVELS[sm[1].toLowerCase()] || 'I') : 'I';
+    } else {
+      level = /(?:^|[^A-Za-z0-9])(ERROR|FAIL|FAILED|FAILURE|FATAL)(?:[^A-Za-z0-9]|$)/i.test(msg) ? 'E' : 'I';
+    }
+    const tag = code || type;
+    return record(ts, level, tag, null, msg);
+  }
+
   /** parseLine(line, format, customFormats) -> { ts, level, tag, pid, tid, msg } (tid only for logcat threadtime) */
   function parseLine(line, format, customFormats) {
     switch (format) {
@@ -151,6 +191,7 @@
       case 'iso8601': return parseWithTs(line);
       case 'mmdd': return parseWithTs(line);
       case 'dlt': return parseDlt(line);
+      case 'qxdm': return parseQxdm(line);
       // Defensive only: binary-rendered DLT lines always arrive pre-parsed
       // from the decoder (src/decode-dlt.js), so a future re-parse must
       // degrade to the null-field continuation shape instead of running the

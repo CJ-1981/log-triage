@@ -2735,7 +2735,7 @@
     const detected = curFile.detectedFormat || curFile.format || 'plain';
     const forced = (state.formatOverrides && state.formatOverrides[curFile.id]) || '';
 
-    const builtIns = ['logcat', 'syslog', 'clf', 'iso8601', 'mmdd', 'dlt', 'dlt-binary', 'plain'];
+    const builtIns = ['logcat', 'syslog', 'clf', 'iso8601', 'mmdd', 'dlt', 'dlt-binary', 'qxdm', 'plain'];
     const customFmts = (state.customFormats || []).map((c) => c.name);
 
     let html = '<option value="">Auto (' + esc(detected) + ')</option>';

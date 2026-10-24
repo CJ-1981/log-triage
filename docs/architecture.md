@@ -7,7 +7,7 @@ flowchart TD
     IN["Input — N local files<br>multi drag & drop · picker · paste · demo"]
     subgraph S1["1 · Streaming ingestion — sequential per file"]
         A1["file.stream() → chunk buffer → newline splitter (8 MB valve)"]
-        A2["format autodetect per file: custom formats · logcat · syslog · ISO-8601 · CLF · MM-DD · dlt-viewer text · dlt-binary · plain"]
+        A2["format autodetect per file: custom formats · logcat · syslog · ISO-8601 · CLF · MM-DD · dlt-viewer text · qxdm · dlt-binary · plain"]
         A3["parser → record (file · lineNo · ts · level · tag · pid · msg)"]
         A1 --> A2 --> A3
     end
@@ -71,9 +71,9 @@ Implemented (G0–G1):
 | --- | --- |
 | `src/util.js` | Shared helpers (hashing, formatting, small utilities reused by all modules). |
 | `src/custom-format.js` | Custom log format definition engine: regex named-group extraction (`ts`, `level`, `tag`, `pid`, `tid`, `msg`), validation, timestamp normalization (`YYYY-MM-DD HH:mm:ss`, `ISO-8601`, `epoch-ms`, `epoch-s`), custom severity mapping, and starter examples. |
-| `src/detect.js` | Format autodetection (text-only scorer per design): evaluates enabled custom formats first, followed by built-in formats (logcat threadtime, syslog RFC 3164, Apache CLF, ISO-8601, bare MM-DD, dlt-viewer text exports, plain). Binary `.dlt` captures are classified by a byte sniff in `src/paged.js`, layered above this scorer with a text-format veto. |
+| `src/detect.js` | Format autodetection (text-only scorer per design): evaluates enabled custom formats first, followed by built-in formats (logcat threadtime, syslog RFC 3164, Apache CLF, QXDM/QCAT text, ISO-8601, bare MM-DD, dlt-viewer text exports, plain). Binary `.dlt` captures are classified by a byte sniff in `src/paged.js`, layered above this scorer with a text-format veto. |
 | `src/decode-dlt.js` | Pure binary AUTOSAR DLT decoder: per-message boundary walk (optional 16-byte storage header, standard header, optional UEH extended header), verbose typed-argument rendering with hex fallback for opaque/invalid payloads, bounded sliding-window resynchronization over corrupt framing, and deterministic decode (identical bytes → identical records, offsets, and warning counts). |
-| `src/parser.js` | Parsers for the six formats; normalized records (`file · lineNo · ts · level · tag · pid · msg`) with year-less `MM-DD HH:MM:SS.mmm` timestamps. |
+| `src/parser.js` | Parsers for the built-in formats (logcat, syslog, CLF, ISO-8601, MM-DD, DLT, QXDM); normalized records (`file · lineNo · ts · level · tag · pid · msg`) with year-less `MM-DD HH:MM:SS.mmm` timestamps. |
 | `src/_src.js` | Node aggregator that exports all modules for tests and the coverage gate. |
 
 Implemented in G2–G8:
