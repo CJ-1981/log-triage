@@ -14,6 +14,7 @@
   const defaults = () => ({
     theme: LT.DEFAULT_THEME || 'midnight',
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null, drawerOn: true,
+    markdownOn: false,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
     timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200, issueGroups: null,
     filtersEnabled: true, // master Filter toggle — transient, never persisted
@@ -36,7 +37,7 @@
       // unfiltered, or freshly loaded files can appear invisible. The master
       // Filter toggle belongs to that group — a persisted bypass would make
       // newly loaded files look empty.
-      const { quick, levels, timeFrom, timeTo, rgPattern, showOnlyBookmarked, zenOn, filtersEnabled, ...persisted } = state;
+      const { quick, levels, timeFrom, timeTo, rgPattern, showOnlyBookmarked, zenOn, filtersEnabled, markdownOn, ...persisted } = state;
       const s = Object.assign({}, persisted, { bookmarks: bookmarksStore.toJSON() });
       localStorage.setItem(STATE_KEY, JSON.stringify(s));
     } catch (e) { /* storage may be unavailable on file:// in some browsers */ }
@@ -320,13 +321,15 @@
     if (buf) yield buf.replace(/\r$/, '');
   }
 
+  const isMarkdownFile = (f) => !!(f && f.name && (LT.isMarkdown ? LT.isMarkdown(f.name) : /\.(md|markdown)$/i.test(f.name)));
+
   async function ingestFile(entry) {
     const bt = busy('Indexing ' + entry.name + '…');
     store.setFileInfo(entry.id, entry.name, entry.size);
     try {
       const result = await paging.request('index', { fileId: entry.id, file: entry.file, sampleLimit: Math.min(100000, state.cap || 100000) }, (p) => { entry.read = p.bytes || entry.read; busyMessage(bt, p.progress); });
       if (ingestAbort || !files.includes(entry)) return;
-      entry.format = result.format; entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
+      entry.format = isMarkdownFile(entry) ? 'markdown' : result.format; entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
       entry.utf8 = result.utf8 !== false; // false => head failed strict UTF-8 validation
       entry.warnings = result.warnings || 0; // lossy binary decode count (dlt-binary, R5-5)
       const f = store._files[entry.id];
@@ -408,7 +411,7 @@
         if (innerFiles) await ingestFiles(innerFiles);
         continue;
       }
-      const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
+      const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: isMarkdownFile(f) ? 'markdown' : '…', read: 0 };
       files.push(entry);
       renderFiles();
       try {
@@ -535,6 +538,7 @@
     if (!live.length && !cached.length && q) {
       el.insertAdjacentHTML('beforeend', '<div class="muted" style="padding:8px 10px">no files match the filter</div>');
     }
+    updateMarkdownView();
   }
 
   // instant tooltip for truncated file names — native title is delayed and
@@ -755,7 +759,7 @@
       filteredCount = result.total;
       await loadPage(state.follow ? Math.max(0, Math.floor((filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE) : 0, state.follow, bt);
       if (result.errors?.length) flash(result.errors.map((e) => e.error).join('; '));
-      renderFiles(); renderChips(); updateStatus();
+      renderFiles(); renderChips(); updateStatus(); updateMarkdownView();
     } catch (error) { if (token === viewToken) pagingError(error); }
     finally { doneBusy(bt); }
   }
@@ -2478,6 +2482,69 @@
     $('btn-filter').textContent = 'Filter: ' + (on ? 'ON' : 'OFF');
     $('btn-filter').classList.toggle('on', on);
   }
+  function currentDisplayedFile() {
+    if (state.viewMode === 'file' && state.activeFile) {
+      return files.find((f) => f.id === state.activeFile) || null;
+    }
+    return files.length === 1 ? files[0] : null;
+  }
+  function setMarkdown(on) {
+    state.markdownOn = on;
+    updateMarkdownView();
+  }
+  async function updateMarkdownView() {
+    const btn = $('btn-markdown');
+    const mdViewer = $('md-viewer');
+    const logViewer = $('viewer');
+    const pager = $('pager');
+
+    const curFile = currentDisplayedFile();
+    const isMd = isMarkdownFile(curFile);
+
+    if (btn) {
+      btn.classList.toggle('hidden', !isMd);
+      btn.textContent = 'Markdown: ' + (state.markdownOn ? 'ON' : 'OFF');
+      btn.classList.toggle('on', !!state.markdownOn);
+      btn.title = isMd
+        ? (state.markdownOn ? 'Markdown: ON (click to show raw line-numbered view)' : 'Markdown: OFF (click to render markdown and mermaid)')
+        : 'Markdown rendering for .md files';
+    }
+
+    if (!isMd || !state.markdownOn) {
+      if (mdViewer) {
+        mdViewer.classList.add('hidden');
+        mdViewer.innerHTML = '';
+      }
+      if (logViewer) logViewer.classList.remove('hidden');
+      if (pager) pager.classList.remove('hidden');
+      return;
+    }
+
+    // Markdown ON
+    if (logViewer) logViewer.classList.add('hidden');
+    if (pager) pager.classList.add('hidden');
+    if (mdViewer) {
+      mdViewer.classList.remove('hidden');
+      mdViewer.innerHTML = '<div class="muted" style="padding:20px">Rendering markdown…</div>';
+      try {
+        let text = '';
+        if (curFile.file && typeof curFile.file.text === 'function') {
+          text = await curFile.file.text();
+        } else if (curFile.file && curFile.file.slice) {
+          text = await new Response(curFile.file).text();
+        } else if (curFile.data) {
+          text = typeof curFile.data === 'string' ? curFile.data : new TextDecoder().decode(curFile.data);
+        }
+        if (LT.renderMarkdown) {
+          mdViewer.innerHTML = LT.renderMarkdown(text);
+        } else {
+          mdViewer.innerHTML = '<pre>' + esc(text) + '</pre>';
+        }
+      } catch (err) {
+        mdViewer.innerHTML = '<div class="mermaid-fallback"><div class="mermaid-warning">Failed to render markdown: ' + esc(err.message) + '</div></div>';
+      }
+    }
+  }
   function setWrap(on) {
     state.wrapOn = on;
     $('btn-wrap').textContent = 'Wrap: ' + (on ? 'ON' : 'OFF');
@@ -2928,6 +2995,7 @@
     $('btn-drawer').onclick = () => setDrawer(!state.drawerOn);
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-filter').onclick = () => { setFiltersEnabled(!state.filtersEnabled).catch(pagingError); };
+    $('btn-markdown').onclick = () => setMarkdown(!state.markdownOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
     $('view-mode').onchange = () => {
@@ -3115,6 +3183,7 @@
     setDrawer(state.drawerOn !== false);
     syncMasksFromState(); syncRgFromState();
     renderChips(); renderRules(); renderPresets(); renderFiles(); renderBookmarks(); updateStatus();
+    updateMarkdownView();
     bindViewer();
     applySide();
     restoreCache().catch(() => {});

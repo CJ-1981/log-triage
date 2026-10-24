@@ -161,6 +161,28 @@ body.zen #zen-hud { display: block; }
 #viewer { position: absolute; inset: 0; overflow: auto; overflow-anchor: none; font-family: var(--mono); font-size: 12.5px; }
 #vspacer { position: relative; width: 100%; min-width: 0; }
 #viewer.nowrap #vspacer { width: max-content; min-width: 100%; }
+#md-viewer { position: absolute; inset: 0; overflow: auto; padding: 24px 32px; box-sizing: border-box; color: var(--fg); background: var(--bg); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-size: 14px; line-height: 1.6; z-index: 5; }
+#md-viewer.hidden { display: none !important; }
+#md-viewer h1, #md-viewer h2, #md-viewer h3, #md-viewer h4, #md-viewer h5, #md-viewer h6 { color: var(--fg); margin-top: 1.4em; margin-bottom: 0.6em; font-weight: 600; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+#md-viewer h1 { font-size: 1.8em; }
+#md-viewer h2 { font-size: 1.4em; }
+#md-viewer h3 { font-size: 1.2em; }
+#md-viewer p { margin: 0.8em 0; }
+#md-viewer code { font-family: var(--mono); background: var(--card); padding: 2px 6px; border-radius: 4px; font-size: 0.9em; }
+#md-viewer pre { background: var(--card); border: 1px solid var(--border); border-radius: 6px; padding: 12px 16px; overflow-x: auto; margin: 1em 0; }
+#md-viewer pre code { background: transparent; padding: 0; }
+#md-viewer blockquote { border-left: 4px solid var(--accent); margin: 1em 0; padding: 4px 16px; color: var(--muted); background: rgba(127,127,127,0.05); }
+#md-viewer table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+#md-viewer th, #md-viewer td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+#md-viewer th { background: var(--card); font-weight: 600; }
+#md-viewer tr:nth-child(even) { background: rgba(127,127,127,0.03); }
+#md-viewer ul, #md-viewer ol { padding-left: 24px; margin: 0.8em 0; }
+#md-viewer li { margin: 0.3em 0; }
+#md-viewer .task-list-item { list-style: none; margin-left: -18px; }
+#md-viewer .mermaid-container { display: flex; justify-content: center; margin: 1.5em 0; overflow-x: auto; padding: 16px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; }
+#md-viewer .mermaid-diagram { max-width: 100%; height: auto; }
+#md-viewer .mermaid-fallback { border: 1px solid var(--warn); border-radius: 6px; padding: 12px; margin: 1em 0; background: rgba(229, 192, 123, 0.08); }
+#md-viewer .mermaid-warning { color: var(--warn); font-weight: 600; margin-bottom: 8px; font-size: 0.9em; }
 /* start/end-of-log marker bands (pagination orientation aids). The band
    spans the full scroll width, but its label is sticky-left so it stays in
    view even when long lines make the spacer wider than the viewport. */
@@ -441,6 +463,7 @@ table.rules { min-width: 620px; }
           <button id="btn-sall" class="vt-sec" aria-expanded="false" aria-controls="sall" title="Search all — list EVERY line matching the quick scan across the current file(s) (merged view: all loaded files; per-file view: the displayed file) in a bottom panel — shortcut: Ctrl+Enter">Search all <kbd id="sall-kbd" style="margin-left:4px"></kbd></button>
           <button id="btn-mask" title="toggle masking (M)">Mask: ON</button>
           <button id="btn-filter" title="Master Filter toggle. ON applies every configured filter; OFF suspends time range, include/exclude rules, level chips and bookmarks-only — the quick scan always narrows. All settings stay in the Filters tab. No filters active — the full log is shown.">Filter: ON</button>
+          <button id="btn-markdown" class="vt-sec hidden" title="Toggle Markdown rendering for .md files">Markdown: OFF</button>
           <button id="vtools-more" title="more viewer controls" aria-expanded="false" aria-controls="vtools">⋯</button>
           <button id="btn-wrap" class="vt-sec" title="wrap long lines (W)">Wrap: OFF</button>
           <button id="btn-follow" class="vt-sec" title="follow tail">Follow: OFF</button>
@@ -452,6 +475,7 @@ table.rules { min-width: 620px; }
         </div>
         <div id="viewer-wrap">
           <div id="viewer"><div id="vspacer"></div></div>
+          <div id="md-viewer" class="hidden"></div>
           <div id="viewer-busy" role="status" aria-live="polite"><span id="viewer-busy-text"></span><button id="viewer-cancel">Cancel</button></div>
           <div id="drawer"></div>
         </div>
@@ -4839,6 +4863,619 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   return { collectFromDataTransfer };
 }));
 
+/* Log Triage — markdown.js: lightweight pure-JS Markdown parser & Mermaid diagram renderer.
+ * 100% client-side, zero dependencies, offline deliverable. */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) {
+    module.exports = factory();
+  } else {
+    Object.assign((root.LT || (root.LT = {})), factory());
+  }
+}(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function sanitizeUrl(url) {
+    if (!url) return '';
+    const clean = String(url).trim();
+    if (/^(?:javascript|data|vbscript):/i.test(clean)) {
+      return '#';
+    }
+    return clean;
+  }
+
+  function isMarkdown(filename) {
+    return !!(filename && /\.(md|markdown)$/i.test(String(filename)));
+  }
+
+  /* ---------------- Inline Markdown Parsing ---------------- */
+  function parseInline(text) {
+    if (!text) return '';
+    // 1. Escape HTML special characters to prevent XSS
+    let s = escapeHtml(text);
+
+    // 2. Inline code: `code`
+    const codeTokens = [];
+    s = s.replace(/`([^`]+)`/g, (_, code) => {
+      const idx = codeTokens.length;
+      codeTokens.push('<code>' + code + '</code>');
+      return '\x1aCODE' + idx + '\x1a';
+    });
+
+    // 3. Images: ![alt](url)
+    s = s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_, alt, url) => {
+      const safe = sanitizeUrl(url);
+      return '<img src="' + escapeHtml(safe) + '" alt="' + escapeHtml(alt) + '" style="max-width:100%;height:auto">';
+    });
+
+    // 4. Links: [text](url)
+    s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_, label, url) => {
+      const safe = sanitizeUrl(url);
+      return '<a href="' + escapeHtml(safe) + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
+    });
+
+    // 5. Bold & Italic & Strikethrough
+    s = s.replace(/\*\*\*([^*]+)\*\*\*/g, '<strong><em>$1</em></strong>');
+    s = s.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    s = s.replace(/__([^_]+)__/g, '<strong>$1</strong>');
+    s = s.replace(/\*([^*]+)\*/g, '<em>$1</em>');
+    s = s.replace(/_([^_]+)_/g, '<em>$1</em>');
+    s = s.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+
+    // 6. Restore code tokens
+    s = s.replace(/\x1aCODE(\d+)\x1a/g, (_, idx) => codeTokens[Number(idx)] || '');
+
+    return s;
+  }
+
+  /* ---------------- Mermaid Flowchart & Sequence Renderer ---------------- */
+  function renderMermaid(code) {
+    try {
+      const raw = String(code || '').trim();
+      const lines = raw.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('%%'));
+      if (!lines.length) return '';
+
+      const first = lines[0].toLowerCase();
+      if (first.startsWith('graph') || first.startsWith('flowchart')) {
+        return renderFlowchart(lines);
+      }
+      if (first.startsWith('sequencediagram')) {
+        return renderSequenceDiagram(lines);
+      }
+      throw new Error('Unsupported diagram type: ' + lines[0]);
+    } catch (err) {
+      return '<div class="mermaid-fallback">' +
+        '<div class="mermaid-warning">⚠️ Mermaid diagram could not be rendered: ' + escapeHtml(err.message) + '</div>' +
+        '<pre><code>' + escapeHtml(code) + '</code></pre>' +
+        '</div>';
+    }
+  }
+
+  function renderFlowchart(lines) {
+    const dirMatch = lines[0].match(/^(?:graph|flowchart)\s+([A-Za-z]+)/i);
+    const dir = dirMatch ? dirMatch[1].toUpperCase() : 'TD';
+    const isLR = dir === 'LR' || dir === 'RL';
+
+    const nodes = new Map();
+    const edges = [];
+
+    function ensureNode(id, label, shape) {
+      const cleanId = id.trim();
+      if (!nodes.has(cleanId)) {
+        nodes.set(cleanId, { id: cleanId, label: label || cleanId, shape: shape || 'rect' });
+      } else {
+        const cur = nodes.get(cleanId);
+        if (label && cur.label === cur.id) cur.label = label;
+        if (shape) cur.shape = shape;
+      }
+      return nodes.get(cleanId);
+    }
+
+    // Parse node with possible shape:
+    // A([stadium]), A[(cylinder)], A((circle)), A{decision}, A(rounded), A[box], A
+    function parseNodeSpec(str) {
+      const s = str.trim();
+      // stadium A([text])
+      let m = s.match(/^([A-Za-z0-9_-]+)\(\[([^\]]+)\]\)$/);
+      if (m) return ensureNode(m[1], m[2], 'stadium');
+      // cylinder A[(text)]
+      m = s.match(/^([A-Za-z0-9_-]+)\[\(([^)]+)\)\]$/);
+      if (m) return ensureNode(m[1], m[2], 'cylinder');
+      // circle A((text))
+      m = s.match(/^([A-Za-z0-9_-]+)\(\(([^)]+)\)\)$/);
+      if (m) return ensureNode(m[1], m[2], 'circle');
+      // decision A{text}
+      m = s.match(/^([A-Za-z0-9_-]+)\{([^}]+)\}$/);
+      if (m) return ensureNode(m[1], m[2], 'decision');
+      // rounded A(text)
+      m = s.match(/^([A-Za-z0-9_-]+)\(([^)]+)\)$/);
+      if (m) return ensureNode(m[1], m[2], 'rounded');
+      // rect A[text]
+      m = s.match(/^([A-Za-z0-9_-]+)\[([^\]]+)\]$/);
+      if (m) return ensureNode(m[1], m[2], 'rect');
+      // plain id
+      m = s.match(/^([A-Za-z0-9_-]+)$/);
+      if (m) return ensureNode(m[1], m[1], 'rect');
+      return null;
+    }
+
+    // Regex for edge with optional label:
+    // e.g. A --> B, A -->|label| B, A -- label --> B, A --- B, A -.-> B, A ==> B
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      // Match: LeftPart (-->|label| | -- label --> | --> | --- | -.-> | ==>) RightPart
+      const connRegex = /^(.*?)\s*(?:(-->|---|-.->|==>)\s*\|([^|]+)\||--\s*([^-]+?)\s*-->|(-->|---|-.->|==>))\s*(.*)$/;
+      const m = line.match(connRegex);
+      if (m) {
+        const left = parseNodeSpec(m[1]);
+        const edgeType = m[2] || m[5] || '-->';
+        const edgeLabel = (m[3] || m[4] || '').trim();
+        const right = parseNodeSpec(m[6]);
+        if (left && right) {
+          edges.push({ from: left.id, to: right.id, type: edgeType, label: edgeLabel });
+        }
+      } else {
+        // Maybe single node definition on line
+        parseNodeSpec(line);
+      }
+    }
+
+    if (nodes.size === 0) {
+      throw new Error('No nodes found in flowchart');
+    }
+
+    // Layering / Ranking
+    const inDegree = new Map();
+    nodes.forEach((_, id) => inDegree.set(id, 0));
+    edges.forEach((e) => {
+      inDegree.set(e.to, (inDegree.get(e.to) || 0) + 1);
+    });
+
+    const ranks = new Map();
+    nodes.forEach((_, id) => {
+      if (inDegree.get(id) === 0) ranks.set(id, 0);
+    });
+    // Assign ranks through edges
+    let changed = true;
+    let maxIter = 100;
+    while (changed && maxIter-- > 0) {
+      changed = false;
+      edges.forEach((e) => {
+        const fromRank = ranks.has(e.from) ? ranks.get(e.from) : 0;
+        const toRank = ranks.has(e.to) ? ranks.get(e.to) : 0;
+        if (toRank <= fromRank) {
+          ranks.set(e.to, fromRank + 1);
+          changed = true;
+        }
+      });
+    }
+    // Any unranked nodes placed at rank 0
+    nodes.forEach((_, id) => {
+      if (!ranks.has(id)) ranks.set(id, 0);
+    });
+
+    // Group by rank
+    const layers = [];
+    ranks.forEach((rank, id) => {
+      if (!layers[rank]) layers[rank] = [];
+      layers[rank].push(id);
+    });
+
+    // Layout coordinates
+    const NODE_W = 120;
+    const NODE_H = 40;
+    const GAP_X = 40;
+    const GAP_Y = 60;
+    const PAD = 30;
+
+    const coords = new Map();
+    let totalW = 0, totalH = 0;
+
+    if (!isLR) {
+      // Top-Down
+      let maxLayerW = 0;
+      layers.forEach((layer) => {
+        const layerW = layer.length * NODE_W + (layer.length - 1) * GAP_X;
+        if (layerW > maxLayerW) maxLayerW = layerW;
+      });
+      totalW = Math.max(300, maxLayerW + PAD * 2);
+      totalH = layers.length * NODE_H + (layers.length - 1) * GAP_Y + PAD * 2;
+
+      layers.forEach((layer, layerIdx) => {
+        const layerW = layer.length * NODE_W + (layer.length - 1) * GAP_X;
+        const startX = (totalW - layerW) / 2;
+        const y = PAD + layerIdx * (NODE_H + GAP_Y);
+        layer.forEach((id, nodeIdx) => {
+          const x = startX + nodeIdx * (NODE_W + GAP_X);
+          coords.set(id, { x, y, cx: x + NODE_W / 2, cy: y + NODE_H / 2 });
+        });
+      });
+    } else {
+      // Left-to-Right
+      let maxLayerH = 0;
+      layers.forEach((layer) => {
+        const layerH = layer.length * NODE_H + (layer.length - 1) * GAP_Y;
+        if (layerH > maxLayerH) maxLayerH = layerH;
+      });
+      totalW = layers.length * NODE_W + (layers.length - 1) * GAP_X + PAD * 2;
+      totalH = Math.max(200, maxLayerH + PAD * 2);
+
+      layers.forEach((layer, layerIdx) => {
+        const layerH = layer.length * NODE_H + (layer.length - 1) * GAP_Y;
+        const startY = (totalH - layerH) / 2;
+        const x = PAD + layerIdx * (NODE_W + GAP_X);
+        layer.forEach((id, nodeIdx) => {
+          const y = startY + nodeIdx * (NODE_H + GAP_Y);
+          coords.set(id, { x, y, cx: x + NODE_W / 2, cy: y + NODE_H / 2 });
+        });
+      });
+    }
+
+    // Build SVG
+    const svgParts = [];
+    svgParts.push('<svg class="mermaid-diagram" viewBox="0 0 ' + totalW + ' ' + totalH + '" width="' + totalW + '" height="' + totalH + '" xmlns="http://www.w3.org/2000/svg">');
+    svgParts.push('<defs>');
+    svgParts.push('<marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">');
+    svgParts.push('<path d="M 0 1 L 10 5 L 0 9 z" fill="var(--accent, #61afef)"/>');
+    svgParts.push('</marker>');
+    svgParts.push('</defs>');
+
+    // Draw Edges
+    edges.forEach((e) => {
+      const from = coords.get(e.from);
+      const to = coords.get(e.to);
+      if (!from || !to) return;
+
+      let startX = from.cx, startY = from.cy;
+      let endX = to.cx, endY = to.cy;
+
+      if (!isLR) {
+        startY = from.y + NODE_H;
+        endY = to.y;
+      } else {
+        startX = from.x + NODE_W;
+        endX = to.x;
+      }
+
+      const isDotted = e.type.includes('.');
+      const isThick = e.type.includes('=');
+      const hasArrow = e.type.includes('>');
+
+      const strokeWidth = isThick ? '3' : '2';
+      const dash = isDotted ? ' stroke-dasharray="4 3"' : '';
+      const marker = hasArrow ? ' marker-end="url(#arrow)"' : '';
+
+      svgParts.push('<path d="M ' + startX + ' ' + startY + ' L ' + endX + ' ' + endY + '" stroke="var(--accent, #61afef)" stroke-width="' + strokeWidth + '"' + dash + marker + ' fill="none"/>');
+
+      if (e.label) {
+        const midX = (startX + endX) / 2;
+        const midY = (startY + endY) / 2;
+        const textW = e.label.length * 8 + 8;
+        svgParts.push('<rect x="' + (midX - textW / 2) + '" y="' + (midY - 10) + '" width="' + textW + '" height="18" rx="3" fill="var(--card, #21252b)" stroke="var(--border, #3e4451)"/>');
+        svgParts.push('<text x="' + midX + '" y="' + midY + '" text-anchor="middle" dominant-baseline="central" fill="var(--fg, #abb2bf)" font-size="11" font-family="sans-serif">' + escapeHtml(e.label) + '</text>');
+      }
+    });
+
+    // Draw Nodes
+    nodes.forEach((node) => {
+      const pos = coords.get(node.id);
+      if (!pos) return;
+      const x = pos.x, y = pos.y;
+      const cx = pos.cx, cy = pos.cy;
+
+      if (node.shape === 'decision') {
+        const pts = cx + ',' + y + ' ' + (x + NODE_W) + ',' + cy + ' ' + cx + ',' + (y + NODE_H) + ' ' + x + ',' + cy;
+        svgParts.push('<polygon points="' + pts + '" fill="var(--card, #282c34)" stroke="var(--warn, #e5c07b)" stroke-width="2"/>');
+      } else if (node.shape === 'circle') {
+        const r = NODE_H / 2;
+        svgParts.push('<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="var(--card, #282c34)" stroke="var(--success, #98c379)" stroke-width="2"/>');
+      } else if (node.shape === 'rounded' || node.shape === 'stadium') {
+        const rx = node.shape === 'stadium' ? NODE_H / 2 : 8;
+        svgParts.push('<rect x="' + x + '" y="' + y + '" width="' + NODE_W + '" height="' + NODE_H + '" rx="' + rx + '" fill="var(--card, #282c34)" stroke="var(--accent, #61afef)" stroke-width="2"/>');
+      } else {
+        // default rect
+        svgParts.push('<rect x="' + x + '" y="' + y + '" width="' + NODE_W + '" height="' + NODE_H + '" rx="4" fill="var(--card, #282c34)" stroke="var(--accent, #61afef)" stroke-width="2"/>');
+      }
+
+      svgParts.push('<text x="' + cx + '" y="' + cy + '" text-anchor="middle" dominant-baseline="central" fill="var(--fg, #abb2bf)" font-family="sans-serif" font-size="12" font-weight="500">' + escapeHtml(node.label) + '</text>');
+    });
+
+    svgParts.push('</svg>');
+    return svgParts.join('');
+  }
+
+  function renderSequenceDiagram(lines) {
+    const participants = [];
+    const partMap = new Set();
+    const messages = [];
+
+    function addParticipant(name) {
+      const clean = name.trim();
+      if (!partMap.has(clean)) {
+        partMap.add(clean);
+        participants.push(clean);
+      }
+    }
+
+    for (let i = 1; i < lines.length; i++) {
+      const line = lines[i];
+      // participant / actor definition: participant Alice
+      const pMatch = line.match(/^(?:participant|actor)\s+([A-Za-z0-9_-]+)/i);
+      if (pMatch) {
+        addParticipant(pMatch[1]);
+        continue;
+      }
+      // message: A->>B: text or A-->>B: text or A->B: text or A-->B: text
+      const msgMatch = line.match(/^([A-Za-z0-9_-]+)\s*(-->>|->>|-->|->)\s*([A-Za-z0-9_-]+)\s*:\s*(.*)$/);
+      if (msgMatch) {
+        addParticipant(msgMatch[1]);
+        addParticipant(msgMatch[3]);
+        messages.push({
+          from: msgMatch[1],
+          type: msgMatch[2],
+          to: msgMatch[3],
+          text: msgMatch[4].trim(),
+        });
+      }
+    }
+
+    if (!participants.length) {
+      throw new Error('No participants found in sequence diagram');
+    }
+
+    const BOX_W = 100;
+    const BOX_H = 34;
+    const COL_GAP = 70;
+    const MSG_H = 44;
+    const PAD = 24;
+
+    const totalW = Math.max(340, PAD * 2 + participants.length * BOX_W + (participants.length - 1) * COL_GAP);
+    const totalH = PAD * 2 + BOX_H * 2 + messages.length * MSG_H + 40;
+
+    const xCoords = new Map();
+    participants.forEach((name, idx) => {
+      const x = PAD + idx * (BOX_W + COL_GAP) + BOX_W / 2;
+      xCoords.set(name, x);
+    });
+
+    const svgParts = [];
+    svgParts.push('<svg class="mermaid-diagram" viewBox="0 0 ' + totalW + ' ' + totalH + '" width="' + totalW + '" height="' + totalH + '" xmlns="http://www.w3.org/2000/svg">');
+    svgParts.push('<defs>');
+    svgParts.push('<marker id="seq-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">');
+    svgParts.push('<path d="M 0 1 L 10 5 L 0 9 z" fill="var(--accent, #61afef)"/>');
+    svgParts.push('</marker>');
+    svgParts.push('</defs>');
+
+    // Vertical Lifelines & Header Boxes
+    const topBoxY = PAD;
+    const bottomBoxY = totalH - PAD - BOX_H;
+    participants.forEach((name) => {
+      const cx = xCoords.get(name);
+      // Lifeline
+      svgParts.push('<line x1="' + cx + '" y1="' + (topBoxY + BOX_H) + '" x2="' + cx + '" y2="' + bottomBoxY + '" stroke="var(--border, #3e4451)" stroke-width="1.5" stroke-dasharray="4 4"/>');
+
+      // Top box
+      svgParts.push('<rect x="' + (cx - BOX_W / 2) + '" y="' + topBoxY + '" width="' + BOX_W + '" height="' + BOX_H + '" rx="4" fill="var(--card, #282c34)" stroke="var(--accent, #61afef)" stroke-width="2"/>');
+      svgParts.push('<text x="' + cx + '" y="' + (topBoxY + BOX_H / 2) + '" text-anchor="middle" dominant-baseline="central" fill="var(--fg, #abb2bf)" font-family="sans-serif" font-size="12" font-weight="600">' + escapeHtml(name) + '</text>');
+
+      // Bottom box
+      svgParts.push('<rect x="' + (cx - BOX_W / 2) + '" y="' + bottomBoxY + '" width="' + BOX_W + '" height="' + BOX_H + '" rx="4" fill="var(--card, #282c34)" stroke="var(--accent, #61afef)" stroke-width="2"/>');
+      svgParts.push('<text x="' + cx + '" y="' + (bottomBoxY + BOX_H / 2) + '" text-anchor="middle" dominant-baseline="central" fill="var(--fg, #abb2bf)" font-family="sans-serif" font-size="12" font-weight="600">' + escapeHtml(name) + '</text>');
+    });
+
+    // Messages
+    messages.forEach((msg, idx) => {
+      const fromX = xCoords.get(msg.from);
+      const toX = xCoords.get(msg.to);
+      if (fromX === undefined || toX === undefined) return;
+
+      const y = topBoxY + BOX_H + 30 + idx * MSG_H;
+      const isDashed = msg.type.includes('--');
+      const hasArrow = msg.type.includes('>');
+      const dash = isDashed ? ' stroke-dasharray="4 3"' : '';
+      const marker = hasArrow ? ' marker-end="url(#seq-arrow)"' : '';
+
+      svgParts.push('<line x1="' + fromX + '" y1="' + y + '" x2="' + toX + '" y2="' + y + '" stroke="var(--accent, #61afef)" stroke-width="1.5"' + dash + marker + '/>');
+
+      const midX = (fromX + toX) / 2;
+      svgParts.push('<text x="' + midX + '" y="' + (y - 8) + '" text-anchor="middle" fill="var(--fg, #abb2bf)" font-family="sans-serif" font-size="11">' + escapeHtml(msg.text) + '</text>');
+    });
+
+    svgParts.push('</svg>');
+    return svgParts.join('');
+  }
+
+  /* ---------------- Full Markdown Document Parser ---------------- */
+  function renderMarkdown(mdText) {
+    if (!mdText) return '';
+    const lines = String(mdText).replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+    const out = [];
+
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // 1. Fenced Code Block: ``` or ~~~
+      const fenceMatch = line.match(/^(\s*)(```|~~~)(.*)$/);
+      if (fenceMatch) {
+        const fence = fenceMatch[2];
+        const lang = (fenceMatch[3] || '').trim().toLowerCase();
+        const codeLines = [];
+        i++;
+        while (i < lines.length) {
+          if (lines[i].trim().startsWith(fence)) {
+            i++;
+            break;
+          }
+          codeLines.push(lines[i]);
+          i++;
+        }
+        const codeText = codeLines.join('\n');
+        if (lang === 'mermaid') {
+          out.push('<div class="mermaid-container">' + renderMermaid(codeText) + '</div>');
+        } else {
+          const cls = lang ? ' class="language-' + escapeHtml(lang) + '"' : '';
+          out.push('<pre><code' + cls + '>' + escapeHtml(codeText) + '</code></pre>');
+        }
+        continue;
+      }
+
+      // 2. Headings: # H1, ## H2 ...
+      const hMatch = line.match(/^(#{1,6})\s+(.+)$/);
+      if (hMatch) {
+        const lvl = hMatch[1].length;
+        out.push('<h' + lvl + '>' + parseInline(hMatch[2]) + '</h' + lvl + '>');
+        i++;
+        continue;
+      }
+
+      // 3. Horizontal Rule: ---, ***, ___
+      if (/^(?:---|\*\*\*|___)\s*$/.test(line)) {
+        out.push('<hr>');
+        i++;
+        continue;
+      }
+
+      // 4. Blockquotes: > text
+      if (/^>\s?/.test(line)) {
+        const quoteLines = [];
+        while (i < lines.length && /^>\s?/.test(lines[i])) {
+          quoteLines.push(lines[i].replace(/^>\s?/, ''));
+          i++;
+        }
+        out.push('<blockquote>' + renderMarkdown(quoteLines.join('\n')) + '</blockquote>');
+        continue;
+      }
+
+      // 5. Tables: | Header | Header |
+      if (line.includes('|') && i + 1 < lines.length && /^\s*\|?[-\s:|]+\|?\s*$/.test(lines[i + 1])) {
+        const tableLines = [];
+        while (i < lines.length && lines[i].includes('|') && lines[i].trim().length > 0) {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        out.push(renderTable(tableLines));
+        continue;
+      }
+
+      // 6. Unordered & Task Lists: - item, * item, + item
+      const ulMatch = line.match(/^(\s*)([-*+])\s+(.*)$/);
+      if (ulMatch) {
+        out.push('<ul>');
+        while (i < lines.length) {
+          const itemMatch = lines[i].match(/^(\s*)([-*+])\s+(.*)$/);
+          if (!itemMatch) break;
+          let content = itemMatch[3];
+          const taskMatch = content.match(/^\[([ xX])\]\s*(.*)$/);
+          if (taskMatch) {
+            const checked = taskMatch[1].toLowerCase() === 'x' ? ' checked' : '';
+            out.push('<li class="task-list-item"><input type="checkbox"' + checked + ' disabled> ' + parseInline(taskMatch[2]) + '</li>');
+          } else {
+            out.push('<li>' + parseInline(content) + '</li>');
+          }
+          i++;
+        }
+        out.push('</ul>');
+        continue;
+      }
+
+      // 7. Ordered Lists: 1. item
+      const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)$/);
+      if (olMatch) {
+        out.push('<ol>');
+        while (i < lines.length) {
+          const itemMatch = lines[i].match(/^(\s*)(\d+)\.\s+(.*)$/);
+          if (!itemMatch) break;
+          out.push('<li>' + parseInline(itemMatch[3]) + '</li>');
+          i++;
+        }
+        out.push('</ol>');
+        continue;
+      }
+
+      // 8. Blank lines
+      if (!line.trim()) {
+        i++;
+        continue;
+      }
+
+      // 9. Regular Paragraphs
+      const pLines = [];
+      while (i < lines.length && lines[i].trim() &&
+             !lines[i].match(/^(\s*)(```|~~~)/) &&
+             !lines[i].match(/^#{1,6}\s+/) &&
+             !lines[i].match(/^>\s?/) &&
+             !lines[i].match(/^(\s*)([-*+]|\d+\.)\s+/) &&
+             !/^(?:---|\*\*\*|___)\s*$/.test(lines[i])) {
+        pLines.push(lines[i]);
+        i++;
+      }
+      if (pLines.length) {
+        out.push('<p>' + pLines.map(parseInline).join('<br>') + '</p>');
+      }
+    }
+
+    return out.join('\n');
+  }
+
+  function renderTable(lines) {
+    if (lines.length < 2) return '';
+    function splitRow(row) {
+      return row.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
+    }
+
+    const headers = splitRow(lines[0]);
+    const aligns = splitRow(lines[1]).map((s) => {
+      const left = s.startsWith(':');
+      const right = s.endsWith(':');
+      if (left && right) return 'center';
+      if (right) return 'right';
+      return 'left';
+    });
+
+    const html = ['<table>', '<thead>', '<tr>'];
+    headers.forEach((h, idx) => {
+      const align = aligns[idx] || 'left';
+      const style = align !== 'left' ? ' style="text-align:' + align + '"' : '';
+      html.push('<th' + style + '>' + parseInline(h) + '</th>');
+    });
+    html.push('</tr>', '</thead>', '<tbody>');
+
+    for (let r = 2; r < lines.length; r++) {
+      const cells = splitRow(lines[r]);
+      html.push('<tr>');
+      headers.forEach((_, cIdx) => {
+        const val = cells[cIdx] || '';
+        const align = aligns[cIdx] || 'left';
+        const style = align !== 'left' ? ' style="text-align:' + align + '"' : '';
+        html.push('<td' + style + '>' + parseInline(val) + '</td>');
+      });
+      html.push('</tr>');
+    }
+
+    html.push('</tbody>', '</table>');
+    return html.join('');
+  }
+
+  return {
+    escapeHtml,
+    sanitizeUrl,
+    isMarkdown,
+    parseInline,
+    renderMermaid,
+    renderMarkdown,
+  };
+}));
+
 /* Log Triage — app.js: browser UI glue (virtualized viewer, streaming
  * ingestion, deep scan, panels). Pure logic lives in the other src modules;
  * this file is UI wiring and is exempt from the coverage gate. */
@@ -4855,6 +5492,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   const defaults = () => ({
     theme: LT.DEFAULT_THEME || 'midnight',
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null, drawerOn: true,
+    markdownOn: false,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
     timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200, issueGroups: null,
     filtersEnabled: true, // master Filter toggle — transient, never persisted
@@ -4877,7 +5515,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       // unfiltered, or freshly loaded files can appear invisible. The master
       // Filter toggle belongs to that group — a persisted bypass would make
       // newly loaded files look empty.
-      const { quick, levels, timeFrom, timeTo, rgPattern, showOnlyBookmarked, zenOn, filtersEnabled, ...persisted } = state;
+      const { quick, levels, timeFrom, timeTo, rgPattern, showOnlyBookmarked, zenOn, filtersEnabled, markdownOn, ...persisted } = state;
       const s = Object.assign({}, persisted, { bookmarks: bookmarksStore.toJSON() });
       localStorage.setItem(STATE_KEY, JSON.stringify(s));
     } catch (e) { /* storage may be unavailable on file:// in some browsers */ }
@@ -5161,13 +5799,15 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     if (buf) yield buf.replace(/\r$/, '');
   }
 
+  const isMarkdownFile = (f) => !!(f && f.name && (LT.isMarkdown ? LT.isMarkdown(f.name) : /\.(md|markdown)$/i.test(f.name)));
+
   async function ingestFile(entry) {
     const bt = busy('Indexing ' + entry.name + '…');
     store.setFileInfo(entry.id, entry.name, entry.size);
     try {
       const result = await paging.request('index', { fileId: entry.id, file: entry.file, sampleLimit: Math.min(100000, state.cap || 100000) }, (p) => { entry.read = p.bytes || entry.read; busyMessage(bt, p.progress); });
       if (ingestAbort || !files.includes(entry)) return;
-      entry.format = result.format; entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
+      entry.format = isMarkdownFile(entry) ? 'markdown' : result.format; entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
       entry.utf8 = result.utf8 !== false; // false => head failed strict UTF-8 validation
       entry.warnings = result.warnings || 0; // lossy binary decode count (dlt-binary, R5-5)
       const f = store._files[entry.id];
@@ -5249,7 +5889,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         if (innerFiles) await ingestFiles(innerFiles);
         continue;
       }
-      const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: '…', read: 0 };
+      const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: isMarkdownFile(f) ? 'markdown' : '…', read: 0 };
       files.push(entry);
       renderFiles();
       try {
@@ -5376,6 +6016,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     if (!live.length && !cached.length && q) {
       el.insertAdjacentHTML('beforeend', '<div class="muted" style="padding:8px 10px">no files match the filter</div>');
     }
+    updateMarkdownView();
   }
 
   // instant tooltip for truncated file names — native title is delayed and
@@ -5596,7 +6237,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       filteredCount = result.total;
       await loadPage(state.follow ? Math.max(0, Math.floor((filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE) : 0, state.follow, bt);
       if (result.errors?.length) flash(result.errors.map((e) => e.error).join('; '));
-      renderFiles(); renderChips(); updateStatus();
+      renderFiles(); renderChips(); updateStatus(); updateMarkdownView();
     } catch (error) { if (token === viewToken) pagingError(error); }
     finally { doneBusy(bt); }
   }
@@ -7319,6 +7960,69 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     $('btn-filter').textContent = 'Filter: ' + (on ? 'ON' : 'OFF');
     $('btn-filter').classList.toggle('on', on);
   }
+  function currentDisplayedFile() {
+    if (state.viewMode === 'file' && state.activeFile) {
+      return files.find((f) => f.id === state.activeFile) || null;
+    }
+    return files.length === 1 ? files[0] : null;
+  }
+  function setMarkdown(on) {
+    state.markdownOn = on;
+    updateMarkdownView();
+  }
+  async function updateMarkdownView() {
+    const btn = $('btn-markdown');
+    const mdViewer = $('md-viewer');
+    const logViewer = $('viewer');
+    const pager = $('pager');
+
+    const curFile = currentDisplayedFile();
+    const isMd = isMarkdownFile(curFile);
+
+    if (btn) {
+      btn.classList.toggle('hidden', !isMd);
+      btn.textContent = 'Markdown: ' + (state.markdownOn ? 'ON' : 'OFF');
+      btn.classList.toggle('on', !!state.markdownOn);
+      btn.title = isMd
+        ? (state.markdownOn ? 'Markdown: ON (click to show raw line-numbered view)' : 'Markdown: OFF (click to render markdown and mermaid)')
+        : 'Markdown rendering for .md files';
+    }
+
+    if (!isMd || !state.markdownOn) {
+      if (mdViewer) {
+        mdViewer.classList.add('hidden');
+        mdViewer.innerHTML = '';
+      }
+      if (logViewer) logViewer.classList.remove('hidden');
+      if (pager) pager.classList.remove('hidden');
+      return;
+    }
+
+    // Markdown ON
+    if (logViewer) logViewer.classList.add('hidden');
+    if (pager) pager.classList.add('hidden');
+    if (mdViewer) {
+      mdViewer.classList.remove('hidden');
+      mdViewer.innerHTML = '<div class="muted" style="padding:20px">Rendering markdown…</div>';
+      try {
+        let text = '';
+        if (curFile.file && typeof curFile.file.text === 'function') {
+          text = await curFile.file.text();
+        } else if (curFile.file && curFile.file.slice) {
+          text = await new Response(curFile.file).text();
+        } else if (curFile.data) {
+          text = typeof curFile.data === 'string' ? curFile.data : new TextDecoder().decode(curFile.data);
+        }
+        if (LT.renderMarkdown) {
+          mdViewer.innerHTML = LT.renderMarkdown(text);
+        } else {
+          mdViewer.innerHTML = '<pre>' + esc(text) + '</pre>';
+        }
+      } catch (err) {
+        mdViewer.innerHTML = '<div class="mermaid-fallback"><div class="mermaid-warning">Failed to render markdown: ' + esc(err.message) + '</div></div>';
+      }
+    }
+  }
   function setWrap(on) {
     state.wrapOn = on;
     $('btn-wrap').textContent = 'Wrap: ' + (on ? 'ON' : 'OFF');
@@ -7769,6 +8473,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     $('btn-drawer').onclick = () => setDrawer(!state.drawerOn);
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-filter').onclick = () => { setFiltersEnabled(!state.filtersEnabled).catch(pagingError); };
+    $('btn-markdown').onclick = () => setMarkdown(!state.markdownOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
     $('view-mode').onchange = () => {
@@ -7956,6 +8661,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     setDrawer(state.drawerOn !== false);
     syncMasksFromState(); syncRgFromState();
     renderChips(); renderRules(); renderPresets(); renderFiles(); renderBookmarks(); updateStatus();
+    updateMarkdownView();
     bindViewer();
     applySide();
     restoreCache().catch(() => {});
