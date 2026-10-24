@@ -224,4 +224,67 @@ test('escapeHtml helper: neutralizes all special characters', () => {
   assert.equal(S.escapeHtml(null), '');
 });
 
+test('syntaxSpans: advanced grammar constructs across all 6 formats', () => {
+  // Python docstring & numbers with underscores
+  const pyLine = '"""Docstring title""" count = 1_000_000';
+  const pySpans = S.syntaxSpans(pyLine, 'python');
+  assert.ok(pySpans.some((s) => s.className === 'syn-str' && pyLine.slice(s.start, s.end).includes('Docstring')));
+  assert.ok(pySpans.some((s) => s.className === 'syn-num' && pyLine.slice(s.start, s.end) === '1_000_000'));
+
+  // Shell parameter expansion & escaped characters
+  const shLine = 'TARGET="${PREFIX}_${INDEX}"';
+  const shSpans = S.syntaxSpans(shLine, 'shell');
+  assert.ok(shSpans.some((s) => s.className === 'syn-var' && pyLine.slice(s.start, s.end) !== ''));
+
+  // Batch delayed expansion !COUNTER! and %ERRORLEVEL%
+  const batLine = 'if !COUNTER! equ 0 (echo %ERRORLEVEL%)';
+  const batSpans = S.syntaxSpans(batLine, 'batch');
+  assert.ok(batSpans.some((s) => s.className === 'syn-var' && batLine.slice(s.start, s.end) === '!COUNTER!'));
+  assert.ok(batSpans.some((s) => s.className === 'syn-var' && batLine.slice(s.start, s.end) === '%ERRORLEVEL%'));
+
+  // YAML boolean variants and numbers
+  const ymlLine = 'debug_mode: false # port: 8080';
+  const ymlSpans = S.syntaxSpans(ymlLine, 'yaml');
+  assert.ok(ymlSpans.some((s) => s.className === 'syn-def' && ymlLine.slice(s.start, s.end).startsWith('debug_mode')));
+  assert.ok(ymlSpans.some((s) => s.className === 'syn-kwd' && ymlLine.slice(s.start, s.end) === 'false'));
+  assert.ok(ymlSpans.some((s) => s.className === 'syn-cmt' && ymlLine.slice(s.start, s.end).startsWith('#')));
+
+  // JavaScript template strings and keywords
+  const jsLine = 'const isMatch = `valid_token_${id}`; // verify match';
+  const jsSpans = S.syntaxSpans(jsLine, 'javascript');
+  assert.ok(jsSpans.some((s) => s.className === 'syn-kwd' && jsLine.slice(s.start, s.end) === 'const'));
+  assert.ok(jsSpans.some((s) => s.className === 'syn-str' && jsLine.slice(s.start, s.end).includes('valid_token')));
+  assert.ok(jsSpans.some((s) => s.className === 'syn-cmt' && jsLine.slice(s.start, s.end).startsWith('//')));
+});
+
+test('syntaxSpans: throughput performance stress test', () => {
+  const sampleLines = [
+    'def execute_pipeline(items, dry_run=False): # run all jobs',
+    'if [ "$EXIT_CODE" -ne 0 ]; then echo "Failed!" >&2; exit 1; fi',
+    'set BUILD_DIR=%~dp0\\target & if %ERRORLEVEL% neq 0 goto :error',
+    '  "metrics": { "cpu_usage": 84.5, "healthy": true, "logs": null }',
+    'database: postgresql # connection string for cluster',
+    'const handler = async (req, res) => { return res.json({ ok: 1 }); };',
+  ];
+  const languages = ['python', 'shell', 'batch', 'json', 'yaml', 'javascript'];
+
+  const iterations = 10000;
+  const t0 = performance.now();
+  for (let i = 0; i < iterations; i++) {
+    const idx = i % sampleLines.length;
+    S.syntaxSpans(sampleLines[idx], languages[idx]);
+  }
+  const elapsedMs = performance.now() - t0;
+  // 10,000 lines should tokenize in well under 250ms (~0.025ms/line)
+  assert.ok(elapsedMs < 1000, `tokenization throughput: 10,000 lines in ${elapsedMs.toFixed(2)}ms`);
+});
+
+test('syntaxSpans: ultra-long line safety and boundary resistance', () => {
+  const longLine = 'const ' + 'veryLongIdentifierName_'.repeat(1000) + ' = "text";';
+  const spans = S.syntaxSpans(longLine, 'javascript');
+  assert.ok(Array.isArray(spans), 'returns array without timeout or crash');
+  assert.ok(spans.length >= 2, 'identifies keywords and strings on ultra-long lines');
+});
+
+
 

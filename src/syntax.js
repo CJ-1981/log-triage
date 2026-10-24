@@ -49,7 +49,7 @@
   }
 
   /* Language Regex Definitions */
-  const RE_NUM = /\b(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\b|0x[0-9a-fA-F]+\b/g;
+  const RE_NUM = /\b(?:\d[\d_]*\.?[\d_]*|\.[\d_]+)(?:[eE][+-]?[\d_]+)?\b|0x[0-9a-fA-F_]+\b/g;
 
   // Python patterns
   const RE_PY_COMMENT = /#.*$/g;

@@ -115,3 +115,158 @@ test('SPEC-VIEWER-004: Standard log files hide #btn-syntax button', async () => 
   const isHidden = await page.$eval('#btn-syntax', (el) => el.classList.contains('hidden'));
   assert.strictEqual(isHidden, true, '#btn-syntax is hidden for standard log files');
 });
+
+async function addRule(pattern, action) {
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=filters]').click());
+  await page.evaluate(() => document.getElementById('btn-add-rule').click());
+  const patternLoc = page.locator('#rule-rows tr:last-child [data-k=pattern]');
+  await patternLoc.fill(pattern);
+  await patternLoc.press('Tab');
+  if (action) {
+    await page.evaluate((a) => {
+      const sel = document.querySelector('#rule-rows tr:last-child [data-k=action]');
+      sel.value = a;
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+    }, action);
+  }
+  await page.evaluate(() => document.querySelector('#tabs button[data-tab=viewer]').click());
+}
+
+test('SPEC-VIEWER-004: Multi-layer visual precedence (mark > highlight rule > syntax spans)', async () => {
+  await fresh();
+
+  const pythonContent = `def calculate_metrics(count=42): # calculate total
+    status = "active"
+    return status
+`;
+
+  await page.evaluate(async (content) => {
+    const f = new File([content], 'service.py', { type: 'text/plain' });
+    await window.LT_INGEST([f]);
+  }, pythonContent);
+
+  await page.waitForSelector('.vrow .syn-kwd');
+
+  // Add highlight rule for "metrics"
+  await addRule('metrics', 'highlight');
+
+  // Verify .rule-highlight-text exists in the viewer
+  await page.waitForSelector('.vrow .rule-highlight-text');
+  const ruleText = await page.$eval('.vrow .rule-highlight-text', (el) => el.textContent);
+  assert.strictEqual(ruleText, 'metrics', 'rule highlight covers metrics');
+
+  // Verify syntax tokens like "def" still rendered with .syn-kwd
+  const kwdText = await page.$eval('.vrow .syn-kwd', (el) => el.textContent);
+  assert.strictEqual(kwdText, 'def', 'def still highlighted with .syn-kwd');
+
+  // Enter search pattern in quick filter: "calculate"
+  await page.fill('#quick', 'calculate');
+  await page.waitForSelector('.vrow mark');
+
+  const marks = await page.$$eval('.vrow mark', (els) => els.map((e) => e.textContent));
+  assert.ok(marks.includes('calculate'), 'quick search mark wraps calculate');
+
+  // Precedence invariant: mark, rule-highlight-text, and syn-kwd coexist on the same line
+  const hasMark = await page.$$eval('.vrow:first-child mark', (els) => els.length > 0);
+  const hasRule = await page.$$eval('.vrow:first-child .rule-highlight-text', (els) => els.length > 0);
+  const hasSyn = await page.$$eval('.vrow:first-child .syn-kwd', (els) => els.length > 0);
+  assert.ok(hasMark && hasRule && hasSyn, 'mark, rule-highlight-text, and syn-* coexist in proper layers');
+});
+
+test('SPEC-VIEWER-004: Line-click detail drawer renders syntax highlighting', async () => {
+  await fresh();
+
+  const pythonContent = `def inspect_event(code=100): # event handler
+    pass
+`;
+
+  await page.evaluate(async (content) => {
+    const f = new File([content], 'handler.py', { type: 'text/plain' });
+    await window.LT_INGEST([f]);
+  }, pythonContent);
+
+  await page.waitForSelector('.vrow');
+
+  // Click row to open drawer
+  await page.click('.vrow:first-child');
+  await page.waitForSelector('#drawer.open');
+
+  // Verify drawer contains syntax highlighted spans
+  await page.waitForSelector('#drawer .syn-kwd');
+  const drawerKwd = await page.$eval('#drawer .syn-kwd', (el) => el.textContent);
+  assert.strictEqual(drawerKwd, 'def', 'drawer contains .syn-kwd def');
+
+  const drawerNum = await page.$eval('#drawer .syn-num', (el) => el.textContent);
+  assert.strictEqual(drawerNum, '100', 'drawer contains .syn-num 100');
+
+  // Toggle syntax OFF
+  await page.click('#btn-syntax');
+  // Click row again to refresh drawer
+  await page.click('.vrow:first-child');
+  const drawerKwdsOff = await page.$$eval('#drawer .syn-kwd', (els) => els.length);
+  assert.strictEqual(drawerKwdsOff, 0, 'drawer syntax spans removed when Syntax: OFF');
+});
+
+test('SPEC-VIEWER-004: Multi-format code ingestion and file switching', async () => {
+  await fresh();
+
+  const shellContent = `#!/bin/bash\necho "Running $TASK_NAME"\n`;
+  const jsonContent = `{\n  "version": 42,\n  "enabled": true\n}\n`;
+
+  await page.evaluate(async ({ sh, js }) => {
+    const f1 = new File([sh], 'run.sh', { type: 'text/plain' });
+    const f2 = new File([js], 'manifest.json', { type: 'text/plain' });
+    await window.LT_INGEST([f1, f2]);
+  }, { sh: shellContent, js: jsonContent });
+
+  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 2);
+
+  // Switch to run.sh
+  await page.evaluate(() => {
+    const items = Array.from(document.querySelectorAll('.file-item'));
+    const shItem = items.find((el) => el.textContent.includes('run.sh'));
+    if (shItem) shItem.click();
+    const sel = document.getElementById('view-mode');
+    sel.value = 'file';
+    sel.dispatchEvent(new Event('change'));
+  });
+
+  await page.waitForSelector('.file-item.active');
+  const activeBadge1 = await page.textContent('.file-item.active .badge.fmt');
+  assert.strictEqual(activeBadge1, 'shell', 'active badge is shell');
+
+  // Verify Shell tokens
+  await page.waitForSelector('.vrow .syn-builtin');
+  const builtin = await page.$eval('.vrow .syn-builtin', (el) => el.textContent);
+  assert.strictEqual(builtin, 'echo', 'echo highlighted as builtin');
+
+  // Switch to manifest.json
+  await page.evaluate(() => {
+    const items = Array.from(document.querySelectorAll('.file-item'));
+    const jsonItem = items.find((el) => el.textContent.includes('manifest.json'));
+    if (jsonItem) jsonItem.click();
+  });
+
+  await page.waitForFunction(() => document.querySelector('.file-item.active').textContent.includes('manifest.json'));
+  const activeBadge2 = await page.textContent('.file-item.active .badge.fmt');
+  assert.strictEqual(activeBadge2, 'json', 'active badge is json');
+
+  // Verify JSON tokens
+  await page.waitForSelector('.vrow .syn-num');
+  const numVal = await page.$eval('.vrow .syn-num', (el) => el.textContent);
+  assert.strictEqual(numVal, '42', '42 highlighted as number');
+});
+
+test('SPEC-VIEWER-004: All 6 color themes define syntax color variables', async () => {
+  await fresh();
+
+  const themes = ['midnight', 'monokai', 'paper', 'solarized-dark', 'solarized-light', 'high-contrast'];
+  for (const th of themes) {
+    const color = await page.evaluate((themeName) => {
+      document.body.setAttribute('data-theme', themeName);
+      return getComputedStyle(document.body).getPropertyValue('--syn-kwd').trim();
+    }, th);
+    assert.ok(color && color.length > 0, `theme ${th} defines --syn-kwd: ${color}`);
+  }
+});
+
