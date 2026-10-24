@@ -1,6 +1,13 @@
 # Changelog
 
 ## Unreleased
+
+## 1.62.0 (2026-10-24)
+- chore(SPEC-VIEWER-004): backfill sync_commit_sha
+- docs(SPEC-VIEWER-004): sync-phase documentation and living doc updates
+- test(SPEC-VIEWER-004): add comprehensive multi-layer precedence, drawer, multi-file and stress tests
+- feat(SPEC-VIEWER-004): add source code syntax color highlighter for scripts and config files
+
 - feat(viewer): add source code syntax color highlighter for scripts and config files (.py, .sh, .bat, .json, .yaml, .js) with dynamic toolbar switch (SPEC-VIEWER-004)
 
 ## 1.61.0 (2026-10-24)
