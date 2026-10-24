@@ -55,6 +55,7 @@
 
 ### Phase 16-17: Sync & Documentation (manager-docs)
 - sync_status: completed
+- sync_commit_sha: fec4f147c12f5f9c5f57e00f07d35d6423c558ee
 - completed_at: 2026-10-24T16:10:00Z
 - deliverables:
   - `docs/changelog.md`: logged under Unreleased (feat: source code syntax color highlighter)
