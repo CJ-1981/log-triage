@@ -341,6 +341,20 @@ User-defined custom log formats using regular expressions with named capture gro
 - AC-9 (format management UI): Config tab provides an intuitive format manager with add/edit modal, live interactive preview with syntax verification, duplicate/delete actions, and a button to restore standard starter examples (Spring Boot, Nginx Error, etc.).
 - AC-10 (file-format memory): viewer format overrides persist per file identity (`name + size + firstLineHash`) in `localStorage`.
 
+### FR-34 — Qualcomm QXDM / QCAT text export log format
+
+Status: implemented (v1.64.0, SPEC-FORMAT-002).
+
+Built-in autodetection and parsing for Qualcomm QXDM (Qualcomm eXtensible Diagnostic Monitor) and QCAT text-exported logs (`qxdm`), supporting diagnostic packet lines (`[LOG]`), modem debug messages (`[MSG]`), system events (`[EV]`/`[EVENT]`), and packet continuation trees.
+
+- AC-1 (autodetection): files containing characteristic QXDM/QCAT packet headers (timestamp + category token `[LOG]`, `[MSG]`, `[EV]`, or `[EVENT]` + hex code) or `%MOBILE PARSED MESSAGE FILE` / `%QCAT VERSION` comment headers automatically classify as `qxdm`.
+- AC-2 (disjointness): classic log formats (logcat, syslog, ISO-8601, CLF, DLT) and plain text never misclassify as `qxdm`.
+- AC-3 (timestamp normalization): time-only (`HH:MM:SS.mmm`) and date-bearing (`YYYY Mon DD` or `YYYY-MM-DD`) timestamps normalize to the year-less fixed-width `MM-DD HH:MM:SS.mmm` representation.
+- AC-4 (severity mapping): `[MSG]` lines map severity tokens (`FATAL`→`F`, `ERROR`→`E`, `HIGH`→`W`, `MED`/`MEDIUM`→`I`, `LOW`→`D`), while `[LOG]` and `[EV]` map to `I` (or `E` on explicit failure).
+- AC-5 (packet code & tag): packet hexadecimal codes (e.g. `0x11AB`, `0x133C`, `0x038A`) extract as the record `tag` for instant filtering.
+- AC-6 (continuation records): indented payload tree lines and `%` comment lines parse as continuation records (`parseFallback`), preserving raw line content with null timestamp and null level so they attach to the preceding packet entry.
+- AC-7 (viewer format override): `#sel-format-override` includes `qxdm` as a built-in format option.
+
 ## Non-functional requirements
 
 ### NFR-1 — Performance
