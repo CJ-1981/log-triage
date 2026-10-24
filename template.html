@@ -195,6 +195,61 @@ body.zen #zen-hud { display: block; }
 .vrow.rule-highlight-row { background: var(--rule-row-color); }
 .vrow.rule-highlight-row:hover { filter: brightness(1.08); }
 .rule-highlight-text { border-radius: 2px; padding: 0 1px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+/* Source code syntax highlighting */
+.syn-kwd { color: var(--syn-kwd, var(--accent)); font-weight: 600; }
+.syn-builtin { color: var(--syn-builtin, var(--lvl-d)); font-weight: 500; }
+.syn-str { color: var(--syn-str, var(--ok)); }
+.syn-cmt { color: var(--syn-cmt, var(--muted)); font-style: italic; }
+.syn-num { color: var(--syn-num, var(--warn)); }
+.syn-var { color: var(--syn-var, var(--hl)); }
+.syn-def { color: var(--syn-def, var(--lvl-i)); font-weight: 600; }
+
+body[data-theme="midnight"] {
+  --syn-kwd: #c678dd;
+  --syn-builtin: #61afef;
+  --syn-str: #98c379;
+  --syn-cmt: #7f848e;
+  --syn-num: #d19a66;
+  --syn-var: #e5c07b;
+  --syn-def: #61afef;
+}
+body[data-theme="monokai"] {
+  --syn-kwd: #f92672;
+  --syn-builtin: #66d9ef;
+  --syn-str: #e6db74;
+  --syn-cmt: #75715e;
+  --syn-num: #ae81ff;
+  --syn-var: #fd971f;
+  --syn-def: #a6e22e;
+}
+body[data-theme="paper"] {
+  --syn-kwd: #a626a4;
+  --syn-builtin: #0184bc;
+  --syn-str: #50a14f;
+  --syn-cmt: #a0a1a7;
+  --syn-num: #986801;
+  --syn-var: #c18401;
+  --syn-def: #4078f2;
+}
+body[data-theme="solarized-dark"],
+body[data-theme="solarized-light"] {
+  --syn-kwd: #859900;
+  --syn-builtin: #268bd2;
+  --syn-str: #2aa198;
+  --syn-cmt: #93a1a1;
+  --syn-num: #d33682;
+  --syn-var: #b58900;
+  --syn-def: #268bd2;
+}
+body[data-theme="high-contrast"] {
+  --syn-kwd: #ffff00;
+  --syn-builtin: #66ccff;
+  --syn-str: #66ff99;
+  --syn-cmt: #a0a0a0;
+  --syn-num: #ff9900;
+  --syn-var: #ffcc00;
+  --syn-def: #00ffff;
+}
 .vrow.tint-w { background: var(--tint-w); } .vrow.tint-w:hover, .vrow.tint-w.sel { background: var(--tint-w); outline: 1px solid var(--warn); }
 .vrow.tint-e { background: var(--tint-e); } .vrow.tint-e:hover, .vrow.tint-e.sel { background: var(--tint-e); outline: 1px solid var(--err); }
 .vrow.tint-f { background: var(--tint-f); } .vrow.tint-f:hover, .vrow.tint-f.sel { background: var(--tint-f); outline: 1px solid var(--lvl-f); }
@@ -458,6 +513,7 @@ table.rules { min-width: 620px; }
           <button id="btn-mask" title="toggle masking (M)">Mask: ON</button>
           <button id="btn-filter" title="Master Filter toggle. ON applies every configured filter; OFF suspends time range, include/exclude rules, level chips and bookmarks-only — the quick scan always narrows. All settings stay in the Filters tab. No filters active — the full log is shown.">Filter: ON</button>
           <button id="btn-markdown" class="vt-sec hidden" title="Toggle Markdown rendering for .md files">Markdown: OFF</button>
+          <button id="btn-syntax" class="vt-sec hidden" title="Toggle source code syntax color highlighting">Syntax: ON</button>
           <button id="vtools-more" title="more viewer controls" aria-expanded="false" aria-controls="vtools">⋯</button>
           <button id="btn-wrap" class="vt-sec" title="wrap long lines (W)">Wrap: OFF</button>
           <button id="btn-follow" class="vt-sec" title="follow tail">Follow: OFF</button>

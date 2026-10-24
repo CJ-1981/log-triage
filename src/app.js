@@ -15,6 +15,7 @@
     theme: LT.DEFAULT_THEME || 'midnight',
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null, drawerOn: true,
     markdownOn: false,
+    syntaxOn: true,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
     timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200, issueGroups: null,
     filtersEnabled: true, // master Filter toggle — transient, never persisted
@@ -322,6 +323,17 @@
   }
 
   const isMarkdownFile = (f) => !!(f && f.name && (LT.isMarkdown ? LT.isMarkdown(f.name) : /\.(md|markdown)$/i.test(f.name)));
+  const codeLanguageOf = (f) => (f && f.name && LT.detectCodeLanguage) ? LT.detectCodeLanguage(f.name) : null;
+  const isCodeFile = (f) => !!codeLanguageOf(f);
+  const fileLangMap = new Map();
+  function fileCodeLang(fileId) {
+    if (!fileId) return null;
+    if (fileLangMap.has(fileId)) return fileLangMap.get(fileId);
+    const f = files.find((x) => x.id === fileId);
+    const lang = codeLanguageOf(f);
+    fileLangMap.set(fileId, lang);
+    return lang;
+  }
 
   async function ingestFile(entry) {
     const bt = busy('Indexing ' + entry.name + '…');
@@ -329,7 +341,8 @@
     try {
       const result = await paging.request('index', { fileId: entry.id, file: entry.file, sampleLimit: Math.min(100000, state.cap || 100000) }, (p) => { entry.read = p.bytes || entry.read; busyMessage(bt, p.progress); });
       if (ingestAbort || !files.includes(entry)) return;
-      entry.format = isMarkdownFile(entry) ? 'markdown' : result.format; entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
+      const codeLang = codeLanguageOf(entry);
+      entry.format = isMarkdownFile(entry) ? 'markdown' : (codeLang || result.format); entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
       entry.utf8 = result.utf8 !== false; // false => head failed strict UTF-8 validation
       entry.warnings = result.warnings || 0; // lossy binary decode count (dlt-binary, R5-5)
       const f = store._files[entry.id];
@@ -411,7 +424,7 @@
         if (innerFiles) await ingestFiles(innerFiles);
         continue;
       }
-      const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: isMarkdownFile(f) ? 'markdown' : '…', read: 0 };
+      const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: isMarkdownFile(f) ? 'markdown' : (codeLanguageOf(f) || '…'), read: 0 };
       files.push(entry);
       renderFiles();
       try {
@@ -539,6 +552,7 @@
       el.insertAdjacentHTML('beforeend', '<div class="muted" style="padding:8px 10px">no files match the filter</div>');
     }
     updateMarkdownView();
+    updateSyntaxButton();
   }
 
   // instant tooltip for truncated file names — native title is delayed and
@@ -759,7 +773,7 @@
       filteredCount = result.total;
       await loadPage(state.follow ? Math.max(0, Math.floor((filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE) : 0, state.follow, bt);
       if (result.errors?.length) flash(result.errors.map((e) => e.error).join('; '));
-      renderFiles(); renderChips(); updateStatus(); updateMarkdownView();
+      renderFiles(); renderChips(); updateStatus(); updateMarkdownView(); updateSyntaxButton();
     } catch (error) { if (token === viewToken) pagingError(error); }
     finally { doneBusy(bt); }
   }
@@ -987,7 +1001,9 @@
       const bmk = bookmarksStore.has(bookmarkKeyFor(rec.fileId), rec.lineNo);
       const text = displayText(rec);
       const visual = LT.highlightText(text, compiledHighlights);
-      const hl = highlightedHtml(text, visual.spans);
+      const synLang = state.syntaxOn ? fileCodeLang(rec.fileId) : null;
+      const synSpans = (synLang && LT.syntaxSpans) ? LT.syntaxSpans(text, synLang) : null;
+      const hl = highlightedHtml(text, visual.spans, synSpans);
       if (visual.row && !selection.has(rec.seq)) {
         row.classList.add('rule-highlight-row');
         row.style.setProperty('--rule-row-color', visual.row.color + '33');
@@ -1057,11 +1073,11 @@
     return spans;
   }
 
-  function highlightedHtml(text, colored) {
+  function highlightedHtml(text, colored, synSpans) {
     const quick = quickMatchSpans(text);
-    if (!quick.length && !colored.length) return null;
+    if (!quick.length && !colored.length && (!synSpans || !synSpans.length)) return null;
     const points = new Set([0, text.length]);
-    for (const s of quick.concat(colored)) { points.add(s.start); points.add(s.end); }
+    for (const s of quick.concat(colored).concat(synSpans || [])) { points.add(s.start); points.add(s.end); }
     const sorted = Array.from(points).sort((a, b) => a - b);
     let out = '';
     for (let i = 0; i < sorted.length - 1; i++) {
@@ -1070,8 +1086,16 @@
       const value = esc(text.slice(a, b));
       if (quick.some((s) => a >= s.start && b <= s.end)) { out += '<mark>' + value + '</mark>'; continue; }
       const rule = colored.find((s) => a >= s.start && b <= s.end);
-      if (rule) out += '<span class="rule-highlight-text" title="' + esc(rule.name) + '" style="background:' + rule.color + ';color:' + LT.textColor(rule.color) + '">' + value + '</span>';
-      else out += value;
+      if (rule) {
+        out += '<span class="rule-highlight-text" title="' + esc(rule.name) + '" style="background:' + rule.color + ';color:' + LT.textColor(rule.color) + '">' + value + '</span>';
+        continue;
+      }
+      const syn = synSpans && synSpans.find((s) => a >= s.start && b <= s.end);
+      if (syn) {
+        out += '<span class="' + syn.className + '">' + value + '</span>';
+      } else {
+        out += value;
+      }
     }
     return out;
   }
@@ -1207,7 +1231,9 @@
     const hasMaskDiff = state.maskOn && maskedLine !== rec.raw;
     const mainLine = hasMaskDiff ? maskedLine : rec.raw;
     const visual = LT.highlightText(mainLine, compiledHighlights);
-    const mainHtml = highlightedHtml(mainLine, visual.spans) || esc(mainLine);
+    const drawerLang = state.syntaxOn ? fileCodeLang(rec.fileId) : null;
+    const synSpans = (drawerLang && LT.syntaxSpans) ? LT.syntaxSpans(mainLine, drawerLang) : null;
+    const mainHtml = highlightedHtml(mainLine, visual.spans, synSpans) || esc(mainLine);
     d.innerHTML = '<h3>Line ' + rec.lineNo + ' — ' + esc(fileDisplayName(rec.fileId)) +
       '<button onclick="document.getElementById(\'drawer\').className=\'\'" title="close the detail drawer">✕</button></h3>' +
       '<dl>' +
@@ -2492,6 +2518,24 @@
     state.markdownOn = on;
     updateMarkdownView();
   }
+  function setSyntax(on) {
+    state.syntaxOn = on;
+    saveState();
+    updateSyntaxButton();
+    renderRows();
+  }
+  function updateSyntaxButton() {
+    const btn = $('btn-syntax');
+    if (!btn) return;
+    const curFile = currentDisplayedFile();
+    const isCode = isCodeFile(curFile);
+    btn.classList.toggle('hidden', !isCode);
+    btn.textContent = 'Syntax: ' + (state.syntaxOn ? 'ON' : 'OFF');
+    btn.classList.toggle('on', !!state.syntaxOn);
+    btn.title = isCode
+      ? (state.syntaxOn ? 'Syntax: ON (click to disable syntax color highlighting)' : 'Syntax: OFF (click to enable syntax color highlighting)')
+      : 'Source code syntax color highlighting';
+  }
   async function updateMarkdownView() {
     const btn = $('btn-markdown');
     const mdViewer = $('md-viewer');
@@ -2996,6 +3040,7 @@
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-filter').onclick = () => { setFiltersEnabled(!state.filtersEnabled).catch(pagingError); };
     $('btn-markdown').onclick = () => setMarkdown(!state.markdownOn);
+    $('btn-syntax').onclick = () => setSyntax(!state.syntaxOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
     $('view-mode').onchange = () => {
@@ -3184,6 +3229,7 @@
     syncMasksFromState(); syncRgFromState();
     renderChips(); renderRules(); renderPresets(); renderFiles(); renderBookmarks(); updateStatus();
     updateMarkdownView();
+    updateSyntaxButton();
     bindViewer();
     applySide();
     restoreCache().catch(() => {});

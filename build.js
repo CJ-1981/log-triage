@@ -34,6 +34,7 @@ const MODULE_ORDER = [
   'app-paging.js',
   'app-export.js',
   'droptree.js',
+  'syntax.js',
   'markdown.js',
   'app.js',
 ];

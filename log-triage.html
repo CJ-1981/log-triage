@@ -201,6 +201,61 @@ body.zen #zen-hud { display: block; }
 .vrow.rule-highlight-row { background: var(--rule-row-color); }
 .vrow.rule-highlight-row:hover { filter: brightness(1.08); }
 .rule-highlight-text { border-radius: 2px; padding: 0 1px; box-decoration-break: clone; -webkit-box-decoration-break: clone; }
+/* Source code syntax highlighting */
+.syn-kwd { color: var(--syn-kwd, var(--accent)); font-weight: 600; }
+.syn-builtin { color: var(--syn-builtin, var(--lvl-d)); font-weight: 500; }
+.syn-str { color: var(--syn-str, var(--ok)); }
+.syn-cmt { color: var(--syn-cmt, var(--muted)); font-style: italic; }
+.syn-num { color: var(--syn-num, var(--warn)); }
+.syn-var { color: var(--syn-var, var(--hl)); }
+.syn-def { color: var(--syn-def, var(--lvl-i)); font-weight: 600; }
+
+body[data-theme="midnight"] {
+  --syn-kwd: #c678dd;
+  --syn-builtin: #61afef;
+  --syn-str: #98c379;
+  --syn-cmt: #7f848e;
+  --syn-num: #d19a66;
+  --syn-var: #e5c07b;
+  --syn-def: #61afef;
+}
+body[data-theme="monokai"] {
+  --syn-kwd: #f92672;
+  --syn-builtin: #66d9ef;
+  --syn-str: #e6db74;
+  --syn-cmt: #75715e;
+  --syn-num: #ae81ff;
+  --syn-var: #fd971f;
+  --syn-def: #a6e22e;
+}
+body[data-theme="paper"] {
+  --syn-kwd: #a626a4;
+  --syn-builtin: #0184bc;
+  --syn-str: #50a14f;
+  --syn-cmt: #a0a1a7;
+  --syn-num: #986801;
+  --syn-var: #c18401;
+  --syn-def: #4078f2;
+}
+body[data-theme="solarized-dark"],
+body[data-theme="solarized-light"] {
+  --syn-kwd: #859900;
+  --syn-builtin: #268bd2;
+  --syn-str: #2aa198;
+  --syn-cmt: #93a1a1;
+  --syn-num: #d33682;
+  --syn-var: #b58900;
+  --syn-def: #268bd2;
+}
+body[data-theme="high-contrast"] {
+  --syn-kwd: #ffff00;
+  --syn-builtin: #66ccff;
+  --syn-str: #66ff99;
+  --syn-cmt: #a0a0a0;
+  --syn-num: #ff9900;
+  --syn-var: #ffcc00;
+  --syn-def: #00ffff;
+}
 .vrow.tint-w { background: var(--tint-w); } .vrow.tint-w:hover, .vrow.tint-w.sel { background: var(--tint-w); outline: 1px solid var(--warn); }
 .vrow.tint-e { background: var(--tint-e); } .vrow.tint-e:hover, .vrow.tint-e.sel { background: var(--tint-e); outline: 1px solid var(--err); }
 .vrow.tint-f { background: var(--tint-f); } .vrow.tint-f:hover, .vrow.tint-f.sel { background: var(--tint-f); outline: 1px solid var(--lvl-f); }
@@ -464,6 +519,7 @@ table.rules { min-width: 620px; }
           <button id="btn-mask" title="toggle masking (M)">Mask: ON</button>
           <button id="btn-filter" title="Master Filter toggle. ON applies every configured filter; OFF suspends time range, include/exclude rules, level chips and bookmarks-only — the quick scan always narrows. All settings stay in the Filters tab. No filters active — the full log is shown.">Filter: ON</button>
           <button id="btn-markdown" class="vt-sec hidden" title="Toggle Markdown rendering for .md files">Markdown: OFF</button>
+          <button id="btn-syntax" class="vt-sec hidden" title="Toggle source code syntax color highlighting">Syntax: ON</button>
           <button id="vtools-more" title="more viewer controls" aria-expanded="false" aria-controls="vtools">⋯</button>
           <button id="btn-wrap" class="vt-sec" title="wrap long lines (W)">Wrap: OFF</button>
           <button id="btn-follow" class="vt-sec" title="follow tail">Follow: OFF</button>
@@ -4863,6 +4919,304 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   return { collectFromDataTransfer };
 }));
 
+/* Log Triage — syntax.js: lightweight client-side source code syntax color highlighting.
+ * Provides per-line tokenization for scripts and configs (.py, .sh, .bat, .json, .yaml, .js).
+ * Pure JavaScript, 100% offline, zero network dependencies. */
+(function (root, factory) {
+  if (typeof module === 'object' && module.exports) {
+    module.exports = factory();
+  } else {
+    Object.assign((root.LT || (root.LT = {})), factory());
+  }
+}(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  function escapeHtml(s) {
+    return String(s || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  const EXT_LANG_MAP = {
+    py: 'python',
+    pyw: 'python',
+    sh: 'shell',
+    bash: 'shell',
+    zsh: 'shell',
+    bat: 'batch',
+    cmd: 'batch',
+    json: 'json',
+    yaml: 'yaml',
+    yml: 'yaml',
+    js: 'javascript',
+    mjs: 'javascript',
+    cjs: 'javascript',
+  };
+
+  /**
+   * Detect code language from filename extension.
+   * Returns language string or null if not recognized.
+   */
+  function detectCodeLanguage(filename) {
+    if (!filename || typeof filename !== 'string') return null;
+    const clean = filename.trim().split('?')[0].split('#')[0];
+    const lastDot = clean.lastIndexOf('.');
+    if (lastDot < 0) return null;
+    const ext = clean.slice(lastDot + 1).toLowerCase();
+    return EXT_LANG_MAP[ext] || null;
+  }
+
+  /* Language Regex Definitions */
+  const RE_NUM = /\b(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?\b|0x[0-9a-fA-F]+\b/g;
+
+  // Python patterns
+  const RE_PY_COMMENT = /#.*$/g;
+  const RE_PY_STRING = /(?:[furbFURB]{0,2})("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g;
+  const RE_PY_KWD = /\b(def|class|import|from|return|if|elif|else|try|except|finally|with|as|for|while|pass|break|continue|lambda|async|await|yield|in|is|not|and|or|None|True|False|global|nonlocal|assert|del|raise)\b/g;
+  const RE_PY_DEF = /\b(?:def|class)\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
+  const RE_PY_DECORATOR = /@[a-zA-Z_][a-zA-Z0-9_.]*/g;
+
+  // Shell patterns
+  const RE_SH_COMMENT = /#.*$/g;
+  const RE_SH_SINGLE_STRING = /'(?:\\.|[^'\\])*'/g;
+  const RE_SH_DOUBLE_STRING = /"(?:\\.|[^"\\])*"/g;
+  const RE_SH_BACKTICK_STRING = /`(?:\\.|[^`\\])*`/g;
+  const RE_SH_KWD = /\b(if|then|else|elif|fi|case|esac|for|while|until|do|done|in|select|time|function)\b/g;
+  const RE_SH_BUILTIN = /\b(echo|exit|export|source|cd|pwd|set|read|local|return|alias|unalias|exec|shift|trap|test|eval|printf)\b/g;
+  const RE_SH_VAR = /(?:\$(?:[a-zA-Z_][a-zA-Z0-9_]*|\{[a-zA-Z_0-9_#?!@-]+\}|[0-9#?!@*-]))/g;
+
+  // Batch patterns
+  const RE_BAT_COMMENT = /(?:(?:^|[&|]\s*)\b(REM(?:\s+.*)?$)|(?:^|[&|]\s*)(::.*$))/gi;
+  const RE_BAT_STRING = /"(?:\\.|[^"\\])*"/g;
+  const RE_BAT_KWD = /(?:@echo\b|\b(echo|goto|call|exit|set|if|else|for|in|do|shift|pause|title|cls|color|cd|md|rd|del|copy|move)\b)/gi;
+  const RE_BAT_VAR = /(?:%~[a-zA-Z]*\d|%\d|%\*|%[a-zA-Z0-9_()#@+-]+%|![a-zA-Z0-9_()#@+-]+!)/g;
+  const RE_BAT_LABEL = /(?:^\s*:[a-zA-Z0-9_-]+|\bgoto\s+(:[a-zA-Z0-9_-]+))/gi;
+
+  // JSON patterns
+  const RE_JSON_KEY = /"(?:\\.|[^"\\])*"\s*(?=:)/g;
+  const RE_JSON_STRING = /"(?:\\.|[^"\\])*"/g;
+  const RE_JSON_LITERAL = /\b(true|false|null)\b/g;
+
+  // YAML patterns
+  const RE_YAML_COMMENT = /#.*$/g;
+  const RE_YAML_KEY = /^\s*([a-zA-Z0-9_\-\.]+)\s*(?=:)/g;
+  const RE_YAML_STRING = /(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')/g;
+  const RE_YAML_LITERAL = /\b(true|false|null|yes|no|on|off)\b/gi;
+
+  // JavaScript patterns
+  const RE_JS_COMMENT = /(?:\/\/.*$|\/\*[\s\S]*?\*\/)/g;
+  const RE_JS_STRING = /(?:"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*'|`(?:\\.|[^`\\])*`)/g;
+  const RE_JS_KWD = /\b(const|let|var|function|class|import|export|return|if|else|for|while|do|switch|case|default|break|continue|try|catch|finally|throw|async|await|new|this|super|typeof|instanceof|void|delete|in|of|yield|true|false|null|undefined|NaN)\b/g;
+  const RE_JS_DEF = /\b(?:function|class)\s+([a-zA-Z_$][a-zA-Z0-9_$]*)/g;
+
+  function collectMatches(re, text, className, groupIndex) {
+    const list = [];
+    if (!re) return list;
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      let start = m.index;
+      let end = m.index + m[0].length;
+      if (groupIndex != null && m[groupIndex] != null) {
+        const prefix = m[0].indexOf(m[groupIndex]);
+        if (prefix >= 0) {
+          start = m.index + prefix;
+          end = start + m[groupIndex].length;
+        }
+      }
+      list.push({ start, end, className });
+      if (list.length >= 200) break;
+    }
+    re.lastIndex = 0;
+    return list;
+  }
+
+  function collectCommentMatches(re, text, className) {
+    const list = [];
+    if (!re) return list;
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const matchText = m[1] || m[2] || m[0];
+      const offset = m[0].indexOf(matchText);
+      const start = m.index + (offset >= 0 ? offset : 0);
+      const end = start + matchText.length;
+      list.push({ start, end, className });
+      if (list.length >= 200) break;
+    }
+    re.lastIndex = 0;
+    return list;
+  }
+
+  function collectInterpolatedStrings(reString, reVar, text) {
+    const list = [];
+    if (!reString) return list;
+    reString.lastIndex = 0;
+    let m;
+    while ((m = reString.exec(text)) !== null) {
+      const strStart = m.index;
+      const strEnd = m.index + m[0].length;
+      const strContent = m[0];
+
+      reVar.lastIndex = 0;
+      let vm;
+      let cur = strStart;
+      let hasVar = false;
+      while ((vm = reVar.exec(strContent)) !== null) {
+        hasVar = true;
+        const vStart = strStart + vm.index;
+        const vEnd = vStart + vm[0].length;
+        if (vStart > cur) {
+          list.push({ start: cur, end: vStart, className: 'syn-str' });
+        }
+        list.push({ start: vStart, end: vEnd, className: 'syn-var' });
+        cur = vEnd;
+      }
+      if (hasVar) {
+        if (cur < strEnd) {
+          list.push({ start: cur, end: strEnd, className: 'syn-str' });
+        }
+      } else {
+        list.push({ start: strStart, end: strEnd, className: 'syn-str' });
+      }
+      if (list.length >= 200) break;
+    }
+    reString.lastIndex = 0;
+    return list;
+  }
+
+  /**
+   * Tokenize line into non-overlapping ordered spans [{ start, end, className }].
+   */
+  function syntaxSpans(line, language) {
+    if (!line || typeof line !== 'string') return [];
+    if (!language || typeof language !== 'string') return [];
+
+    let rawMatches = [];
+
+    switch (language) {
+      case 'python': {
+        // Comments & strings have highest priority
+        rawMatches = rawMatches.concat(
+          collectMatches(RE_PY_COMMENT, line, 'syn-cmt'),
+          collectMatches(RE_PY_STRING, line, 'syn-str'),
+          collectMatches(RE_PY_DECORATOR, line, 'syn-var'),
+          collectMatches(RE_PY_DEF, line, 'syn-def', 1),
+          collectMatches(RE_PY_KWD, line, 'syn-kwd'),
+          collectMatches(RE_NUM, line, 'syn-num')
+        );
+        break;
+      }
+      case 'shell': {
+        rawMatches = rawMatches.concat(
+          collectMatches(RE_SH_COMMENT, line, 'syn-cmt'),
+          collectInterpolatedStrings(RE_SH_DOUBLE_STRING, RE_SH_VAR, line),
+          collectInterpolatedStrings(RE_SH_BACKTICK_STRING, RE_SH_VAR, line),
+          collectMatches(RE_SH_SINGLE_STRING, line, 'syn-str'),
+          collectMatches(RE_SH_VAR, line, 'syn-var'),
+          collectMatches(RE_SH_BUILTIN, line, 'syn-builtin'),
+          collectMatches(RE_SH_KWD, line, 'syn-kwd'),
+          collectMatches(RE_NUM, line, 'syn-num')
+        );
+        break;
+      }
+      case 'batch': {
+        rawMatches = rawMatches.concat(
+          collectCommentMatches(RE_BAT_COMMENT, line, 'syn-cmt'),
+          collectMatches(RE_BAT_STRING, line, 'syn-str'),
+          collectMatches(RE_BAT_LABEL, line, 'syn-def', 1),
+          collectMatches(RE_BAT_VAR, line, 'syn-var'),
+          collectMatches(RE_BAT_KWD, line, 'syn-kwd'),
+          collectMatches(RE_NUM, line, 'syn-num')
+        );
+        break;
+      }
+      case 'json': {
+        rawMatches = rawMatches.concat(
+          collectMatches(RE_JSON_KEY, line, 'syn-def'),
+          collectMatches(RE_JSON_STRING, line, 'syn-str'),
+          collectMatches(RE_JSON_LITERAL, line, 'syn-kwd'),
+          collectMatches(RE_NUM, line, 'syn-num')
+        );
+        break;
+      }
+      case 'yaml': {
+        rawMatches = rawMatches.concat(
+          collectMatches(RE_YAML_COMMENT, line, 'syn-cmt'),
+          collectMatches(RE_YAML_KEY, line, 'syn-def', 1),
+          collectMatches(RE_YAML_STRING, line, 'syn-str'),
+          collectMatches(RE_YAML_LITERAL, line, 'syn-kwd'),
+          collectMatches(RE_NUM, line, 'syn-num')
+        );
+        break;
+      }
+      case 'javascript': {
+        rawMatches = rawMatches.concat(
+          collectMatches(RE_JS_COMMENT, line, 'syn-cmt'),
+          collectMatches(RE_JS_STRING, line, 'syn-str'),
+          collectMatches(RE_JS_DEF, line, 'syn-def', 1),
+          collectMatches(RE_JS_KWD, line, 'syn-kwd'),
+          collectMatches(RE_NUM, line, 'syn-num')
+        );
+        break;
+      }
+      default:
+        return [];
+    }
+
+    if (!rawMatches.length) return [];
+
+    // Sort spans by start position, then by length descending
+    rawMatches.sort((a, b) => a.start - b.start || (b.end - b.start) - (a.end - a.start));
+
+    // Resolve non-overlapping spans (earlier/longer match owns the span)
+    const result = [];
+    for (const span of rawMatches) {
+      const overlaps = result.some((existing) => span.start < existing.end && span.end > existing.start);
+      if (!overlaps) {
+        result.push(span);
+      }
+    }
+
+    result.sort((a, b) => a.start - b.start);
+    return result;
+  }
+
+  /**
+   * Produce HTML-escaped string with <span class="..."> tags.
+   */
+  function highlightSyntaxHtml(line, language) {
+    if (!line) return '';
+    const spans = syntaxSpans(line, language);
+    if (!spans.length) return escapeHtml(line);
+
+    let html = '';
+    let cur = 0;
+    for (const span of spans) {
+      if (span.start > cur) {
+        html += escapeHtml(line.slice(cur, span.start));
+      }
+      const text = escapeHtml(line.slice(span.start, span.end));
+      html += '<span class="' + span.className + '">' + text + '</span>';
+      cur = span.end;
+    }
+    if (cur < line.length) {
+      html += escapeHtml(line.slice(cur));
+    }
+    return html;
+  }
+
+  return {
+    escapeHtml,
+    detectCodeLanguage,
+    syntaxSpans,
+    highlightSyntaxHtml,
+  };
+}));
+
 /* Log Triage — markdown.js: lightweight pure-JS Markdown parser & Mermaid diagram renderer.
  * 100% client-side, zero dependencies, offline deliverable. */
 (function (root, factory) {
@@ -5493,6 +5847,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     theme: LT.DEFAULT_THEME || 'midnight',
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null, drawerOn: true,
     markdownOn: false,
+    syntaxOn: true,
     quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
     timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200, issueGroups: null,
     filtersEnabled: true, // master Filter toggle — transient, never persisted
@@ -5800,6 +6155,17 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   }
 
   const isMarkdownFile = (f) => !!(f && f.name && (LT.isMarkdown ? LT.isMarkdown(f.name) : /\.(md|markdown)$/i.test(f.name)));
+  const codeLanguageOf = (f) => (f && f.name && LT.detectCodeLanguage) ? LT.detectCodeLanguage(f.name) : null;
+  const isCodeFile = (f) => !!codeLanguageOf(f);
+  const fileLangMap = new Map();
+  function fileCodeLang(fileId) {
+    if (!fileId) return null;
+    if (fileLangMap.has(fileId)) return fileLangMap.get(fileId);
+    const f = files.find((x) => x.id === fileId);
+    const lang = codeLanguageOf(f);
+    fileLangMap.set(fileId, lang);
+    return lang;
+  }
 
   async function ingestFile(entry) {
     const bt = busy('Indexing ' + entry.name + '…');
@@ -5807,7 +6173,8 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     try {
       const result = await paging.request('index', { fileId: entry.id, file: entry.file, sampleLimit: Math.min(100000, state.cap || 100000) }, (p) => { entry.read = p.bytes || entry.read; busyMessage(bt, p.progress); });
       if (ingestAbort || !files.includes(entry)) return;
-      entry.format = isMarkdownFile(entry) ? 'markdown' : result.format; entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
+      const codeLang = codeLanguageOf(entry);
+      entry.format = isMarkdownFile(entry) ? 'markdown' : (codeLang || result.format); entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
       entry.utf8 = result.utf8 !== false; // false => head failed strict UTF-8 validation
       entry.warnings = result.warnings || 0; // lossy binary decode count (dlt-binary, R5-5)
       const f = store._files[entry.id];
@@ -5889,7 +6256,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         if (innerFiles) await ingestFiles(innerFiles);
         continue;
       }
-      const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: isMarkdownFile(f) ? 'markdown' : '…', read: 0 };
+      const entry = { id: 'f' + Date.now() + '_' + (i++) + '_' + Math.floor(Math.random() * 1e6), name: f.name, size: f.size, file: f, status: 'parsing', format: isMarkdownFile(f) ? 'markdown' : (codeLanguageOf(f) || '…'), read: 0 };
       files.push(entry);
       renderFiles();
       try {
@@ -6017,6 +6384,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       el.insertAdjacentHTML('beforeend', '<div class="muted" style="padding:8px 10px">no files match the filter</div>');
     }
     updateMarkdownView();
+    updateSyntaxButton();
   }
 
   // instant tooltip for truncated file names — native title is delayed and
@@ -6237,7 +6605,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       filteredCount = result.total;
       await loadPage(state.follow ? Math.max(0, Math.floor((filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE) : 0, state.follow, bt);
       if (result.errors?.length) flash(result.errors.map((e) => e.error).join('; '));
-      renderFiles(); renderChips(); updateStatus(); updateMarkdownView();
+      renderFiles(); renderChips(); updateStatus(); updateMarkdownView(); updateSyntaxButton();
     } catch (error) { if (token === viewToken) pagingError(error); }
     finally { doneBusy(bt); }
   }
@@ -6465,7 +6833,9 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       const bmk = bookmarksStore.has(bookmarkKeyFor(rec.fileId), rec.lineNo);
       const text = displayText(rec);
       const visual = LT.highlightText(text, compiledHighlights);
-      const hl = highlightedHtml(text, visual.spans);
+      const synLang = state.syntaxOn ? fileCodeLang(rec.fileId) : null;
+      const synSpans = (synLang && LT.syntaxSpans) ? LT.syntaxSpans(text, synLang) : null;
+      const hl = highlightedHtml(text, visual.spans, synSpans);
       if (visual.row && !selection.has(rec.seq)) {
         row.classList.add('rule-highlight-row');
         row.style.setProperty('--rule-row-color', visual.row.color + '33');
@@ -6535,11 +6905,11 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     return spans;
   }
 
-  function highlightedHtml(text, colored) {
+  function highlightedHtml(text, colored, synSpans) {
     const quick = quickMatchSpans(text);
-    if (!quick.length && !colored.length) return null;
+    if (!quick.length && !colored.length && (!synSpans || !synSpans.length)) return null;
     const points = new Set([0, text.length]);
-    for (const s of quick.concat(colored)) { points.add(s.start); points.add(s.end); }
+    for (const s of quick.concat(colored).concat(synSpans || [])) { points.add(s.start); points.add(s.end); }
     const sorted = Array.from(points).sort((a, b) => a - b);
     let out = '';
     for (let i = 0; i < sorted.length - 1; i++) {
@@ -6548,8 +6918,16 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       const value = esc(text.slice(a, b));
       if (quick.some((s) => a >= s.start && b <= s.end)) { out += '<mark>' + value + '</mark>'; continue; }
       const rule = colored.find((s) => a >= s.start && b <= s.end);
-      if (rule) out += '<span class="rule-highlight-text" title="' + esc(rule.name) + '" style="background:' + rule.color + ';color:' + LT.textColor(rule.color) + '">' + value + '</span>';
-      else out += value;
+      if (rule) {
+        out += '<span class="rule-highlight-text" title="' + esc(rule.name) + '" style="background:' + rule.color + ';color:' + LT.textColor(rule.color) + '">' + value + '</span>';
+        continue;
+      }
+      const syn = synSpans && synSpans.find((s) => a >= s.start && b <= s.end);
+      if (syn) {
+        out += '<span class="' + syn.className + '">' + value + '</span>';
+      } else {
+        out += value;
+      }
     }
     return out;
   }
@@ -6685,7 +7063,9 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     const hasMaskDiff = state.maskOn && maskedLine !== rec.raw;
     const mainLine = hasMaskDiff ? maskedLine : rec.raw;
     const visual = LT.highlightText(mainLine, compiledHighlights);
-    const mainHtml = highlightedHtml(mainLine, visual.spans) || esc(mainLine);
+    const drawerLang = state.syntaxOn ? fileCodeLang(rec.fileId) : null;
+    const synSpans = (drawerLang && LT.syntaxSpans) ? LT.syntaxSpans(mainLine, drawerLang) : null;
+    const mainHtml = highlightedHtml(mainLine, visual.spans, synSpans) || esc(mainLine);
     d.innerHTML = '<h3>Line ' + rec.lineNo + ' — ' + esc(fileDisplayName(rec.fileId)) +
       '<button onclick="document.getElementById(\'drawer\').className=\'\'" title="close the detail drawer">✕</button></h3>' +
       '<dl>' +
@@ -7970,6 +8350,24 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     state.markdownOn = on;
     updateMarkdownView();
   }
+  function setSyntax(on) {
+    state.syntaxOn = on;
+    saveState();
+    updateSyntaxButton();
+    renderRows();
+  }
+  function updateSyntaxButton() {
+    const btn = $('btn-syntax');
+    if (!btn) return;
+    const curFile = currentDisplayedFile();
+    const isCode = isCodeFile(curFile);
+    btn.classList.toggle('hidden', !isCode);
+    btn.textContent = 'Syntax: ' + (state.syntaxOn ? 'ON' : 'OFF');
+    btn.classList.toggle('on', !!state.syntaxOn);
+    btn.title = isCode
+      ? (state.syntaxOn ? 'Syntax: ON (click to disable syntax color highlighting)' : 'Syntax: OFF (click to enable syntax color highlighting)')
+      : 'Source code syntax color highlighting';
+  }
   async function updateMarkdownView() {
     const btn = $('btn-markdown');
     const mdViewer = $('md-viewer');
@@ -8474,6 +8872,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     $('btn-mask').onclick = () => setMask(!state.maskOn);
     $('btn-filter').onclick = () => { setFiltersEnabled(!state.filtersEnabled).catch(pagingError); };
     $('btn-markdown').onclick = () => setMarkdown(!state.markdownOn);
+    $('btn-syntax').onclick = () => setSyntax(!state.syntaxOn);
     $('btn-wrap').onclick = () => setWrap(!state.wrapOn);
     $('btn-follow').onclick = () => setFollow(!state.follow);
     $('view-mode').onchange = () => {
@@ -8662,6 +9061,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     syncMasksFromState(); syncRgFromState();
     renderChips(); renderRules(); renderPresets(); renderFiles(); renderBookmarks(); updateStatus();
     updateMarkdownView();
+    updateSyntaxButton();
     bindViewer();
     applySide();
     restoreCache().catch(() => {});

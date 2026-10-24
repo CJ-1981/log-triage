@@ -15,6 +15,7 @@ const OVERRIDES = { 'pii-remote.js': { line: 95, branch: 75 }, 'masks.js': { lin
 // small module: the never-taken browser fork of the UMD header is a large
 // share of its branches and is uncoverable under node --test
 OVERRIDES['issues.js'] = { line: 95, branch: 80 };
+OVERRIDES['syntax.js'] = { line: 95, branch: 75 };
 const EXEMPT = [/src[\\/]app(-.*)?\.js$/]; // UI glue: never loaded under node --test
 
 function collectTestFiles(root) {
