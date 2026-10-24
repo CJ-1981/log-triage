@@ -514,6 +514,7 @@ table.rules { min-width: 620px; }
           <button id="btn-filter" title="Master Filter toggle. ON applies every configured filter; OFF suspends time range, include/exclude rules, level chips and bookmarks-only — the quick scan always narrows. All settings stay in the Filters tab. No filters active — the full log is shown.">Filter: ON</button>
           <button id="btn-markdown" class="vt-sec hidden" title="Toggle Markdown rendering for .md files">Markdown: OFF</button>
           <button id="btn-syntax" class="vt-sec hidden" title="Toggle source code syntax color highlighting">Syntax: ON</button>
+          <select id="sel-format-override" class="vt-sec" title="Format: auto or override detected format for active file"></select>
           <button id="vtools-more" title="more viewer controls" aria-expanded="false" aria-controls="vtools">⋯</button>
           <button id="btn-wrap" class="vt-sec" title="wrap long lines (W)">Wrap: OFF</button>
           <button id="btn-follow" class="vt-sec" title="follow tail">Follow: OFF</button>
@@ -739,6 +740,47 @@ table.rules { min-width: 620px; }
           <div class="rowline">
             <label>analysis sample lines per file <input id="cfg-cap" type="text" value="100000" style="width:120px"></label>
             <span class="muted">Applies to analysis sampling on the next load. Viewing, filtering and paging cover every indexed line.</span>
+          </div>
+          <h2>Custom log formats</h2>
+          <p class="muted">Define regex patterns with named capture groups (<code>(?&lt;ts&gt;...)</code>, <code>(?&lt;level&gt;...)</code>, <code>(?&lt;tag&gt;...)</code>, <code>(?&lt;pid&gt;...)</code>, <code>(?&lt;tid&gt;...)</code>, <code>(?&lt;msg&gt;...)</code>). Evaluated before built-in formats in priority order.</p>
+          <div class="rowline">
+            <button id="btn-add-format" class="primary">+ Add format</button>
+            <button id="btn-format-examples">Restore examples</button>
+          </div>
+          <div id="format-list" style="margin-top:6px"></div>
+          <div id="format-editor" class="pii-box hidden" style="margin-top:10px">
+            <h3 id="format-editor-title" style="margin:0 0 8px">Add format</h3>
+            <div class="rowline">
+              <label class="cm-field"><span>name (id)</span><input type="text" id="fmt-name" placeholder="e.g. springboot" style="width:140px"></label>
+              <label class="cm-field" style="flex:1"><span>label</span><input type="text" id="fmt-label" placeholder="e.g. Spring Boot Log" style="width:200px"></label>
+              <label class="cm-field"><span>priority</span><input type="number" id="fmt-priority" value="10" style="width:70px"></label>
+            </div>
+            <div class="rowline" style="margin-top:6px">
+              <label class="cm-field" style="flex:1"><span>line pattern (regex with named groups)</span><input type="text" id="fmt-pattern" placeholder="^\[(?<ts>.*?)\] \[(?<level>\w+)\] (?<msg>.*)$" style="font-family:var(--mono)"></label>
+            </div>
+            <div id="fmt-regex-status" class="muted" style="margin:2px 0 6px"></div>
+            <div class="rowline">
+              <label class="cm-field"><span>timestamp format</span>
+                <select id="fmt-ts-preset">
+                  <option value="YYYY-MM-DD HH:mm:ss.SSS">YYYY-MM-DD HH:mm:ss.SSS</option>
+                  <option value="ISO-8601">ISO-8601</option>
+                  <option value="YYYY/MM/DD HH:mm:ss">YYYY/MM/DD HH:mm:ss</option>
+                  <option value="MM/DD HH:mm:ss">MM/DD HH:mm:ss</option>
+                  <option value="epoch_s">Unix epoch seconds (X)</option>
+                  <option value="epoch_ms">Unix epoch milliseconds (x)</option>
+                </select>
+              </label>
+              <label class="cm-field" style="flex:1"><span>level mapping (captured=L, comma-separated)</span><input type="text" id="fmt-level-map" placeholder="TRACE=V, DEBUG=D, INFO=I, WARN=W, ERROR=E, FATAL=F" style="font-family:var(--mono)"></label>
+            </div>
+            <h4 style="margin:10px 0 4px">Live preview</h4>
+            <div class="rowline">
+              <input type="text" id="fmt-preview-in" placeholder="paste a sample log line here to test parsing…" style="flex:1;font-family:var(--mono)">
+            </div>
+            <div id="fmt-preview-out" style="font-family:var(--mono);font-size:12px;margin-top:4px"></div>
+            <div class="rowline" style="margin-top:10px">
+              <button id="btn-save-format" class="primary">Save format</button>
+              <button id="btn-cancel-format">Cancel</button>
+            </div>
           </div>
           <h2>Current setup</h2>
           <div class="card-row" id="config-cards"></div>

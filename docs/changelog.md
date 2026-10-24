@@ -1,6 +1,10 @@
 # Changelog
 
 ## Unreleased
+- feat(format): user-defined custom log format definitions with named regex capture groups (SPEC-FORMAT-001)
+- feat(viewer): viewer toolbar format override selector with instant worker re-indexing (SPEC-FORMAT-001)
+- feat(config): custom log format manager in Config tab with live preview and preset/config persistence (SPEC-FORMAT-001)
+- docs(SPEC-FORMAT-001): sync-phase documentation, ADR-0019, and living doc updates
 
 ## 1.62.2 (2026-10-24)
 - fix(viewer): skip log level column, row tinting, and level badges for source code files

@@ -25,8 +25,8 @@
     ['dlt', RE_DLT],
   ];
 
-  /** detectFormat(lines[]) -> { format, confidence, hits: {fmt: n}, samples: n } */
-  function detectFormat(lines) {
+  /** detectFormat(lines[], customFormats[]) -> { format, confidence, hits: {fmt: n}, samples: n } */
+  function detectFormat(lines, customFormats) {
     const samples = [];
     for (let i = 0; i < lines.length && samples.length < 1000; i++) {
       const l = lines[i];
@@ -34,15 +34,38 @@
     }
     if (!samples.length) return { format: 'plain', confidence: 0, hits: {}, samples: 0 };
 
+    const activeCustom = [];
+    if (Array.isArray(customFormats)) {
+      for (const cf of customFormats) {
+        if (!cf || cf.enabled === false) continue;
+        let re = cf.regex;
+        if (!re && cf.pattern) {
+          try { re = new RegExp(cf.pattern); } catch (e) { /* skip invalid regex */ }
+        }
+        if (re) {
+          activeCustom.push({
+            name: cf.name,
+            re,
+            priority: typeof cf.priority === 'number' ? cf.priority : 10,
+          });
+        }
+      }
+      activeCustom.sort((a, b) => b.priority - a.priority);
+    }
+
+    const allFormats = [];
+    for (const c of activeCustom) allFormats.push([c.name, c.re]);
+    for (const f of FORMATS) allFormats.push(f);
+
     const hits = {};
-    for (const [fmt, re] of FORMATS) {
+    for (const [fmt, re] of allFormats) {
       let n = 0;
       for (const l of samples) if (re.test(l)) n++;
       hits[fmt] = n;
     }
     let best = 'plain';
     let bestRatio = 0;
-    for (const [fmt] of FORMATS) {
+    for (const [fmt] of allFormats) {
       const ratio = hits[fmt] / samples.length;
       if (ratio > bestRatio) { bestRatio = ratio; best = fmt; }
     }

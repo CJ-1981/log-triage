@@ -16,7 +16,7 @@
     maskOn: true, wrapOn: false, follow: false, viewMode: 'merged', activeFile: null, drawerOn: true,
     markdownOn: false,
     syntaxOn: true,
-    quick: '', rules: [], customMasks: [], maskEnabled: {}, presets: {},
+    quick: '', rules: [], customMasks: [], customFormats: [], formatOverrides: {}, maskEnabled: {}, presets: {},
     timeFrom: '', timeTo: '', sideHidden: false, showOnlyBookmarked: false, bmPanelH: 200, issueGroups: null,
     filtersEnabled: true, // master Filter toggle — transient, never persisted
     cap: 100000, sallH: null,
@@ -38,7 +38,7 @@
       // unfiltered, or freshly loaded files can appear invisible. The master
       // Filter toggle belongs to that group — a persisted bypass would make
       // newly loaded files look empty.
-      const { quick, levels, timeFrom, timeTo, rgPattern, showOnlyBookmarked, zenOn, filtersEnabled, markdownOn, ...persisted } = state;
+      const { quick, levels, timeFrom, timeTo, rgPattern, showOnlyBookmarked, zenOn, filtersEnabled, markdownOn, formatOverrides, ...persisted } = state;
       const s = Object.assign({}, persisted, { bookmarks: bookmarksStore.toJSON() });
       localStorage.setItem(STATE_KEY, JSON.stringify(s));
     } catch (e) { /* storage may be unavailable on file:// in some browsers */ }
@@ -47,6 +47,8 @@
     try {
       const raw = localStorage.getItem(STATE_KEY);
       if (raw) state = Object.assign(defaults(), JSON.parse(raw));
+      if (!Array.isArray(state.customFormats)) state.customFormats = [];
+      if (!state.formatOverrides) state.formatOverrides = {};
     } catch (e) { /* keep defaults */ }
   }
 
@@ -339,10 +341,19 @@
     const bt = busy('Indexing ' + entry.name + '…');
     store.setFileInfo(entry.id, entry.name, entry.size);
     try {
-      const result = await paging.request('index', { fileId: entry.id, file: entry.file, sampleLimit: Math.min(100000, state.cap || 100000) }, (p) => { entry.read = p.bytes || entry.read; busyMessage(bt, p.progress); });
+      const forced = (state.formatOverrides && state.formatOverrides[entry.id]) || null;
+      const result = await paging.request('index', {
+        fileId: entry.id,
+        file: entry.file,
+        sampleLimit: Math.min(100000, state.cap || 100000),
+        customFormats: state.customFormats,
+        forcedFormat: forced,
+      }, (p) => { entry.read = p.bytes || entry.read; busyMessage(bt, p.progress); });
       if (ingestAbort || !files.includes(entry)) return;
       const codeLang = codeLanguageOf(entry);
-      entry.format = isMarkdownFile(entry) ? 'markdown' : (codeLang || result.format); entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
+      entry.detectedFormat = result.format;
+      entry.format = forced || (isMarkdownFile(entry) ? 'markdown' : (codeLang || result.format));
+      entry.lines = result.count; entry.firstLine = result.firstLine; entry.read = entry.size; entry.status = 'done';
       entry.utf8 = result.utf8 !== false; // false => head failed strict UTF-8 validation
       entry.warnings = result.warnings || 0; // lossy binary decode count (dlt-binary, R5-5)
       const f = store._files[entry.id];
@@ -602,6 +613,7 @@
     }
     updateMarkdownView();
     updateSyntaxButton();
+    updateFormatOverrideSelector();
   }
 
   // instant tooltip for truncated file names — native title is delayed and
@@ -844,7 +856,7 @@
       filteredCount = result.total;
       await loadPage(state.follow ? Math.max(0, Math.floor((filteredCount - 1) / PAGE_SIZE) * PAGE_SIZE) : 0, state.follow, bt);
       if (result.errors?.length) flash(result.errors.map((e) => e.error).join('; '));
-      renderFiles(); renderChips(); updateStatus(); updateMarkdownView(); updateSyntaxButton();
+      renderFiles(); renderChips(); updateStatus(); updateMarkdownView(); updateSyntaxButton(); updateFormatOverrideSelector();
     } catch (error) { if (token === viewToken) pagingError(error); }
     finally { doneBusy(bt); }
   }
@@ -1648,6 +1660,7 @@
       timeFrom: state.timeFrom, timeTo: state.timeTo,
       maskEnabled: state.maskEnabled, customMasks: state.customMasks, rg: state.rg,
       issueGroups: state.issueGroups,
+      customFormats: state.customFormats,
     };
   }
   function applyPreset(p) {
@@ -1658,8 +1671,9 @@
     state.timeFrom = p.timeFrom || ''; state.timeTo = p.timeTo || '';
     state.maskEnabled = p.maskEnabled || {};
     state.customMasks = p.customMasks || [];
+    if (Array.isArray(p.customFormats)) state.customFormats = p.customFormats;
     state.rg = Object.assign({ fixed: false, word: false, invert: false, caseMode: 'smart', before: 0, after: 0 }, p.rg || {});
-    syncMasksFromState(); syncRgFromState(); applyFilters(); renderMasks(); $('quick').value = state.quick; autosizeQuick();
+    syncMasksFromState(); syncRgFromState(); applyFilters(); renderMasks(); renderCustomFormats(); $('quick').value = state.quick; autosizeQuick();
   }
   function renderPresets() {
     const sel = $('preset-sel');
@@ -2247,6 +2261,7 @@
       filters: { rules: state.rules, timeFrom: state.timeFrom, timeTo: state.timeTo },
       masks: { enabled: Object.assign({}, state.maskEnabled), custom: state.customMasks.map((c) => Object.assign({}, c)) },
       issueGroups: state.issueGroups,
+      customFormats: (state.customFormats || []).map((c) => Object.assign({}, c)),
       pii: piiCopy,
       cap: state.cap || 100000,
     };
@@ -2286,6 +2301,11 @@
       renderAnalysis();
       applied.push('issue-scan rules');
     }
+    if (Array.isArray(cfg.customFormats)) {
+      state.customFormats = cfg.customFormats.map((c) => Object.assign({ name: 'custom', pattern: '', tsFormat: 'YYYY-MM-DD HH:mm:ss.SSS', enabled: true }, c));
+      renderCustomFormats();
+      applied.push('custom formats');
+    }
     if (cfg.cap && Number(cfg.cap) >= 1000) {
       state.cap = Number(cfg.cap);
       store.cap = state.cap;
@@ -2298,10 +2318,12 @@
   function renderConfigSummary() {
     const enabledMasks = LT.builtinRuleIds().filter((id) => state.maskEnabled[id] !== false).length;
     const enabledIssues = (state.issueGroups || []).filter((g) => g.on).length;
+    const enabledFormats = (state.customFormats || []).filter((f) => f.enabled !== false).length;
     $('config-cards').innerHTML =
       stat('Filter rules', state.rules.filter((r) => r.enabled !== false).length) +
       stat('Masks on', enabledMasks + '/' + LT.builtinRuleIds().length) +
       stat('Custom masks', state.customMasks.length) +
+      stat('Custom formats', enabledFormats + '/' + (state.customFormats || []).length) +
       stat('Issue rules on', enabledIssues + '/' + (state.issueGroups || []).length) +
       stat('Analysis sample limit', state.cap || 100000) +
       stat('Presets', Object.keys(state.presets).length);
@@ -2312,7 +2334,7 @@
     fr.onload = () => {
       try {
         const cfg = JSON.parse(fr.result);
-        if (!cfg || typeof cfg !== 'object' || (!cfg.filters && !cfg.masks && !Array.isArray(cfg.issueGroups))) {
+        if (!cfg || typeof cfg !== 'object' || (!cfg.filters && !cfg.masks && !Array.isArray(cfg.issueGroups) && !Array.isArray(cfg.customFormats))) {
           throw new Error('not a log-triage config file');
         }
         const applied = applyConfig(cfg);
@@ -2696,6 +2718,291 @@
       }
     }
   }
+
+  /* ---------------- custom formats & format override ---------------- */
+  let editingFormatIdx = -1;
+
+  function updateFormatOverrideSelector() {
+    const sel = $('sel-format-override');
+    if (!sel) return;
+    const curFile = currentDisplayedFile();
+    if (!curFile) {
+      sel.classList.add('hidden');
+      return;
+    }
+    sel.classList.remove('hidden');
+
+    const detected = curFile.detectedFormat || curFile.format || 'plain';
+    const forced = (state.formatOverrides && state.formatOverrides[curFile.id]) || '';
+
+    const builtIns = ['logcat', 'syslog', 'clf', 'iso8601', 'mmdd', 'dlt', 'dlt-binary', 'plain'];
+    const customFmts = (state.customFormats || []).map((c) => c.name);
+
+    let html = '<option value="">Auto (' + esc(detected) + ')</option>';
+    html += '<optgroup label="Built-in">';
+    for (const b of builtIns) {
+      html += '<option value="' + esc(b) + '"' + (forced === b ? ' selected' : '') + '>' + esc(b) + '</option>';
+    }
+    html += '</optgroup>';
+    if (customFmts.length) {
+      html += '<optgroup label="Custom">';
+      for (const c of customFmts) {
+        html += '<option value="' + esc(c) + '"' + (forced === c ? ' selected' : '') + '>' + esc(c) + '</option>';
+      }
+      html += '</optgroup>';
+    }
+    sel.innerHTML = html;
+    sel.value = forced;
+  }
+
+  async function setFileFormatOverride(fileId, forcedFormat) {
+    const f = files.find((x) => x.id === fileId);
+    if (!f) return;
+    const bt = busy('Re-indexing ' + f.name + ' as ' + (forcedFormat || 'auto') + '…');
+    try {
+      const result = await paging.request('reformat', {
+        fileId: f.id,
+        format: forcedFormat,
+        customFormats: state.customFormats,
+        sampleLimit: Math.min(100000, state.cap || 100000),
+      });
+      if (result.error) throw new Error(result.error);
+      f.format = forcedFormat || result.format;
+      if (!f.detectedFormat) f.detectedFormat = result.format;
+      f.lines = result.count;
+      f.firstLine = result.firstLine;
+
+      const storeFile = store._files[f.id];
+      if (storeFile) {
+        Object.assign(storeFile, { total: result.count, kept: result.count, levelCounts: result.counts });
+      }
+
+      // Re-sum level counts across all loaded files
+      tally._counts = {};
+      for (const item of files) {
+        const st = store._files[item.id];
+        if (st && st.levelCounts) {
+          for (const [lvl, count] of Object.entries(st.levelCounts)) {
+            const key = lvl === 'null' ? '__' : lvl;
+            tally._counts[key] = (tally._counts[key] || 0) + count;
+          }
+        }
+      }
+
+      displayCache = new Map();
+      renderFiles();
+      renderChips();
+      updateStatus();
+      updateFormatOverrideSelector();
+      await rebuildView();
+      flash('Format set to ' + (forcedFormat || result.format));
+    } catch (err) {
+      alert('Format override failed: ' + err.message);
+    } finally {
+      doneBusy(bt);
+    }
+  }
+
+  function renderCustomFormats() {
+    const list = $('format-list');
+    if (!list) return;
+    if (!Array.isArray(state.customFormats) || !state.customFormats.length) {
+      list.innerHTML = '<p class="muted" style="margin:4px 0">No custom formats defined yet. Click <b>+ Add format</b> or <b>Restore examples</b> to get started.</p>';
+      return;
+    }
+    let html = '<div class="rules-wrap"><table class="rules" style="width:100%">';
+    html += '<thead><tr><th style="width:36px">on</th><th>name</th><th>label</th><th>priority</th><th>groups</th><th>pattern</th><th style="width:80px"></th></tr></thead><tbody>';
+    state.customFormats.forEach((fmt, i) => {
+      const v = LT.validateFormatDef(fmt);
+      const groupsStr = v.groups && v.groups.length ? v.groups.join(', ') : '—';
+      html += '<tr class="' + (fmt.enabled !== false ? '' : 'muted') + '">';
+      html += '<td style="text-align:center"><input type="checkbox" class="toggle fmt-on" data-idx="' + i + '"' + (fmt.enabled !== false ? ' checked' : '') + '></td>';
+      html += '<td><span class="badge fmt">' + esc(fmt.name) + '</span></td>';
+      html += '<td>' + esc(fmt.label || fmt.name) + '</td>';
+      html += '<td style="text-align:center">' + (typeof fmt.priority === 'number' ? fmt.priority : 10) + '</td>';
+      html += '<td style="font-family:var(--mono);font-size:11px">' + esc(groupsStr) + '</td>';
+      html += '<td style="font-family:var(--mono);font-size:11px;max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + esc(fmt.pattern) + '">' + esc(fmt.pattern) + '</td>';
+      html += '<td style="text-align:right">';
+      html += '<button class="fmt-edit" data-idx="' + i + '" style="padding:1px 6px;font-size:11px;margin-right:4px">edit</button>';
+      html += '<button class="fmt-del" data-idx="' + i + '" style="padding:1px 6px;font-size:11px">✕</button>';
+      html += '</td></tr>';
+    });
+    html += '</tbody></table></div>';
+    list.innerHTML = html;
+
+    list.querySelectorAll('.fmt-on').forEach((cb) => {
+      cb.onchange = () => {
+        const idx = Number(cb.dataset.idx);
+        if (state.customFormats[idx]) {
+          state.customFormats[idx].enabled = cb.checked;
+          saveState();
+          renderConfigSummary();
+          updateFormatOverrideSelector();
+        }
+      };
+    });
+    list.querySelectorAll('.fmt-edit').forEach((btn) => {
+      btn.onclick = () => openFormatEditor(Number(btn.dataset.idx));
+    });
+    list.querySelectorAll('.fmt-del').forEach((btn) => {
+      btn.onclick = () => {
+        const idx = Number(btn.dataset.idx);
+        state.customFormats.splice(idx, 1);
+        saveState();
+        renderCustomFormats();
+        renderConfigSummary();
+        updateFormatOverrideSelector();
+      };
+    });
+  }
+
+  function openFormatEditor(idx) {
+    editingFormatIdx = typeof idx === 'number' ? idx : -1;
+    const box = $('format-editor');
+    if (!box) return;
+    box.classList.remove('hidden');
+    $('format-editor-title').textContent = editingFormatIdx >= 0 ? 'Edit custom format' : 'Add custom format';
+    const def = editingFormatIdx >= 0 ? state.customFormats[editingFormatIdx] : {
+      name: '', label: '', priority: 10, pattern: '', tsFormat: 'YYYY-MM-DD HH:mm:ss.SSS', levelMap: {}, enabled: true
+    };
+    $('fmt-name').value = def.name || '';
+    $('fmt-label').value = def.label || '';
+    $('fmt-priority').value = typeof def.priority === 'number' ? def.priority : 10;
+    $('fmt-pattern').value = def.pattern || '';
+    $('fmt-ts-preset').value = def.tsFormat || 'YYYY-MM-DD HH:mm:ss.SSS';
+    if (def.levelMap && typeof def.levelMap === 'object') {
+      $('fmt-level-map').value = Object.entries(def.levelMap).map(([k, v]) => k + '=' + v).join(', ');
+    } else {
+      $('fmt-level-map').value = '';
+    }
+    updateFormatPreview();
+  }
+
+  function closeFormatEditor() {
+    editingFormatIdx = -1;
+    const box = $('format-editor');
+    if (box) box.classList.add('hidden');
+  }
+
+  function parseLevelMapInput(str) {
+    const map = {};
+    if (!str || typeof str !== 'string') return map;
+    str.split(',').forEach((part) => {
+      const kv = part.split('=');
+      if (kv.length === 2) {
+        const k = kv[0].trim(), v = kv[1].trim().toUpperCase();
+        if (k && v) map[k] = v;
+      }
+    });
+    return map;
+  }
+
+  function updateFormatPreview() {
+    const name = ($('fmt-name').value || '').trim();
+    const label = ($('fmt-label').value || '').trim();
+    const pattern = $('fmt-pattern').value || '';
+    const tsFormat = $('fmt-ts-preset').value;
+    const levelMap = parseLevelMapInput($('fmt-level-map').value);
+    const sampleLine = $('fmt-preview-in').value || '';
+
+    const def = { name: name || 'test', label, pattern, tsFormat, levelMap, priority: 10, enabled: true };
+    const val = LT.validateFormatDef(def);
+    const statusEl = $('fmt-regex-status');
+    const outEl = $('fmt-preview-out');
+
+    if (!pattern) {
+      if (statusEl) statusEl.innerHTML = '<span class="muted">Enter a regex pattern with named capture groups.</span>';
+      if (outEl) outEl.innerHTML = '';
+      return;
+    }
+
+    if (!val.valid) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:var(--err)">✕ ' + esc(val.errors.join('; ')) + '</span>';
+      if (outEl) outEl.innerHTML = '<span class="muted">Fix regex to test line.</span>';
+      return;
+    }
+
+    const groupsDesc = val.groups.length ? val.groups.join(', ') : 'none';
+    if (statusEl) {
+      statusEl.innerHTML = '<span style="color:var(--ok)">✓ Regex valid</span> · named groups: <code>' + esc(groupsDesc) + '</code>';
+    }
+
+    if (!sampleLine) {
+      if (outEl) outEl.innerHTML = '<span class="muted">Enter or paste a log line above to test parsing.</span>';
+      return;
+    }
+
+    const compiled = LT.compileCustomFormat(def);
+    if (!compiled.ok) {
+      if (outEl) outEl.innerHTML = '<span style="color:var(--err)">Compilation failed: ' + esc(compiled.error) + '</span>';
+      return;
+    }
+
+    const rec = LT.parseCustomLine(sampleLine, compiled);
+    if (!rec) {
+      if (outEl) outEl.innerHTML = '<span style="color:var(--warn)">✕ Line did not match pattern</span>';
+    } else {
+      let recHtml = '<span style="color:var(--ok)">✓ Matched</span><br>';
+      recHtml += '<b>ts:</b> <code>' + esc(rec.ts || 'null') + '</code> · ';
+      recHtml += '<b>level:</b> <code>' + esc(rec.level || 'null') + '</code> · ';
+      recHtml += '<b>tag:</b> <code>' + esc(rec.tag || 'null') + '</code> · ';
+      recHtml += '<b>pid:</b> <code>' + esc(rec.pid || 'null') + '</code> · ';
+      recHtml += '<b>msg:</b> <code>' + esc(rec.msg) + '</code>';
+      if (outEl) outEl.innerHTML = recHtml;
+    }
+  }
+
+  function saveFormatEditor() {
+    const name = ($('fmt-name').value || '').trim();
+    const label = ($('fmt-label').value || '').trim() || name;
+    const priority = Number($('fmt-priority').value) || 10;
+    const pattern = $('fmt-pattern').value || '';
+    const tsFormat = $('fmt-ts-preset').value;
+    const levelMap = parseLevelMapInput($('fmt-level-map').value);
+
+    const def = { name, label, priority, pattern, tsFormat, levelMap, enabled: true };
+    const val = LT.validateFormatDef(def);
+    if (!val.valid) {
+      alert('Cannot save format:\n' + val.errors.join('\n'));
+      return;
+    }
+
+    if (!Array.isArray(state.customFormats)) state.customFormats = [];
+    if (editingFormatIdx >= 0 && editingFormatIdx < state.customFormats.length) {
+      state.customFormats[editingFormatIdx] = def;
+    } else {
+      const existingIdx = state.customFormats.findIndex((f) => f.name === name);
+      if (existingIdx >= 0) {
+        state.customFormats[existingIdx] = def;
+      } else {
+        state.customFormats.push(def);
+      }
+    }
+
+    saveState();
+    closeFormatEditor();
+    renderCustomFormats();
+    renderConfigSummary();
+    updateFormatOverrideSelector();
+    flash('Custom format "' + name + '" saved');
+  }
+
+  function restoreFormatExamples() {
+    if (!Array.isArray(state.customFormats)) state.customFormats = [];
+    let added = 0;
+    for (const ex of LT.DEFAULT_CUSTOM_FORMAT_EXAMPLES) {
+      if (!state.customFormats.some((f) => f.name === ex.name)) {
+        state.customFormats.push(JSON.parse(JSON.stringify(ex)));
+        added++;
+      }
+    }
+    saveState();
+    renderCustomFormats();
+    renderConfigSummary();
+    updateFormatOverrideSelector();
+    flash(added ? 'Restored ' + added + ' example format(s)' : 'Example formats already present');
+  }
+
   function setWrap(on) {
     state.wrapOn = on;
     $('btn-wrap').textContent = 'Wrap: ' + (on ? 'ON' : 'OFF');
@@ -3308,6 +3615,28 @@
     };
     $('mask-preview-in').oninput = previewMask;
 
+    $('btn-add-format').onclick = () => openFormatEditor(-1);
+    $('btn-format-examples').onclick = restoreFormatExamples;
+    $('btn-save-format').onclick = saveFormatEditor;
+    $('btn-cancel-format').onclick = closeFormatEditor;
+    $('fmt-pattern').oninput = updateFormatPreview;
+    $('fmt-name').oninput = updateFormatPreview;
+    $('fmt-ts-preset').onchange = updateFormatPreview;
+    $('fmt-level-map').oninput = updateFormatPreview;
+    $('fmt-preview-in').oninput = updateFormatPreview;
+
+    $('sel-format-override').onchange = async () => {
+      const curFile = currentDisplayedFile();
+      if (!curFile) return;
+      const val = $('sel-format-override').value;
+      if (val) {
+        state.formatOverrides[curFile.id] = val;
+      } else {
+        delete state.formatOverrides[curFile.id];
+      }
+      await setFileFormatOverride(curFile.id, val || null);
+    };
+
     $('exp-txt').onclick = () => exportRecords('txt');
     $('exp-csv').onclick = () => exportRecords('csv');
     $('exp-json').onclick = () => exportRecords('json');
@@ -3336,8 +3665,11 @@
     setDrawer(state.drawerOn !== false);
     syncMasksFromState(); syncRgFromState();
     renderChips(); renderRules(); renderPresets(); renderFiles(); renderBookmarks(); updateStatus();
+    renderCustomFormats();
+    renderConfigSummary();
     updateMarkdownView();
     updateSyntaxButton();
+    updateFormatOverrideSelector();
     bindViewer();
     applySide();
     restoreCache().catch(() => {});

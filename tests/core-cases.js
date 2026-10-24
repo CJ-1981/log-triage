@@ -1482,5 +1482,37 @@
     eq(SRC.maskLine(hex.line), hex.line, 'hex-dump rows carry no PII and stay intact');
   });
 
+  /* ============================== FR-33: custom-format ============================== */
+
+  T('custom-format', 'compile, validate, and detect custom formats', () => {
+    const ex = SRC.DEFAULT_CUSTOM_FORMAT_EXAMPLES[0]; // springboot
+    const v = SRC.validateFormatDef(ex);
+    ok(v.valid, 'example format is valid');
+    const c = SRC.compileCustomFormat(ex);
+    ok(c.ok, 'compiled successfully');
+    eq(c.name, 'springboot');
+
+    const lines = [
+      '2026-10-24 18:30:15.123  INFO 1234 --- [main] com.example.App: Application started',
+      '2026-10-24 18:30:16.456  WARN 1234 --- [main] com.example.App: Slow initialization',
+    ];
+    const det = SRC.detectFormat(lines, [ex]);
+    eq(det.format, 'springboot', 'springboot format auto-detected');
+
+    const rec = SRC.parseLine(lines[0], 'springboot', [ex]);
+    eq(rec.ts, '10-24 18:30:15.123', 'ts normalized');
+    eq(rec.level, 'I', 'level mapped');
+    eq(rec.pid, '1234', 'pid extracted');
+    eq(rec.tag, 'main', 'tag extracted');
+    eq(rec.msg, 'Application started', 'msg extracted');
+  });
+
+  T('custom-format', 'timestamp normalization across formats', () => {
+    eq(SRC.normalizeCustomTs('2026-10-24 18:30:00.500', 'YYYY-MM-DD HH:mm:ss.SSS'), '10-24 18:30:00.500');
+    eq(SRC.normalizeCustomTs('2026/05/12 10:20:30', 'YYYY/MM/DD HH:mm:ss'), '05-12 10:20:30.000');
+    eq(SRC.normalizeCustomTs('03/17 08:00:00', 'MM/DD HH:mm:ss'), '03-17 08:00:00.000');
+    ok(SRC.normalizeCustomTs('1729792400', 'epoch_s') !== null);
+  });
+
   return { CASES, eq, deepEq, ok };
 }));
