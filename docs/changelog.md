@@ -1,6 +1,12 @@
 # Changelog
 
 ## Unreleased
+
+## 1.60.1 (2026-10-24)
+- fix(SPEC-FILES-001): instant in-panel tooltip for truncated files-panel names
+- chore(SPEC-FILES-001): backfill sync_commit_sha
+- docs(SPEC-FILES-001): sync-phase artifacts — 3-phase close
+
 - feat(files): show instant full-name tooltips on truncated files-panel names with single-line ellipsis (SPEC-FILES-001)
 
 ## 1.60.0 (2026-10-24)
