@@ -395,10 +395,22 @@
       flash('drop failed: ' + err.message);
     }
   }
+  let userExplicitFile = false;
   async function ingestFiles(fileList) {
     ingestAbort = false;
-    // a fresh load shows everything: drop any stale per-file selection
-    state.activeFile = null;
+    // multiple files selected/loaded resets to merged timeline; single file loaded into empty session uses per-file
+    if (fileList.length > 1) {
+      userExplicitFile = false;
+      state.activeFile = null;
+      state.viewMode = 'merged';
+    } else if (files.length === 0 && fileList.length === 1) {
+      state.viewMode = 'file';
+    } else if (!userExplicitFile) {
+      state.activeFile = null;
+      state.viewMode = 'merged';
+    }
+    const sel = $('view-mode');
+    if (sel) sel.value = state.viewMode;
     saveState();
     let i = 0;
     for (const f of fileList) {
@@ -433,14 +445,45 @@
         entry.status = 'error';
         flash('could not read ' + f.name + ': ' + err.message);
       }
-      // in per-file mode a freshly loaded file becomes the displayed one, so
-      // new content is never hidden behind another file's view — select it
-      // BEFORE the rebuild so the query and the panel highlight agree
-      if (entry.status === 'done' && state.viewMode === 'file') { state.activeFile = entry.id; $('view-mode').value = 'file'; }
+      // in per-file mode (or when a single file was selected/loaded) the freshly loaded
+      // file becomes the displayed one — select it BEFORE the rebuild so the query and highlight agree
+      if (entry.status === 'done') {
+        if (files.length === 1) {
+          state.activeFile = entry.id;
+          state.viewMode = 'file';
+          const s = $('view-mode');
+          if (s) s.value = 'file';
+        } else if (userExplicitFile && state.viewMode === 'file') {
+          state.activeFile = entry.id;
+          const s = $('view-mode');
+          if (s) s.value = 'file';
+        } else {
+          state.activeFile = null;
+          state.viewMode = 'merged';
+          const s = $('view-mode');
+          if (s) s.value = 'merged';
+        }
+      }
       renderFiles();
       await onKeptChanged();
       if (entry.status === 'done') await cacheLoadedFile(entry, f);
       if (ingestAbort) break;
+    }
+    const doneFiles = files.filter((f) => f.status === 'done');
+    if (doneFiles.length === 1 && (!state.activeFile || state.viewMode !== 'file')) {
+      state.activeFile = doneFiles[0].id;
+      state.viewMode = 'file';
+      const s = $('view-mode');
+      if (s) s.value = 'file';
+      renderFiles();
+      await onKeptChanged();
+    } else if (doneFiles.length > 1 && !userExplicitFile && state.viewMode !== 'merged') {
+      state.activeFile = null;
+      state.viewMode = 'merged';
+      const s = $('view-mode');
+      if (s) s.value = 'merged';
+      renderFiles();
+      await onKeptChanged();
     }
     // a 0-byte file that was handed to us readable-looking (drag & drop from
     // a >260-char Windows path does exactly this) indexes to nothing — warn
@@ -512,8 +555,14 @@
           removeFileById(e.target.dataset.remove);
           return;
         }
-        state.activeFile = state.activeFile === f.id ? null : f.id;
-        state.viewMode = state.activeFile ? 'file' : 'merged';
+        if (files.length === 1) {
+          state.activeFile = f.id;
+          state.viewMode = 'file';
+        } else {
+          state.activeFile = state.activeFile === f.id ? null : f.id;
+          state.viewMode = state.activeFile ? 'file' : 'merged';
+        }
+        userExplicitFile = state.viewMode === 'file';
         const sel = $('view-mode');
         if (sel) sel.value = state.viewMode;
         saveState(); renderFiles(); rebuildView();
@@ -611,7 +660,17 @@
     store._keptTotal -= Math.max(0, (store._files[id]?.total || 0) - store.kept.filter((r) => r.fileId === id).length);
     store.removeFile(id);
     bookmarksStore.removeByKeyPrefix(keyPrefix); // removed file: drop its bookmarks too
-    if (state.activeFile === id) { state.activeFile = null; state.viewMode = 'merged'; }
+    if (files.length === 1) {
+      state.activeFile = files[0].id;
+      state.viewMode = 'file';
+      const sel = $('view-mode');
+      if (sel) sel.value = 'file';
+    } else if (state.activeFile === id) {
+      state.activeFile = null;
+      state.viewMode = 'merged';
+      const sel = $('view-mode');
+      if (sel) sel.value = 'merged';
+    }
     const matches = cacheEntries.filter((c) => c.name === f.name && c.size === f.size);
     for (const c of matches) LT.cacheDelete(c.id);
     cacheEntries = cacheEntries.filter((c) => !matches.includes(c));
@@ -750,7 +809,17 @@
   async function rebuildView() {
     const token = ++viewToken; ++pageToken;
     const bt = busy('Filtering all indexed lines…');
-    if (state.activeFile && !files.some((f) => f.id === state.activeFile)) { state.activeFile = null; state.viewMode = 'merged'; $('view-mode').value = 'merged'; }
+    if (state.activeFile && !files.some((f) => f.id === state.activeFile)) {
+      if (files.length === 1) {
+        state.activeFile = files[0].id;
+        state.viewMode = 'file';
+        $('view-mode').value = 'file';
+      } else {
+        state.activeFile = null;
+        state.viewMode = 'merged';
+        $('view-mode').value = 'merged';
+      }
+    }
     // invariant: 'file' mode always displays exactly one file; a restored
     // session may carry viewMode=file with no active file — pick the first
     if (state.viewMode === 'file' && !state.activeFile && files.length) { state.activeFile = files[0].id; $('view-mode').value = 'file'; }
@@ -1012,7 +1081,7 @@
       row.innerHTML =
         '<div class="vcell bm' + (bmk ? ' marked' : '') + '" data-bm="' + i + '">' + (bmk ? '★' : '☆') + '</div>' +
         '<div class="vcell ln">' + rec.lineNo + '</div>' +
-        (state.viewMode === 'merged' ? '<div class="vcell fl" title="' + esc(fileDisplayName(rec.fileId)) + '">' + esc(fileDisplayName(rec.fileId)) + '</div>' : '') +
+        (state.viewMode === 'merged' ? '<div class="vcell fl">' + esc(fileDisplayName(rec.fileId)) + '</div>' : '') +
         (rec.level ? '<div class="vcell lv lvl-' + esc(rec.level) + '">' + esc(rec.level) + '</div>' : '<div class="vcell lv"></div>') +
         '<div class="vcell txt" style="white-space:inherit">' + (hl || esc(text)) + '</div>';
       row.dataset.idx = i;
@@ -1121,11 +1190,16 @@
   function bindViewer() {
     const v = viewer();
     v.addEventListener('scroll', () => {
+      hideFnameTip();
       renderRows();
       if (state.follow && v.scrollTop + v.clientHeight < v.scrollHeight - ROW_H * 2) {
         // user scrolled up: disable follow
         state.follow = false; $('btn-follow').textContent = 'Follow: OFF'; $('btn-follow').classList.remove('on'); saveState();
       }
+    });
+    v.addEventListener('mouseover', (e) => {
+      const fl = e.target.closest ? e.target.closest('.vcell.fl') : null;
+      if (fl) showFnameTip(fl); else hideFnameTip();
     });
     let drag = false;
     let lastHoverIdx = -1;
@@ -1161,7 +1235,7 @@
     });
     const endDrag = () => { drag = false; lastHoverIdx = -1; };
     window.addEventListener('mouseup', endDrag);
-    $('viewer').addEventListener('mouseleave', endDrag);
+    $('viewer').addEventListener('mouseleave', () => { hideFnameTip(); endDrag(); });
     v.addEventListener('dblclick', (e) => {
       const row = e.target.closest('.vrow');
       if (row && state.drawerOn) showDrawer(view[Number(row.dataset.idx)]);
@@ -3045,6 +3119,7 @@
     $('btn-follow').onclick = () => setFollow(!state.follow);
     $('view-mode').onchange = () => {
       state.viewMode = $('view-mode').value;
+      userExplicitFile = state.viewMode === 'file';
       // keep the invariant: 'file' mode always has an active file, merged none
       if (state.viewMode === 'merged') state.activeFile = null;
       else if (!state.activeFile && files.length) state.activeFile = files[0].id;

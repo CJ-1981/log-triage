@@ -543,6 +543,7 @@ test('a newly loaded file is visible in the viewer even in per-file mode', async
 
 test('wrap mode renders scrolled pages at their true position', async () => {
   await fresh();
+  await page.setViewportSize({ width: 1280, height: 800 });
   await click('btn-demo');
   await page.waitForFunction(() => document.getElementById('st-total').textContent === '44');
   // bring long stack-trace lines into the window
@@ -2399,7 +2400,7 @@ test('binary .dlt drop: lossy capture surfaces warnings and flows chips, full-fi
   });
   await page.waitForFunction(() => document.getElementById('st-shown').textContent === '1', null, { timeout: 5000 });
   await click('btn-sall');
-  await page.waitForFunction(() => /1 match\(es\) for \/deadbeef\/ in all files/.test(document.getElementById('sall-note').textContent), null, { timeout: 8000 });
+  await page.waitForFunction(() => /1 match\(es\) for \/deadbeef\/ in (all files|.*\.dlt)/.test(document.getElementById('sall-note').textContent), null, { timeout: 8000 });
   const sallText = await page.evaluate(() => document.getElementById('sall-rows').textContent);
   assert.ok(sallText.includes('hex deadbeef'), 'search-all resolves the rendered hex-dump row');
   // masking applies to the rendered binary line in the viewer

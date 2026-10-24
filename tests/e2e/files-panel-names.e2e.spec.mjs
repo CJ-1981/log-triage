@@ -238,3 +238,119 @@ test('AC-FILES-006: a short cached name does not clip and the ↻ suffix stays v
   const tip = await hoverFname('.file-item.cached .fname');
   assert.strictEqual(tip.display, 'none', 'no tooltip for an untruncated name (tip is truncation-gated)');
 });
+
+test('single file selected activates per-file mode, not merged timeline', async () => {
+  await fresh();
+  // 1. Single file loaded via file picker
+  await page.setInputFiles('#file-input', [join(root, 'tests', 'fixtures', 'demo.log')]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, { timeout: 8000 });
+  const viewMode = await page.evaluate(() => document.getElementById('view-mode').value);
+  assert.strictEqual(viewMode, 'file', 'single file load must activate per-file mode');
+  const activeCount = await page.evaluate(() => document.querySelectorAll('.file-item.active').length);
+  assert.strictEqual(activeCount, 1, 'only the single loaded file is highlighted');
+  const fileColCount = await page.evaluate(() => document.querySelectorAll('.vrow .vcell.fl').length);
+  assert.strictEqual(fileColCount, 0, 'per-file mode viewer omits the file name column');
+
+  // Clicking the file item when only 1 file is loaded should stay in per-file mode
+  await page.evaluate(() => document.querySelector('.file-item').click());
+  const viewModeAfterClick = await page.evaluate(() => document.getElementById('view-mode').value);
+  assert.strictEqual(viewModeAfterClick, 'file', 'clicking the only file keeps per-file mode');
+
+  // 2. Loading a second file (multi-file load)
+  await page.setInputFiles('#file-input', [
+    join(root, 'tests', 'fixtures', 'syslog.log'),
+    join(root, 'tests', 'fixtures', 'apache.log'),
+  ]);
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '57', null, { timeout: 8000 });
+  const multiMode = await page.evaluate(() => document.getElementById('view-mode').value);
+  assert.strictEqual(multiMode, 'merged', 'multi-file load activates merged mode');
+
+  // 3. Removing files down to 1 file transitions back to per-file mode
+  await page.evaluate(() => {
+    const items = Array.from(document.querySelectorAll('.file-item'));
+    const syslog = items.find((el) => el.textContent.includes('syslog.log'));
+    if (syslog) syslog.querySelector('.fx').click();
+  });
+  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 2, null, { timeout: 5000 });
+  await page.evaluate(() => {
+    const items = Array.from(document.querySelectorAll('.file-item'));
+    const apache = items.find((el) => el.textContent.includes('apache.log'));
+    if (apache) apache.querySelector('.fx').click();
+  });
+  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 1, null, { timeout: 5000 });
+  const remainingMode = await page.evaluate(() => document.getElementById('view-mode').value);
+  assert.strictEqual(remainingMode, 'file', 'reducing to 1 file transitions to per-file mode');
+});
+
+test('merged timeline viewer truncated file name column shows tooltip instantly', async () => {
+  await fresh();
+  const name = longName();
+  const p = join(os.tmpdir(), name);
+  const EARLY_SAMPLE = [
+    '08-24 10:00:00.100  1234  5678 D WifiHal: associated rssi=-50',
+    '08-24 10:00:00.200  1234  5678 I WifiHal: scan complete',
+    '08-24 10:00:00.300  1234  5678 E WifiHal: timeout waiting for driver',
+  ].join('\n') + '\n';
+  fs.writeFileSync(p, EARLY_SAMPLE);
+  try {
+    // Load two files to activate merged timeline mode
+    await page.setInputFiles('#file-input', [p, join(root, 'tests', 'fixtures', 'demo.log')]);
+    await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 2, null, { timeout: 8000 });
+    await page.waitForFunction(() => document.getElementById('st-total').textContent === '47', null, { timeout: 8000 });
+    await page.waitForFunction(() => document.getElementById('view-mode').value === 'merged', null, { timeout: 8000 });
+    await page.waitForFunction(() => document.querySelectorAll('.vrow .vcell.fl').length > 0, null, { timeout: 8000 });
+
+    // Find the long-name cell and demo.log cell in the viewer
+    const cellInfo = await page.evaluate(`JSON.stringify((() => {
+      const longCell = Array.from(document.querySelectorAll('.vrow .vcell.fl')).find((c) => c.textContent.includes('lt-truncate-'));
+      const shortCell = Array.from(document.querySelectorAll('.vrow .vcell.fl')).find((c) => c.textContent === 'demo.log');
+      return {
+        hasLong: !!longCell,
+        hasShort: !!shortCell,
+        longClipped: longCell ? longCell.scrollWidth > longCell.clientWidth : false,
+        longTitle: longCell ? longCell.getAttribute('title') : undefined,
+        shortClipped: shortCell ? shortCell.scrollWidth > shortCell.clientWidth : false,
+        shortTitle: shortCell ? shortCell.getAttribute('title') : undefined,
+      };
+    })())`).then(JSON.parse);
+
+    assert.ok(cellInfo.hasLong, 'viewer contains row for long file');
+    assert.ok(cellInfo.hasShort, 'viewer contains row for short file');
+    assert.ok(cellInfo.longClipped, 'long file name cell is truncated (scrollWidth > clientWidth)');
+    assert.strictEqual(cellInfo.longTitle, null, 'long file name cell carries NO native title');
+    assert.ok(!cellInfo.shortClipped, 'short file name cell is NOT truncated');
+    assert.strictEqual(cellInfo.shortTitle, null, 'short file name cell carries NO native title');
+
+    // Hover truncated file name cell -> instant tooltip appears with full name
+    const longTip = await page.evaluate(() => {
+      const longCell = Array.from(document.querySelectorAll('.vrow .vcell.fl')).find((c) => c.textContent.includes('lt-truncate-'));
+      longCell.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      const t = document.getElementById('fname-tip');
+      return t ? { display: t.style.display, text: t.textContent } : { display: 'none', text: null };
+    });
+    assert.strictEqual(longTip.display, 'block', 'instant tooltip appears on truncated viewer file cell');
+    assert.strictEqual(longTip.text, name, 'tooltip text matches full unshortened file name');
+
+    // Hover untruncated file name cell -> tooltip is hidden
+    const shortTip = await page.evaluate(() => {
+      const shortCell = Array.from(document.querySelectorAll('.vrow .vcell.fl')).find((c) => c.textContent === 'demo.log');
+      shortCell.dispatchEvent(new MouseEvent('mouseover', { bubbles: true }));
+      const t = document.getElementById('fname-tip');
+      return t ? { display: t.style.display, text: t.textContent } : { display: 'none', text: null };
+    });
+    assert.strictEqual(shortTip.display, 'none', 'tooltip stays hidden for untruncated viewer file cell');
+
+    // Moving mouse out of viewer hides the tooltip
+    await page.evaluate(() => {
+      const v = document.getElementById('viewer');
+      v.dispatchEvent(new MouseEvent('mouseleave', { bubbles: true }));
+    });
+    const tipAfterLeave = await page.evaluate(() => {
+      const t = document.getElementById('fname-tip');
+      return t ? t.style.display : 'none';
+    });
+    assert.strictEqual(tipAfterLeave, 'none', 'tooltip hides when mouse leaves viewer');
+  } finally {
+    fs.rmSync(p, { force: true });
+  }
+});
