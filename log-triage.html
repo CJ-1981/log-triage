@@ -6660,9 +6660,11 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     // bookmarkOnly below), so the view is built as if they were not configured.
     // The quick scan is decoupled: it narrows in BOTH toggle states.
     const flt = state.filtersEnabled ? filter : { rules: [], quick: filter.quick, levels: [], timeFrom: '', timeTo: '' };
+    const curFile = currentDisplayedFile();
+    const isSingleCode = isCodeFile(curFile);
     const spec = {
       fileId: state.viewMode === 'file' ? state.activeFile : null,
-      rules: flt.rules, quick: flt.quick, levels: flt.levels,
+      rules: flt.rules, quick: flt.quick, levels: isSingleCode ? [] : flt.levels,
       timeFrom: flt.timeFrom, timeTo: flt.timeTo,
       bookmarkOnly: state.filtersEnabled && state.showOnlyBookmarked,
       bookmarks: files.map((f) => [f.id, bookmarksStore.list(bookmarkKeyFor(f.id)).map((b) => b.lineNo)]),
@@ -6691,6 +6693,30 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   function renderChips() {
     const row = $('chips-row');
     row.innerHTML = '';
+    const curFile = currentDisplayedFile();
+    const isSingleCode = isCodeFile(curFile);
+    // bookmark scope: lines bookmarked within the currently shown file(s)
+    const bmInView = files.filter((f) => state.viewMode !== 'file' || !state.activeFile || state.activeFile === f.id)
+      .reduce((n, f) => n + bookmarksStore.list(bookmarkKeyFor(f.id)).length, 0);
+
+    if (isSingleCode) {
+      if (bmInView > 0 || state.showOnlyBookmarked) {
+        row.style.display = '';
+        const b = document.createElement('button');
+        b.className = 'chip' + (state.showOnlyBookmarked ? ' sel' : '');
+        b.title = 'show only bookmarked lines';
+        b.innerHTML = '<span style="color:var(--warn)">★</span><span class="n">' + bmInView + '</span>';
+        b.onclick = () => {
+          if (bmInView === 0 && !state.showOnlyBookmarked) { flash('no bookmarks in this view'); return; }
+          setBmOnly(!state.showOnlyBookmarked);
+        };
+        row.appendChild(b);
+      } else {
+        row.style.display = 'none';
+      }
+      return;
+    }
+    row.style.display = '';
     // per-file view shows that file's tally; merged view shows everything
     const chips = (state.viewMode === 'file' && state.activeFile)
       ? store.tallyFor(state.activeFile).chipList()
@@ -6699,9 +6725,6 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       row.innerHTML = '<span class="muted" id="chips-hint">Level chips appear after loading</span>';
       return;
     }
-    // bookmark scope: lines bookmarked within the currently shown file(s)
-    const bmInView = files.filter((f) => state.viewMode !== 'file' || !state.activeFile || state.activeFile === f.id)
-      .reduce((n, f) => n + bookmarksStore.list(bookmarkKeyFor(f.id)).length, 0);
 
     if (bmInView > 0 || state.showOnlyBookmarked) {
       const b = document.createElement('button');
@@ -6751,8 +6774,12 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
   // decoupled from the master toggle and narrows in BOTH states; everything
   // else is suspended while the toggle is OFF, so derived UI must say so.
   const narrowingRule = (r) => r.enabled !== false && r.action !== 'highlight' && String(r.pattern || '').trim();
-  const viewIsFiltered = () => !!(filter.quick || (state.filtersEnabled && (state.levels.length ||
-    filter.timeFrom || filter.timeTo || state.showOnlyBookmarked || (state.rules || []).some(narrowingRule))));
+  const viewIsFiltered = () => {
+    const isSingleCode = isCodeFile(currentDisplayedFile());
+    const hasLevels = !isSingleCode && state.levels.length > 0;
+    return !!(filter.quick || (state.filtersEnabled && (hasLevels ||
+      filter.timeFrom || filter.timeTo || state.showOnlyBookmarked || (state.rules || []).some(narrowingRule))));
+  };
   // stored-settings predicate: ignores the bypass flag — anything configured
   // counts, so the toggle never mistakes a stored (suspended) edit for "empty"
   const storedFiltersActive = () => !!(state.quick || state.levels.length || state.timeFrom || state.timeTo ||
@@ -6766,7 +6793,8 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     const inc = count('include'), exc = count('exclude');
     if (inc) parts.push(inc + ' include rule' + (inc === 1 ? '' : 's'));
     if (exc) parts.push(exc + ' exclude rule' + (exc === 1 ? '' : 's'));
-    if (state.levels.length) parts.push('levels ' + state.levels.join(' '));
+    const isSingleCode = isCodeFile(currentDisplayedFile());
+    if (!isSingleCode && state.levels.length) parts.push('levels ' + state.levels.join(' '));
     if (state.quick) parts.push('quick scan');
     if (state.showOnlyBookmarked) parts.push('bookmarks only');
     return parts.join(', ');
@@ -6861,12 +6889,14 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     const spacer = $('vspacer');
     const top = v.scrollTop;
     const h = v.clientHeight;
+    const curFile = currentDisplayedFile();
+    const isSingleCode = isCodeFile(curFile);
     if (state.wrapOn) {
       spacer.style.width = v.clientWidth + 'px';
     } else {
       // explicit width from the widest line in the view: rendered windows are
       // partial, so max-content would collapse the horizontal scroll range
-      const gutter = 152 + 34 + 68 + 38 + 24 + (state.viewMode === 'merged' ? 152 : 0);
+      const gutter = 152 + 34 + 68 + (isSingleCode ? 0 : 38) + 24 + (state.viewMode === 'merged' ? 152 : 0);
       spacer.style.width = Math.ceil(Math.max(v.clientWidth, monoCharWidth() * viewMaxLen + gutter)) + 'px';
     }
     spacer.style.height = totalHeight() + 'px';
@@ -6895,9 +6925,11 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
       const row = document.createElement('div');
       let cls = 'vrow' + wrapCls;
       if (selection.has(rec.seq)) cls += ' sel';
-      else if (rec.level === 'W') cls += ' tint-w';
-      else if (rec.level === 'E') cls += ' tint-e';
-      else if (rec.level === 'F') cls += ' tint-f';
+      else if (!isSingleCode) {
+        if (rec.level === 'W') cls += ' tint-w';
+        else if (rec.level === 'E') cls += ' tint-e';
+        else if (rec.level === 'F') cls += ' tint-f';
+      }
       row.className = cls;
       const bmk = bookmarksStore.has(bookmarkKeyFor(rec.fileId), rec.lineNo);
       const text = displayText(rec);
@@ -6914,7 +6946,7 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
         '<div class="vcell bm' + (bmk ? ' marked' : '') + '" data-bm="' + i + '">' + (bmk ? '★' : '☆') + '</div>' +
         '<div class="vcell ln">' + rec.lineNo + '</div>' +
         (state.viewMode === 'merged' ? '<div class="vcell fl">' + esc(fileDisplayName(rec.fileId)) + '</div>' : '') +
-        (rec.level ? '<div class="vcell lv lvl-' + esc(rec.level) + '">' + esc(rec.level) + '</div>' : '<div class="vcell lv"></div>') +
+        (isSingleCode ? '' : (rec.level ? '<div class="vcell lv lvl-' + esc(rec.level) + '">' + esc(rec.level) + '</div>' : '<div class="vcell lv"></div>')) +
         '<div class="vcell txt" style="white-space:inherit">' + (hl || esc(text)) + '</div>';
       row.dataset.idx = i;
       inner.appendChild(row);
@@ -7140,10 +7172,11 @@ const LT_PAGING_WORKER = "/* Log Triage — util.js: small pure helpers shared b
     const drawerLang = state.syntaxOn ? fileCodeLang(rec.fileId) : null;
     const synSpans = (drawerLang && LT.syntaxSpans) ? LT.syntaxSpans(mainLine, drawerLang) : null;
     const mainHtml = highlightedHtml(mainLine, visual.spans, synSpans) || esc(mainLine);
+    const isCode = !!fileCodeLang(rec.fileId);
     d.innerHTML = '<h3>Line ' + rec.lineNo + ' — ' + esc(fileDisplayName(rec.fileId)) +
       '<button onclick="document.getElementById(\'drawer\').className=\'\'" title="close the detail drawer">✕</button></h3>' +
       '<dl>' +
-      dv('ts', rec.ts) + dv('level', rec.level) + dv('tag', rec.tag) +
+      dv('ts', rec.ts) + (isCode ? '' : dv('level', rec.level)) + dv('tag', rec.tag) +
       dv('pid / tid', (rec.pid == null ? '—' : rec.pid) + ' / ' + (rec.tid == null ? '—' : rec.tid)) +
       '<div><dt>' + (hasMaskDiff ? 'masked' : 'raw') +
       (hasMaskDiff

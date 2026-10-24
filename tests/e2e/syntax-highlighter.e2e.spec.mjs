@@ -270,3 +270,132 @@ test('SPEC-VIEWER-004: All 6 color themes define syntax color variables', async 
   }
 });
 
+test('Source code single file view skips log level column, row tinting, and level badges', async () => {
+  await fresh();
+
+  const pyContent = `def launch_app():
+    self.log_signal.emit(f"[!] Launch Error: {e}")
+    return False
+`;
+
+  await page.evaluate(async (content) => {
+    const f = new File([content], 'launcher.py', { type: 'text/plain' });
+    await window.LT_INGEST([f]);
+  }, pyContent);
+
+  await page.waitForSelector('.file-item');
+  await page.waitForSelector('.vrow');
+
+  // 1. Verify log level column (.vcell.lv) is NOT rendered in rows
+  const lvCells = await page.$$eval('.vrow .vcell.lv', (els) => els.length);
+  assert.strictEqual(lvCells, 0, 'no .vcell.lv elements rendered in source code rows');
+
+  // 2. Verify row with "Launch Error:" does NOT get tint-e class
+  const errorRowHasTintE = await page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('.vrow'));
+    const errRow = rows.find((r) => r.textContent.includes('Launch Error'));
+    return errRow ? errRow.classList.contains('tint-e') : null;
+  });
+  assert.strictEqual(errorRowHasTintE, false, 'source code row with "Error" string is not tinted with tint-e');
+
+  // 3. Verify #chips-row is hidden and has no false level chips (E, W, etc.)
+  const chipsRowDisplay = await page.$eval('#chips-row', (el) => el.style.display);
+  assert.strictEqual(chipsRowDisplay, 'none', '#chips-row is hidden when no bookmarks exist');
+
+  const levelChipsCount = await page.$$eval('#chips-row .chip:not([title*="bookmark"])', (els) => els.length);
+  assert.strictEqual(levelChipsCount, 0, 'no level chips rendered in source code view');
+
+  // 4. Verify bookmarking shows only the bookmark chip (★) in #chips-row
+  await page.evaluate(() => {
+    const bmCell = document.querySelector('.vrow .vcell.bm');
+    if (bmCell) bmCell.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+  });
+
+  await page.waitForFunction(() => document.getElementById('chips-row').style.display !== 'none');
+  const chipTexts = await page.$$eval('#chips-row .chip', (els) => els.map((el) => el.textContent.trim()));
+  assert.strictEqual(chipTexts.length, 1, 'only 1 chip rendered in #chips-row');
+  assert.ok(chipTexts[0].includes('★'), 'chip is the bookmark chip');
+
+  // 5. Click the "Launch Error" row to open drawer, verify 'level' field is omitted
+  await page.evaluate(() => {
+    const rows = Array.from(document.querySelectorAll('.vrow'));
+    const errRow = rows.find((r) => r.textContent.includes('Launch Error'));
+    if (errRow) {
+      const txt = errRow.querySelector('.txt');
+      (txt || errRow).dispatchEvent(new MouseEvent('mousedown', { bubbles: true }));
+    }
+  });
+
+  await page.waitForSelector('#drawer.open');
+  const drawerHasLevel = await page.evaluate(() => {
+    const d = document.getElementById('drawer');
+    const dts = Array.from(d.querySelectorAll('dt')).map((el) => el.textContent.trim());
+    return dts.includes('level');
+  });
+  assert.strictEqual(drawerHasLevel, false, 'drawer omits false log level for source code files');
+});
+
+test('Multi-file mode restores level column and chips when switching between code and log files', async () => {
+  await fresh();
+
+  const pyContent = `def handle():
+    raise ValueError("Launch Error")
+`;
+  const logContent = `01-20 12:34:56.789  1000  1001 E ActivityManager: Fatal error occurred\n`;
+
+  await page.evaluate(async ({ py, log }) => {
+    const f1 = new File([py], 'app.py', { type: 'text/plain' });
+    const f2 = new File([log], 'system.log', { type: 'text/plain' });
+    await window.LT_INGEST([f1, f2]);
+  }, { py: pyContent, log: logContent });
+
+  await page.waitForFunction(() => document.querySelectorAll('.file-item').length === 2);
+
+  // 1. Initially in merged view (multi-file default): level column is rendered
+  await page.waitForSelector('.vrow');
+  const mergedLvCount = await page.$$eval('.vrow .vcell.lv', (els) => els.length);
+  assert.ok(mergedLvCount > 0, 'merged view includes level column for mixed log/code timeline');
+
+  // 2. Click app.py in sidebar -> per-file view of source code file
+  await page.evaluate(() => {
+    const items = Array.from(document.querySelectorAll('.file-item'));
+    const pyItem = items.find((el) => el.textContent.includes('app.py'));
+    if (pyItem) pyItem.click();
+  });
+
+  await page.waitForFunction(() => {
+    const active = document.querySelector('.file-item.active');
+    return active && active.textContent.includes('app.py');
+  });
+
+  // Level column should now be skipped for app.py
+  await page.waitForTimeout(50);
+  const codeLvCount = await page.$$eval('.vrow .vcell.lv', (els) => els.length);
+  assert.strictEqual(codeLvCount, 0, 'per-file view of code file omits level column');
+
+  // Level chips should be hidden in #chips-row
+  const chipsRowDisplay = await page.$eval('#chips-row', (el) => el.style.display);
+  assert.strictEqual(chipsRowDisplay, 'none', '#chips-row is hidden for code file without bookmarks');
+
+  // 3. Switch to system.log -> level column and level chips should be restored
+  await page.evaluate(() => {
+    const items = Array.from(document.querySelectorAll('.file-item'));
+    const logItem = items.find((el) => el.textContent.includes('system.log'));
+    if (logItem) logItem.click();
+  });
+
+  await page.waitForFunction(() => {
+    const active = document.querySelector('.file-item.active');
+    return active && active.textContent.includes('system.log');
+  });
+
+  await page.waitForFunction(() => document.getElementById('chips-row').style.display !== 'none');
+  const logLvCount = await page.$$eval('.vrow .vcell.lv', (els) => els.length);
+  assert.ok(logLvCount > 0, 'level column restored when switching back to log file');
+
+  const logChipsText = await page.$$eval('#chips-row .chip', (els) => els.map((el) => el.textContent.trim()).join(' '));
+  assert.match(logChipsText, /E/, 'level chip E rendered for system.log');
+});
+
+
+
