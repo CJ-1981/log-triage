@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+## 1.60.0 (2026-10-24)
+- feat(SPEC-FILES-001): plan-phase artifacts (S, 4 artifacts) + run-phase lifecycle evidence
+- test(SPEC-FILES-001): M3 files-panel-names e2e spec wired into scripts.e2e
+- feat(SPEC-FILES-001): M2 native full-name tooltips on files-panel entries
+- feat(SPEC-FILES-001): M1 single-line name truncation in files panel
+- test(e2e): wait out the focus race in the zen Escape precedence spec
+- docs(dlt): backfill binary .dlt support into README and living documents
+
 ## 1.59.1 (2026-10-23)
 - test(viewer): drop unref from watchdog timers — drains CI Node 22 event loop
 - fix(viewer): add a silence watchdog for the paging worker
