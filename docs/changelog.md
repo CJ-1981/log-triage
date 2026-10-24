@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.62.2 (2026-10-24)
+- fix(viewer): skip log level column, row tinting, and level badges for source code files
+
 ## 1.62.1 (2026-10-24)
 - fix(viewer): activate per-file mode for single file and show instant tooltip on truncated viewer filename
 
