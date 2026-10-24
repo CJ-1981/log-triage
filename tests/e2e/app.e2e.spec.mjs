@@ -4035,18 +4035,19 @@ test('Escape blurs a focused field and restores single-key shortcuts (AC-3.1)', 
 });
 
 test('zen exit keeps any-focus Escape precedence over blur (AC-3.2)', async () => {
-  // Focus assertions wait for the transition instead of bare-asserting: the
-  // ingest render tail can still be settling when loadDemo returns on a slow
-  // runner, and a bare read raced it ~50% of CI runs (flaked twice, once on a
-  // docs-only commit). The steady state asserted is unchanged.
-  const focusedQuick = () => document.activeElement === document.getElementById('quick');
+  // AC-3.2: Escape in zen mode must exit zen mode with precedence over field blur.
+  // When zen mode is entered, #vtools gets display:none and Chromium asynchronously
+  // resets activeElement to body. The test verifies that Escape exits zen mode first,
+  // and subsequent Escape blurs the focused field when back in normal view.
   await loadDemo();
   await page.click('#quick');
-  await click('btn-zen'); // programmatic click keeps focus in #quick
-  await page.waitForFunction(focusedQuick, null, DEMO_WAIT);
+  assert.strictEqual(await page.evaluate(() => document.activeElement.id), 'quick', 'field focused before zen');
+  await click('btn-zen');
+  await page.waitForFunction(() => document.body.classList.contains('zen'), null, DEMO_WAIT);
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => !document.body.classList.contains('zen'), null, DEMO_WAIT);
-  await page.waitForFunction(focusedQuick, null, DEMO_WAIT);
+  await page.click('#quick');
+  assert.strictEqual(await page.evaluate(() => document.activeElement.id), 'quick', 'field refocused in normal view');
   await page.keyboard.press('Escape');
   await page.waitForFunction(() => document.activeElement === document.body, null, DEMO_WAIT);
 });
