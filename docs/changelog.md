@@ -1,6 +1,11 @@
 # Changelog
 
 ## Unreleased
+
+## 1.63.0 (2026-10-24)
+- ci: re-trigger CI after runner hang
+- feat(format): user-defined custom log format definitions and viewer toolbar override (SPEC-FORMAT-001) (#63)
+
 - feat(format): user-defined custom log format definitions with named regex capture groups (SPEC-FORMAT-001)
 - feat(viewer): viewer toolbar format override selector with instant worker re-indexing (SPEC-FORMAT-001)
 - feat(config): custom log format manager in Config tab with live preview and preset/config persistence (SPEC-FORMAT-001)
