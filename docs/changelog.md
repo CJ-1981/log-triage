@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.65.0 (2026-10-25)
+- feat(viewer): dynamic mobile viewer toolbar button visibility by active status (SPEC-VIEWER-005) (#65)
+
 ## 1.64.0 (2026-10-24)
 - feat(format): add built-in Qualcomm QXDM / QCAT text export log format (SPEC-FORMAT-002) (#64)
 
