@@ -2672,11 +2672,13 @@ test('mobile pass: compact chrome, toolbar overflow, wrap default, files scrim',
   const tb = await page.evaluate(() => ({
     more: getComputedStyle(document.getElementById('vtools-more')).display !== 'none',
     wrap: getComputedStyle(document.getElementById('btn-wrap')).display !== 'none',
+    follow: getComputedStyle(document.getElementById('btn-follow')).display !== 'none',
   }));
   assert.ok(tb.more, '⋯ overflow button visible at 390px');
-  assert.ok(!tb.wrap, 'Wrap control hidden behind ⋯');
+  assert.ok(tb.wrap, 'Wrap control visible because status is ON (SPEC-VIEWER-005)');
+  assert.ok(!tb.follow, 'Follow control (OFF status) hidden behind ⋯');
   await page.evaluate(() => document.getElementById('vtools-more').click());
-  assert.ok(await page.evaluate(() => getComputedStyle(document.getElementById('btn-wrap')).display !== 'none'), '⋯ reveals the secondary controls');
+  assert.ok(await page.evaluate(() => getComputedStyle(document.getElementById('btn-follow')).display !== 'none'), '⋯ reveals secondary and OFF controls');
   assert.strictEqual(await page.evaluate(() => document.getElementById('vtools-more').getAttribute('aria-expanded')), 'true', 'aria-expanded synced');
   // files overlay: open → scrim visible → tap scrim closes
   await page.evaluate(() => document.getElementById('btn-side').click());
@@ -4292,4 +4294,85 @@ test('quick scan narrows and highlights even while the Filter toggle is OFF', as
   const after = await viewPos();
   assert.strictEqual(after.shown, String(narrowed), 'ON with only the quick scan active keeps the view set');
   assert.strictEqual(after.topLine, before.topLine, 'ON with only the quick scan active keeps the top line');
+});
+
+/* ---------------- SPEC-VIEWER-005: mobile viewer buttons dynamic visibility by active status ---------------- */
+
+test('SPEC-VIEWER-005: mobile toolbar shows only ON buttons and hides OFF/secondary controls behind ⋯', async () => {
+  await fresh();
+  await page.setViewportSize({ width: 390, height: 844 });
+  await click('btn-demo');
+  await page.waitForFunction(() => document.getElementById('st-total').textContent === '44', null, DEMO_WAIT);
+
+  const getVisibility = (id) => page.evaluate((elId) => {
+    const el = document.getElementById(elId);
+    return el ? getComputedStyle(el).display !== 'none' : false;
+  }, id);
+
+  // 1. Collapsed mobile toolbar: #quick and ⋯ are visible
+  assert.ok(await getVisibility('quick'), 'quick input is visible');
+  assert.ok(await getVisibility('vtools-more'), '⋯ overflow button is visible');
+
+  // 2. Active buttons (status ON) are dynamically visible
+  assert.ok(await getVisibility('btn-mask'), 'Mask: ON is visible');
+  assert.ok(await getVisibility('btn-filter'), 'Filter: ON is visible');
+  assert.ok(await getVisibility('btn-drawer'), 'Drawer: ON is visible');
+
+  // 3. Inactive buttons (status OFF) and secondary inputs are hidden
+  assert.ok(!await getVisibility('btn-follow'), 'Follow: OFF is hidden');
+  assert.ok(!await getVisibility('goto-ln'), 'line # input is hidden');
+  assert.ok(!await getVisibility('btn-sall'), 'Search all button is hidden');
+  assert.ok(!await getVisibility('sel-format-override'), 'Format select is hidden');
+
+  // 4. Dynamic turn OFF: clicking Mask: ON toggles it to Mask: OFF -> dynamically hides into ⋯
+  await click('btn-mask');
+  await page.waitForFunction(() => document.getElementById('btn-mask').textContent === 'Mask: OFF', null, DEMO_WAIT);
+  assert.ok(!await getVisibility('btn-mask'), 'Mask: OFF dynamically hidden behind ⋯');
+
+  // 5. Expand ⋯: all secondary controls and OFF buttons become visible
+  await click('vtools-more');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('vtools-more').getAttribute('aria-expanded')), 'true');
+  assert.ok(await getVisibility('btn-mask'), 'expanded ⋯ reveals Mask: OFF');
+  assert.ok(await getVisibility('btn-follow'), 'expanded ⋯ reveals Follow: OFF');
+  assert.ok(await getVisibility('goto-ln'), 'expanded ⋯ reveals goto-ln');
+  assert.ok(await getVisibility('btn-sall'), 'expanded ⋯ reveals btn-sall');
+
+  // 6. Dynamic turn ON from expanded menu: toggle Follow to ON, Mask to ON
+  await click('btn-follow');
+  await page.waitForFunction(() => document.getElementById('btn-follow').textContent === 'Follow: ON', null, DEMO_WAIT);
+  await click('btn-mask');
+  await page.waitForFunction(() => document.getElementById('btn-mask').textContent === 'Mask: ON', null, DEMO_WAIT);
+
+  // Close ⋯ menu: Follow: ON and Mask: ON remain visible on top toolbar
+  await click('vtools-more');
+  assert.strictEqual(await page.evaluate(() => document.getElementById('vtools-more').getAttribute('aria-expanded')), 'false');
+  assert.ok(await getVisibility('btn-follow'), 'Follow: ON remains visible after collapsing ⋯');
+  assert.ok(await getVisibility('btn-mask'), 'Mask: ON remains visible after collapsing ⋯');
+
+  // 7. Format-specific switch: load Python code file
+  await page.evaluate(async () => {
+    const py = new File(['def hello():\n    pass\n'], 'test_script.py', { type: 'text/plain' });
+    await window.LT_INGEST([py]);
+  });
+  // Select test_script.py in file list to view it in per-file mode
+  await page.evaluate(() => {
+    const items = document.querySelectorAll('.file-item');
+    for (const it of items) {
+      if (it.textContent.includes('test_script.py')) { it.click(); break; }
+    }
+  });
+  await page.waitForFunction(() => !document.getElementById('btn-syntax').classList.contains('hidden'), null, DEMO_WAIT);
+  assert.ok(await getVisibility('btn-syntax'), 'Syntax: ON is dynamically visible for python file');
+
+  // Switch back to demo.log -> Syntax button is hidden
+  await page.evaluate(() => {
+    const items = document.querySelectorAll('.file-item');
+    for (const it of items) {
+      if (it.textContent.includes('demo.log')) { it.click(); break; }
+    }
+  });
+  await page.waitForFunction(() => document.getElementById('btn-syntax').classList.contains('hidden'), null, DEMO_WAIT);
+  assert.ok(!await getVisibility('btn-syntax'), 'Syntax button hidden for standard log file');
+
+  await page.setViewportSize({ width: 1440, height: 900 });
 });

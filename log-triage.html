@@ -440,13 +440,16 @@ table.rules { min-width: 620px; }
   .panel { padding: 10px; }
 }
 /* phone-width: one-row toolbar with ⋯ overflow, one-row chips (review #3).
-   The version tag stays visible — it fits the compact header and users rely on it. */
+   The version tag stays visible — it fits the compact header and users rely on it.
+   SPEC-VIEWER-005: dynamically show only buttons with ON status, collapsing OFF
+   buttons and secondary controls behind ⋯ until expanded. */
 @media (max-width: 560px) {
   #chips-row { flex-wrap: nowrap; overflow-x: auto; }
   #chips-row .chip { flex: none; }
   #vtools .vt-sec { display: none; }
-  body.vtools-open #vtools .vt-sec { display: inline-block; }
-  #vtools-more { display: inline-block; }
+  #vtools button.vt-sec.on:not(.hidden) { display: inline-block; }
+  body.vtools-open #vtools .vt-sec:not(.hidden) { display: inline-block; }
+  #vtools-more { display: inline-block; order: 50; }
 }
 </style>
 </head>
@@ -516,8 +519,8 @@ table.rules { min-width: 620px; }
           <input type="text" id="quick" placeholder="quick scan (live)…">
           <input type="text" id="goto-ln" class="vt-sec" placeholder="line #" title="go to line — type a line number and press Enter" style="width:66px;min-width:0">
           <button id="btn-sall" class="vt-sec" aria-expanded="false" aria-controls="sall" title="Search all — list EVERY line matching the quick scan across the current file(s) (merged view: all loaded files; per-file view: the displayed file) in a bottom panel — shortcut: Ctrl+Enter">Search all <kbd id="sall-kbd" style="margin-left:4px"></kbd></button>
-          <button id="btn-mask" title="toggle masking (M)">Mask: ON</button>
-          <button id="btn-filter" title="Master Filter toggle. ON applies every configured filter; OFF suspends time range, include/exclude rules, level chips and bookmarks-only — the quick scan always narrows. All settings stay in the Filters tab. No filters active — the full log is shown.">Filter: ON</button>
+          <button id="btn-mask" class="vt-sec on" title="toggle masking (M)">Mask: ON</button>
+          <button id="btn-filter" class="vt-sec on" title="Master Filter toggle. ON applies every configured filter; OFF suspends time range, include/exclude rules, level chips and bookmarks-only — the quick scan always narrows. All settings stay in the Filters tab. No filters active — the full log is shown.">Filter: ON</button>
           <button id="btn-markdown" class="vt-sec hidden" title="Toggle Markdown rendering for .md files">Markdown: OFF</button>
           <button id="btn-syntax" class="vt-sec hidden" title="Toggle source code syntax color highlighting">Syntax: ON</button>
           <select id="sel-format-override" class="vt-sec" title="Format: auto or override detected format for active file"></select>
@@ -528,7 +531,7 @@ table.rules { min-width: 620px; }
           <button id="btn-copy" class="vt-sec" title="copy selection (Ctrl+C)">Copy selection</button>
           <select id="copy-prefix" class="vt-sec" title="copy prefix"><option value="none">plain</option><option value="ln">[Ln]</option><option value="file:line">file:line:</option></select>
           <button id="btn-zen" class="vt-sec" title="Zen mode: hide everything except the log viewer so you can focus on the log text — press Esc or click again to exit">Zen</button>
-          <button id="btn-drawer" class="vt-sec" title="toggle the line-click detail drawer">Drawer: ON</button>
+          <button id="btn-drawer" class="vt-sec on" title="toggle the line-click detail drawer">Drawer: ON</button>
         </div>
         <div id="viewer-wrap">
           <div id="viewer"><div id="vspacer"></div></div>
