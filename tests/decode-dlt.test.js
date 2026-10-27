@@ -269,6 +269,32 @@ test('args: ASCII strings decode one byte per char', () => {
   assert.strictEqual(DLT.dltDecodeMessage(buf).record.msg, 'hello world');
 });
 
+test('args: control characters render as escaped literals; one record stays one line (FR-30 AC-2)', () => {
+  // "a\nb\tc\rd\x01e\x7f" + NUL — a Java-style exception dump in miniature
+  const buf = buildMsg({ ueh: { msin: 0x41, argc: 1 }, payload: argStrBytes([0x61, 0x0a, 0x62, 0x09, 0x63, 0x0d, 0x64, 0x01, 0x65, 0x7f, 0x00], false, false) });
+  const m = DLT.dltDecodeMessage(buf);
+  assert.strictEqual(m.record.msg, 'a\\nb\\tc\\rd\\x01e\\x7f');
+  for (const ch of m.line) {
+    const code = ch.charCodeAt(0);
+    assert.ok(code >= 32 && code !== 127, 'no raw control character in the rendered line: ' + JSON.stringify(m.line));
+  }
+});
+
+test('args: control-character escaping applies to UTF-8 strings too and keeps invalid-byte escapes distinct', () => {
+  const buf = buildMsg({ ueh: { msin: 0x41, argc: 1 }, payload: argStrBytes(cat(enc('caf'), [0xc3, 0xa9, 0x0a, 0xff, 0x00]), true, false) });
+  assert.strictEqual(DLT.dltDecodeMessage(buf).record.msg, 'café\\n\\xff');
+});
+
+test('args: a multi-line exception dump renders as one searchable line (real DHU capture shape)', () => {
+  const dump = 'UNPACKED Curvature exeption: \ncom.google.android.libraries.geo.vms.VmsApiException: Path ID not in active paths\n\tat com.harman.vms.adasis.converter.helper.VmsPacketParser.getCurvsPt(VmsPacketParser.java:248)';
+  const payload = cat(argInt(5391, 2, false), argInt(5940, 2, false), argStr(dump, false, false));
+  const buf = buildMsg({ ueh: { msin: 0x21, argc: 3, apid: 'LOGD', ctid: 'MAIN' }, payload });
+  const m = DLT.dltDecodeMessage(buf);
+  assert.strictEqual(m.record.msg, '5391 5940 UNPACKED Curvature exeption: \\ncom.google.android.libraries.geo.vms.VmsApiException: Path ID not in active paths\\n\\tat com.harman.vms.adasis.converter.helper.VmsPacketParser.getCurvsPt(VmsPacketParser.java:248)');
+  assert.strictEqual(m.line.includes('\n'), false, 'rendered line contains no raw newline');
+  assert.ok(m.line.includes('exeption: \\ncom'), 'the escape is inline and searchable');
+});
+
 test('args: UTF-8 strings decode; each invalid byte renders as a lowercase \\xNN escape', () => {
   const ok = argStr('héllo café', true, false);
   const bad = argStrBytes(cat(enc('bad'), [0xff], enc('!')), true, false);

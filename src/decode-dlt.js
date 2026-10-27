@@ -15,7 +15,9 @@
  * (SPEC R5-4). Record and line rendering match src/parser.js vocabulary:
  *   record { ts, level, tag, pid, msg }, ts = year-less UTC-naive
  *   'MM-DD HH:MM:SS.mmm' (ADR-0004), tag = 'APID:CTID' with ECU fallback,
- *   pid = session id.
+ *   pid = session id. Control characters in payload text render as escaped
+ *   literals (\n, \t, \r, other C0/DEL as \xNN) so one record stays one
+ *   rendered line in the viewer, search, and export.
  *
  * Exported (flat, LT.*): dltIsStorageMagic, dltMinHeaderLength,
  * dltPlausibleHeader, dltSniff, dltDecodeMessage, dltScanMessages,
@@ -296,10 +298,30 @@ function dltDecodeMessage(bytes, headerSwap) {
     return finish(consumed, ecu, stdEcu, session, mcnt, msin, mstp, mtin, apid, ctid, sec, micros, msg, warnings, verbose, clean, truncated);
   }
 
+  /* Control characters in payload text render as escaped literals (FR-30
+   * AC-2): DLT string arguments embed LF/TAB (Java exception dumps), and one
+   * record must stay one rendered line everywhere — a raw LF paints a wrap-off
+   * row over its neighbors and splits exported lines. Same philosophy as
+   * utf8Text's \xNN escapes (AC-4.3). */
+  function ctrlText(s) {
+    if (!/[\0-\x1f\x7f]/.test(s)) return s;
+    let out = '';
+    for (let i = 0; i < s.length; i++) {
+      const c = s.charCodeAt(i);
+      if (c === 10) out += '\\n';
+      else if (c === 13) out += '\\r';
+      else if (c === 9) out += '\\t';
+      else if (c < 32 || c === 127) out += '\\x' + hex2(c);
+      else out += s[i];
+    }
+    return out;
+  }
+
   /* Shared tail: builds the record + rendered line and returns the result.
    * `clean` is false when a verbose typed structure was invalid, so sniff
    * never treats the message as classification evidence. */
   function finish(consumed, ecu, stdEcu, session, mcnt, msin, mstp, mtin, apid, ctid, sec, micros, msg, warnings, verbose, clean, truncated) {
+    msg = ctrlText(msg);
     const typeWord = mstp >= 0 ? (mstp < MSTP_WORDS.length ? MSTP_WORDS[mstp] : 'mstp=' + mstp) : '-';
     const words = mstp >= 0 && mstp < MTIN_WORDS.length ? MTIN_WORDS[mstp] : null;
     const subWord = mstp < 0 ? '-' : (words ? (mtin < words.length ? words[mtin] : 'mtin=' + mtin) : 'mtin=' + mtin);
