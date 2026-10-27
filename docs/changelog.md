@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.65.1 (2026-10-27)
+- Merge pull request #66 from CJ-1981/fix/dlt-qnx-writer-variant
+- fix(dlt): decode the QNX writer variant (BE standard header, epoch-first storage header)
+
 - fix(dlt): decode the QNX writer variant (big-endian standard header under a clear MSBF flag, epoch-first storage header) via head-of-file byte-order calibration shared by index/scan/page, with a one-message-window fallback for policy-less re-decodes (ADR-0021, FR-30 AC-6)
 - docs(decisions): ADR-0021 — auto-detected QNX DLT writer variant
 
