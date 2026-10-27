@@ -115,6 +115,24 @@ test('worker index meta surfaces the lossy-decode warning count (R5-5, AC-5.5)',
   assert.equal(res.count, 3);
 });
 
+test('worker index + page parity for the QNX BE-header variant (ADR-0016)', async () => {
+  const w = makeWorker();
+  const res = await w.send({ type: 'index', fileId: 'f1', file: new Blob([hexFile('dlt-binary-qnx-variant.hex')]) }, (d) => d.count !== undefined || d.error);
+  assert.equal(res.format, 'dlt-binary');
+  assert.equal(res.count, 3);
+  assert.equal(res.warnings, 0);
+  assert.equal(res.utf8, true);
+  assert.equal(res.sample[0].raw, expectedLines('dlt-binary-qnx-variant-expected.txt')[0]);
+  // page rows re-decode exact windows; with the swapped length also able to
+  // fit a window they must carry the index-time byte-order policy (R5-6)
+  const all = await w.send({ type: 'query', spec: emptySpec }, (d) => d.total !== undefined || d.error || d.cancelled);
+  assert.equal(all.total, 3);
+  const page = await w.send({ type: 'page', start: 0, size: 10 }, (d) => d.rows !== undefined || d.error);
+  assert.deepEqual(page.rows.map((r) => r.raw), expectedLines('dlt-binary-qnx-variant-expected.txt'));
+  const search = await w.send({ type: 'search', spec: Object.assign({ pattern: 'kanzi property', options: {} }, emptySpec) }, (d) => d.total !== undefined || d.error);
+  assert.equal(search.total, 1, 'rendered-only token found in the variant capture');
+});
+
 test('worker text scans still run over byteLines after the iterator switch', async () => {
   const w = makeWorker();
   const res = await w.send({ type: 'index', fileId: 'f3', file: new Blob([fs.readFileSync(path.join(FX, 'dlt-viewer-sample.txt'))]) }, (d) => d.count !== undefined || d.error);

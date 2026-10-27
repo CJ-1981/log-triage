@@ -44,9 +44,14 @@ const bigBytes = (v, n, msbf) => {
 
 /* DLT v1 message builder: computes the declared total length from the parts.
  * opts: { msbf, mcnt, stdEcu, session, tmsp, ueh: { msin, argc, apid, ctid },
- *         payload, storage: { ecu, sec, micros }, len (override for bad- framing tests) } */
+ *         payload, storage: { ecu, sec, micros, tsFirst }, lenSwap,
+ *         len (override for bad- framing tests) }
+ * `lenSwap` (QNX variant, ADR-0016) stores every standard-header multi-byte
+ * field in the byte order opposite to the MSBF flag; `storage.tsFirst` uses
+ * the QNX epoch-first storage layout with a little-endian epoch. */
 function buildMsg(o) {
   const msbf = !!o.msbf;
+  const be = msbf !== !!o.lenSwap;
   let htyp = 0x20; // protocol version 0b001 in bits 5-7
   if (o.ueh) htyp |= 0x01;
   if (msbf) htyp |= 0x02;
@@ -56,13 +61,14 @@ function buildMsg(o) {
   const payload = o.payload || new Uint8Array(0);
   const len = o.len != null ? o.len
     : 4 + (o.stdEcu ? 4 : 0) + (o.session != null ? 4 : 0) + (o.tmsp != null ? 4 : 0) + (o.ueh ? 10 : 0) + payload.length;
-  let h = cat(bytes([htyp, o.mcnt || 0]), u16(len, msbf));
+  let h = cat(bytes([htyp, o.mcnt || 0]), u16(len, be));
   if (o.stdEcu) h = cat(h, ascii4(o.stdEcu));
-  if (o.session != null) h = cat(h, u32(o.session, msbf));
-  if (o.tmsp != null) h = cat(h, u32(o.tmsp, msbf));
+  if (o.session != null) h = cat(h, u32(o.session, be));
+  if (o.tmsp != null) h = cat(h, u32(o.tmsp, be));
   if (o.ueh) h = cat(h, bytes([o.ueh.msin, o.ueh.argc || 0]), ascii4(o.ueh.apid || ''), ascii4(o.ueh.ctid || ''));
   const body = cat(h, payload);
   if (!o.storage) return body;
+  if (o.storage.tsFirst) return cat(bytes([0x44, 0x4c, 0x54, 0x01]), u32(o.storage.sec, false), i32(o.storage.micros, false), ascii4(o.storage.ecu), body);
   return cat(bytes([0x44, 0x4c, 0x54, 0x01]), ascii4(o.storage.ecu), u32(o.storage.sec, msbf), i32(o.storage.micros, msbf), body);
 }
 
@@ -467,6 +473,100 @@ test('timestamps: the TMSP relative counter never becomes a time-column source',
   assert.strictEqual(DLT.dltDecodeMessage(withTmspOnly).record.ts, null);
 });
 
+// --- QNX writer variant (ADR-0016): BE standard header, ts-first storage -----
+
+const variantMsg = (o) => buildMsg(Object.assign({
+  lenSwap: true, mcnt: 1, storage: { tsFirst: true, ecu: 'DHU', sec: 1789815972, micros: 884508 },
+  stdEcu: 'DHU', session: 1687674, tmsp: 1031006343,
+  ueh: { msin: 0x41, argc: 1, apid: 'QSYM', ctid: 'IAUD' },
+  payload: argStr('hello variant', false, false),
+}, o));
+
+test('variant: calibration picks the swapped reading only for QNX captures', () => {
+  assert.strictEqual(DLT.dltHeaderSwap(cat(variantMsg({ mcnt: 1 }), variantMsg({ mcnt: 2 }), variantMsg({ mcnt: 3 }))), true,
+    'a BE-header capture chains only under the swapped reading');
+  for (const msbf of [false, true]) {
+    const conformant = cat(
+      buildMsg({ msbf, mcnt: 1, ueh: { msin: 0x41, argc: 1 }, payload: argBool(true, msbf) }),
+      buildMsg({ msbf, mcnt: 2, ueh: { msin: 0x41, argc: 1 }, payload: argBool(false, msbf) }),
+      buildMsg({ msbf, mcnt: 3, ueh: { msin: 0x41, argc: 1 }, payload: argBool(true, msbf) }),
+    );
+    assert.strictEqual(DLT.dltHeaderSwap(conformant), false, 'msbf ' + msbf + ' keeps MSBF semantics');
+  }
+  assert.strictEqual(DLT.dltHeaderSwap(new Uint8Array(0)), false);
+  assert.strictEqual(DLT.dltHeaderSwap(bytes([0x44, 0x4c, 0x54, 0x01, 0, 0, 0, 0])), false, 'too short to calibrate');
+});
+
+test('variant: scan decodes BE-header ts-first captures; fields match the writer wire order', () => {
+  const m1 = variantMsg({ mcnt: 88, ueh: { msin: 0x41, argc: 2, apid: 'QSYM', ctid: 'IAUD' }, payload: cat(argInt(41263, 2, false), argStr('io_audio.569405', false, false)) });
+  const m2 = variantMsg({ mcnt: 89 });
+  const scan = DLT.dltScanMessages(cat(m1, m2));
+  assert.strictEqual(scan.warnings, 0);
+  assert.strictEqual(scan.records.length, 2);
+  assert.deepStrictEqual(scan.records[0], {
+    offset: 0,
+    record: { ts: '09-19 11:06:12.884', level: 'I', tag: 'QSYM:IAUD', pid: '1687674', msg: '41263 io_audio.569405' },
+    line: '09-19 11:06:12.884 88 DHU QSYM:IAUD 1687674 log info 41263 io_audio.569405',
+  });
+  assert.strictEqual(scan.records[1].offset, m1.length, 'declared (swapped) length walks to the next boundary');
+  assert.strictEqual(scan.records[1].record.msg, 'hello variant');
+});
+
+test('variant: storage ts-first layout reads the epoch little-endian, ECU id last', () => {
+  const m = DLT.dltDecodeMessage(variantMsg({}));
+  assert.strictEqual(m.record.ts, '09-19 11:06:12.884');
+  assert.strictEqual(m.record.tag, 'QSYM:IAUD', 'APID:CTID still wins over the storage ECU');
+  assert.strictEqual(m.line.split(' ')[3], 'DHU', 'storage ECU column (after the two-token ts)');
+});
+
+test('variant: a big-endian ts-first epoch falls back when the µs sanity check fails', () => {
+  // hand-built storage header: magic + sec BE + µs BE + ECU, behind it a
+  // swapped standard header so the variant shape is preserved
+  const body = buildMsg({ lenSwap: true, mcnt: 5, ueh: { msin: 0x41, argc: 1 }, payload: argBool(true, false) });
+  const sec = 1789815972;
+  const buf = cat(bytes([0x44, 0x4c, 0x54, 0x01]), u32(sec, true), i32(884508, true), ascii4('DHU'), body);
+  const m = DLT.dltDecodeMessage(buf);
+  assert.strictEqual(m.record.ts, '09-19 11:06:12.884', 'BE fields render after the LE read fails the µs bound');
+  assert.strictEqual(m.record.tag, 'DHU', 'no APID/CTID: the storage ECU is the tag fallback');
+});
+
+test('variant: page-window re-decode matches the scan with and without the policy', () => {
+  const m1 = variantMsg({ mcnt: 1, ueh: { msin: 0x41, argc: 2, apid: 'QSYM', ctid: 'IAUD' }, payload: cat(argInt(41263, 2, false), argStr('io_audio.569405', false, false)) });
+  const m2 = variantMsg({ mcnt: 2 });
+  const buf = cat(m1, m2);
+  const scan = DLT.dltScanMessages(buf);
+  // page() re-decodes [offset, nextOffset) windows; the fallback path must
+  // adopt the swapped reading even when no policy is passed
+  const window = buf.subarray(0, m1.length);
+  assert.strictEqual(DLT.dltDecodeMessage(window).line, scan.records[0].line);
+  assert.strictEqual(DLT.dltDecodeMessage(window, true).line, scan.records[0].line);
+});
+
+test('variant: a swapped length that fits the window never flips the explicit policy', () => {
+  // len 0x0401 stores BE as 04 01; the conformant reading 0x0104 is smaller
+  // than the true span, so "fits" proves nothing — the explicit policy wins.
+  const long = variantMsg({ mcnt: 1, ueh: { msin: 0x41, argc: 2, apid: 'QSYM', ctid: 'IAUD' }, payload: cat(argInt(41263, 2, false), argStr('x'.repeat(986), false, false)) });
+  assert.strictEqual(long.length - 16, 0x0401, 'fixture precondition: declared 0x0401, BE-stored 04 01');
+  const m2 = variantMsg({ mcnt: 2 });
+  const buf = cat(long, m2);
+  const scan = DLT.dltScanMessages(buf);
+  assert.strictEqual(scan.warnings, 0);
+  assert.strictEqual(scan.records.length, 2);
+  const m = DLT.dltDecodeMessage(buf.subarray(0, long.length), true);
+  assert.strictEqual(m.line, scan.records[0].line, 'explicit swap decodes the full payload');
+  assert.ok(m.record.msg.endsWith('xx'), 'trailing payload bytes survive the swapped reading');
+});
+
+test('variant: headerless BE-header capture classifies via the swapped chain check', () => {
+  const a = buildMsg({ lenSwap: true, mcnt: 1, ueh: { msin: 0x41, argc: 1 }, payload: argBool(true, false) });
+  const b = buildMsg({ lenSwap: true, mcnt: 2, ueh: { msin: 0x41, argc: 1 }, payload: argBool(false, false) });
+  const buf = cat(a, b);
+  assert.deepStrictEqual(DLT.dltSniff(buf, buf.length), { binary: true, storageHeader: false });
+  const scan = DLT.dltScanMessages(buf);
+  assert.strictEqual(scan.warnings, 0);
+  assert.strictEqual(scan.records.length, 2);
+});
+
 // --- committed hex fixtures (lzma*.hex precedent) ----------------------------
 
 test('fixture: dlt-binary-sample.hex decodes to the pinned rendered lines', () => {
@@ -489,4 +589,15 @@ test('fixture: dlt-binary-nostorage.hex decodes without storage-header leakage',
   assert.strictEqual(scan.records.map((r) => r.line).join('\n'), expected);
   for (const rec of scan.records) assert.strictEqual(rec.record.ts, null);
   assert.ok(!scan.records[0].line.includes('DLT'), 'no storage magic leaks into rendered lines');
+});
+
+test('fixture: dlt-binary-qnx-variant.hex decodes to the pinned rendered lines (ADR-0016)', () => {
+  const buf = hexFile('dlt-binary-qnx-variant.hex');
+  assert.deepStrictEqual(DLT.dltSniff(buf, buf.length), { binary: true, storageHeader: true });
+  assert.strictEqual(DLT.dltHeaderSwap(buf), true, 'the committed fixture is a BE-header capture');
+  const scan = DLT.dltScanMessages(buf);
+  assert.strictEqual(scan.warnings, 0);
+  const expected = fs.readFileSync(path.join(FX, 'dlt-binary-qnx-variant-expected.txt'), 'utf8').replace(/\r\n/g, '\n').replace(/\n$/, '');
+  assert.strictEqual(scan.records.map((r) => r.line).join('\n'), expected);
+  for (const rec of scan.records) assert.strictEqual(rec.record.pid, '1687674', 'session id reads big-endian');
 });

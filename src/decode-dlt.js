@@ -19,7 +19,15 @@
  *
  * Exported (flat, LT.*): dltIsStorageMagic, dltMinHeaderLength,
  * dltPlausibleHeader, dltSniff, dltDecodeMessage, dltScanMessages,
- * dltFindResync, dltEpochToTimeText, dltHexDump.
+ * dltFindResync, dltEpochToTimeText, dltHexDump, dltHeaderSwap.
+ *
+ * QNX writer variant (ADR-0021): some QNX DHU captures serialize the
+ * standard header's multi-byte fields (length, session id, timestamp)
+ * big-endian while keeping the MSBF flag clear, and order the storage
+ * header epoch-first with the ECU id last (payload stays per MSBF). The
+ * byte order is auto-detected, never assumed: dltHeaderSwap calibrates on
+ * the capture head, and page-window re-decodes fall back to the opposite
+ * reading when the declared length overshoots the recorded span.
  */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) { module.exports = factory(); }
@@ -88,25 +96,28 @@
       (htyp & 0x08 ? 4 : 0) + (htyp & 0x10 ? 4 : 0);
   }
 
-  /* Read the fixed part of a standard header. Returns null unless the version
-   * bits are 0b001 (DLT v1). `length` is the declared TOTAL message length. */
-  function probeHeader(bytes, off) {
-    if (!bytes || off < 0 || off + 4 > bytes.length) return null;
-    const htyp = bytes[off];
-    if ((htyp & 0xe0) !== 0x20) return null;
-    const msbf = !!(htyp & 0x02);
-    const length = msbf ? ((bytes[off + 2] << 8) | bytes[off + 3])
-      : (bytes[off + 2] | (bytes[off + 3] << 8));
-    return { htyp, msbf, length, minLen: dltMinHeaderLength(htyp) };
-  }
+/* Read the fixed part of a standard header. Returns null unless the version
+ * bits are 0b001 (DLT v1). `length` is the declared TOTAL message length.
+ * `lenSwap` (QNX variant) reads the length — and every other standard-header
+ * multi-byte field, exposed as `be` — in the byte order opposite to MSBF. */
+function probeHeader(bytes, off, lenSwap) {
+  if (!bytes || off < 0 || off + 4 > bytes.length) return null;
+  const htyp = bytes[off];
+  if ((htyp & 0xe0) !== 0x20) return null;
+  const msbf = !!(htyp & 0x02);
+  const be = msbf !== !!lenSwap;
+  const length = be ? ((bytes[off + 2] << 8) | bytes[off + 3])
+    : (bytes[off + 2] | (bytes[off + 3] << 8));
+  return { htyp, msbf, length, minLen: dltMinHeaderLength(htyp), lenSwap: !!lenSwap, be };
+}
 
-  /* Byte-level plausibility of a record boundary at `off`: DLT v1 version
-   * bits, a declared length at least the HTYP minimum, and the message fitting
-   * within `end` (default: buffer end). Multi-field, so text rarely passes. */
-  function dltPlausibleHeader(bytes, off, end) {
-    const p = probeHeader(bytes, off);
-    return !!p && p.length >= p.minLen && off + p.length <= (end === undefined ? bytes.length : end);
-  }
+/* Byte-level plausibility of a record boundary at `off`: DLT v1 version
+ * bits, a declared length at least the HTYP minimum, and the message fitting
+ * within `end` (default: buffer end). Multi-field, so text rarely passes. */
+function dltPlausibleHeader(bytes, off, end, lenSwap) {
+  const p = probeHeader(bytes, off, lenSwap);
+  return !!p && p.length >= p.minLen && off + p.length <= (end === undefined ? bytes.length : end);
+}
 
   /* Classification sniff for detect.js (SPEC R1-2). `head` is the leading
    * chunk of the file (at least 4 bytes), `fileSize` the full file size.
@@ -120,12 +131,14 @@
     const no = { binary: false, storageHeader: false };
     if (!head || head.length < 4) return no;
     if (dltIsStorageMagic(head, 0)) return { binary: true, storageHeader: true };
-    const first = probeHeader(head, 0);
+    let first = probeHeader(head, 0);
+    if (!first || first.length < first.minLen || first.length > fileSize) first = probeHeader(head, 0, true); // QNX BE-header head
     if (!first || first.length < first.minLen || first.length > fileSize) return no;
     const next = first.length;
     if (next + 4 <= head.length) {
       if (dltIsStorageMagic(head, next) && next + STORAGE_LEN <= fileSize) return { binary: true, storageHeader: false };
       if (dltPlausibleHeader(head, next, fileSize)) return { binary: true, storageHeader: false };
+      if (dltPlausibleHeader(head, next, fileSize, true)) return { binary: true, storageHeader: false }; // QNX BE-header chain
     }
     if (next <= head.length) {
       const m = dltDecodeMessage(head.subarray(0, next));
@@ -134,41 +147,112 @@
     return no;
   }
 
-  /* Decode one message from `bytes`, a window that starts at a storage header
-   * or a standard header. Every payload read is bounded by the declared total
-   * length, so a trailing next-record header inside a page window is ignored.
-   * Returns null when the window cannot hold even a header, otherwise
-   * { record, line, consumed, warnings, truncated, verbose, clean, implausible }
-   * where record is null for framing-only messages (AC-E.6) and consumed
-   * counts standard-header + payload bytes only (the storage header is
-   * framing: the next boundary sits at storageLen + consumed). */
-  function dltDecodeMessage(bytes) {
-    if (!bytes || !bytes.length) return null;
-    let pos = 0, ecu = '', sec = null, micros = 0;
-    if (dltIsStorageMagic(bytes, 0)) {
-      if (bytes.length < STORAGE_LEN) return fail(bytes.length);
-      ecu = trimId(bytes, 4);
-      pos = STORAGE_LEN;
+  /* How many consecutive record boundaries a byte-order reading walks from
+   * `from` before a header probe fails or a message overruns the buffer. */
+  const SWAP_HOPS = 32;
+  function swapWalkHops(bytes, from, lenSwap) {
+    let pos = from, hops = 0;
+    while (pos < bytes.length && hops < SWAP_HOPS) {
+      const off = pos + (dltIsStorageMagic(bytes, pos) ? STORAGE_LEN : 0);
+      const probe = probeHeader(bytes, off, lenSwap);
+      if (!probe || probe.length < probe.minLen || off + probe.length > bytes.length) break;
+      pos = off + probe.length;
+      hops++;
     }
-    if (bytes.length - pos < 4) return pos === bytes.length ? okFraming(pos, 0, false) : fail(bytes.length - pos);
-    const probe = probeHeader(bytes, pos);
-    if (!probe || probe.length < probe.minLen) return { record: null, line: null, consumed: 0, warnings: 0, implausible: true };
-    if (pos) {
+    return hops;
+  }
+
+  /* Standard-header byte-order calibration (QNX variant, ADR-0021). A size
+   * check alone cannot tell the readings apart — the byte-swapped reading of
+   * a short length is a huge value that still "fits" any real capture — so
+   * walk the capture head under each reading and pick the swapped one only
+   * when it chains strictly further while the conformant reading dies early.
+   * Conformant captures that walk SWAP_HOPS boundaries keep MSBF semantics. */
+  function dltHeaderSwap(bytes) {
+    if (!bytes || bytes.length < 8) return false;
+    const conformant = swapWalkHops(bytes, 0, false);
+    if (conformant >= SWAP_HOPS) return false;
+    return swapWalkHops(bytes, 0, true) > conformant;
+  }
+
+  /* True when the 16 bytes at `off` hold the QNX epoch-first storage header
+   * (sec, µs, ECU id) instead of the AUTOSAR order (ECU id, sec, µs). The
+   * micros field of a conformant header can never be printable through all
+   * four bytes (its high byte is below 0x10 for any µs under one second), so
+   * a printable tail plus a non-printable id slot is decisive. */
+  function dltStorageTsFirst(bytes, off) {
+    return isIdBytes(bytes, off + 12) && !isIdBytes(bytes, off + 4);
+  }
+
+  function isIdBytes(bytes, off) {
+    if (!bytes || bytes.length < off + 4) return false;
+    let end = off + 4;
+    while (end > off && (bytes[end - 1] === 0 || bytes[end - 1] === 0x20)) end--;
+    if (end === off) return false;
+    for (let i = off; i < end; i++) if (bytes[i] < 0x20 || bytes[i] > 0x7e) return false;
+    return true;
+  }
+
+/* Decode one message from `bytes`, a window that starts at a storage header
+ * or a standard header. `headerSwap` selects the QNX big-endian standard-
+ * header reading when index-time calibration picked it (dltHeaderSwap).
+ * Every payload read is bounded by the declared total length, so a trailing
+ * next-record header inside a page window is ignored. Returns null when the
+ * window cannot hold even a header, otherwise
+ * { record, line, consumed, warnings, truncated, verbose, clean, implausible }
+ * where record is null for framing-only messages (AC-E.6) and consumed
+ * counts standard-header + payload bytes only (the storage header is
+ * framing: the next boundary sits at storageLen + consumed). */
+function dltDecodeMessage(bytes, headerSwap) {
+  if (!bytes || !bytes.length) return null;
+  let pos = 0, ecu = '', sec = null, micros = 0;
+  const hasStorage = dltIsStorageMagic(bytes, 0);
+  if (hasStorage) {
+    if (bytes.length < STORAGE_LEN) return fail(bytes.length);
+    pos = STORAGE_LEN;
+  }
+  if (bytes.length - pos < 4) return pos === bytes.length ? okFraming(pos, 0, false) : fail(bytes.length - pos);
+  let probe = probeHeader(bytes, pos, headerSwap);
+  if (!probe || probe.length < probe.minLen) return { record: null, line: null, consumed: 0, warnings: 0, implausible: true };
+  if (headerSwap === undefined && bytes.length - pos < probe.length) {
+    // Policy-less page-window re-decode: the window is one recorded message
+    // span, so a declared length overshooting it while the opposite
+    // byte-order reading fits means index time walked the swapped reading
+    // (QNX header variant). Adopt it so page rows match index rows. Callers
+    // that know the calibrated policy pass it explicitly and never flip
+    // here — a byte-swapped length can also land below the true span, where
+    // "fits" proves nothing.
+    const alt = probeHeader(bytes, pos, !probe.lenSwap);
+    if (alt && alt.length >= alt.minLen && bytes.length - pos >= alt.length) probe = alt;
+  }
+  if (hasStorage) {
+    if (dltStorageTsFirst(bytes, 0)) {
+      // QNX epoch-first storage header: sec + µs ahead of the ECU id.
+      ecu = trimId(bytes, 12);
+      sec = readU32(bytes, 4, probe.msbf);
+      micros = readI32(bytes, 8, probe.msbf);
+      if (micros < 0 || micros >= 1000000) {
+        sec = readU32(bytes, 4, !probe.msbf);
+        micros = readI32(bytes, 8, !probe.msbf);
+      }
+    } else {
       // Storage-header time fields carry no byte-order bit of their own;
       // they follow the MSBF flag of the standard header behind them.
+      ecu = trimId(bytes, 4);
       sec = readU32(bytes, 8, probe.msbf);
       micros = readI32(bytes, 12, probe.msbf);
     }
-    const truncated = bytes.length - pos < probe.length;
-    const end = truncated ? bytes.length : pos + probe.length;
-    // `consumed` counts standard-header + payload bytes only: the storage
-    // header is framing, so the next boundary sits at pos + consumed.
-    const consumed = truncated ? bytes.length - pos : probe.length;
-    let p = pos + 4;
-    let stdEcu = '', session = null;
-    if (probe.htyp & 0x04) { stdEcu = trimId(bytes, p); p += 4; }
-    if (probe.htyp & 0x08) { session = readU32(bytes, p, probe.msbf); p += 4; }
-    if (probe.htyp & 0x10) { p += 4; } // TMSP: relative 0.1 ms counter, framing only (R2-3)
+  }
+  const truncated = bytes.length - pos < probe.length;
+  const end = truncated ? bytes.length : pos + probe.length;
+  // `consumed` counts standard-header + payload bytes only: the storage
+  // header is framing, so the next boundary sits at pos + consumed.
+  const consumed = truncated ? bytes.length - pos : probe.length;
+  let p = pos + 4;
+  let stdEcu = '', session = null;
+  if (probe.htyp & 0x04) { stdEcu = trimId(bytes, p); p += 4; }
+  if (probe.htyp & 0x08) { session = readU32(bytes, p, probe.be); p += 4; }
+  if (probe.htyp & 0x10) { p += 4; } // TMSP: relative 0.1 ms counter, framing only (R2-3)
     let msin = 0, argc = 0, apid = '', ctid = '';
     const ueh = !!(probe.htyp & 0x01);
     if (ueh) {
@@ -248,11 +332,14 @@
    * record carries one, else the standard header (AC-E.9) — so a storage
    * header is framing that precedes its record's offset and is never an
    * offset itself (R1-5). Throws one loud error when damage leaves no
-   * plausible boundary anywhere ahead (R5-4). */
+   * plausible boundary anywhere ahead (R5-4). The standard-header byte
+   * order is calibrated once on the buffer head (dltHeaderSwap) and applied
+   * to every boundary. */
   function dltScanMessages(bytes) {
     const records = [];
     let warnings = 0;
     let pos = 0;
+    const swap = dltHeaderSwap(bytes);
     while (pos < bytes.length) {
       // A storage header is framing in front of the message; the decode
       // window always starts at `pos` (storage included).
@@ -264,7 +351,7 @@
         break;
       }
       if (bytes.length - off < 4) { warnings++; break; } // residue shorter than any header
-      const probe = probeHeader(bytes, off);
+      const probe = probeHeader(bytes, off, swap);
       if (!probe || probe.length < probe.minLen) {
         pos = resyncOrThrow(bytes, pos, records.length);
         warnings++;
@@ -280,12 +367,12 @@
           warnings++;
           continue;
         }
-        const m = dltDecodeMessage(bytes.subarray(pos));
+        const m = dltDecodeMessage(bytes.subarray(pos), swap);
         if (m && m.record) records.push({ offset: pos, record: m.record, line: m.line });
         warnings += m ? m.warnings : 1;
         break;
       }
-      const m = dltDecodeMessage(bytes.subarray(pos));
+      const m = dltDecodeMessage(bytes.subarray(pos), swap);
       if (!m || m.implausible || m.consumed <= 0) {
         pos = resyncOrThrow(bytes, pos, records.length);
         warnings++;
@@ -514,5 +601,6 @@
     dltFindResync,
     dltEpochToTimeText,
     dltHexDump,
+    dltHeaderSwap,
   };
 }));
