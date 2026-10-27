@@ -1,0 +1,3 @@
+09-19 11:06:12.884 88 DHU QSYM:IAUD 1687674 log info 41263 io_audio.569405
+09-19 11:06:12.884 89 DHU QSYM:IAUD 1687674 log info 41264 Subchn 0x35026e4a10 frags used 3/3
+09-19 11:06:12.884 7 DHU QSYM:CHMI 1687674 log error [DataLayer] kanzi property update

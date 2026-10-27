@@ -60,9 +60,16 @@
   // even on boundary-free tails. Warnings accumulate into `stats` only when
   // the caller passes one — page/worker re-decodes pass none, so the
   // index-time warning count is never mutated (R5-5).
-  async function* dltRecordLines(file, onProgress, cancelled, stats) {
+  async function* dltRecordLines(file, onProgress, cancelled, stats, headerSwap) {
     const warn = (n) => { if (stats) stats.warnings += n; };
     let buf = new Uint8Array(0), base = 0, pos = 0, indexed = 0;
+    // Standard-header byte order (ADR-0021): the calibrated policy arrives
+    // from the PagedLog when it has one (index calibrates on the 64 KB head);
+    // standalone callers calibrate once on the first window — it starts at
+    // offset 0, which is all the calibration needs. Either way one policy
+    // governs every boundary so the streamed walk matches a whole-buffer
+    // dltScanMessages over the same bytes (R5-6).
+    let swap = headerSwap === null || headerSwap === undefined ? null : !!headerSwap;
     let deadline = performance.now() + 8;
     // Pull the next 1 MiB chunk, dropping the already-consumed prefix so the
     // buffer stays bounded; mirrors byteLines' chunking and progress reports.
@@ -125,7 +132,8 @@
         continue;
       }
       while (pos < buf.length) {
-        const m = dlt.dltDecodeMessage(buf.subarray(pos));
+        if (swap === null && buf.length >= 8) swap = dlt.dltHeaderSwap(buf);
+        const m = dlt.dltDecodeMessage(buf.subarray(pos), swap);
         const storage = dlt.dltIsStorageMagic(buf, pos);
         if (m && m.implausible) {
           // Broken framing at this boundary: scan forward to the next
@@ -184,6 +192,7 @@
       this.offsets = new Column(Float64Array); this.times = new Column(Float64Array); this.levels = new Column(Uint8Array);
       this.format = forcedFormat || 'plain'; this.counts = {}; this.firstLine = ''; this.maxLength = 0;
       this.warnings = 0; this.storageHeader = false; // dlt-binary diagnostics (R1-5, R5-5)
+      this.dltSwap = false; // QNX BE standard-header policy, calibrated at index() (ADR-0021)
       this.cache = new Map(); this.cacheBytes = 0;
       this.utf8 = true; // set false by index() when the head fails strict UTF-8 validation
     }
@@ -232,8 +241,11 @@
         this.format = 'dlt-binary';
         this.utf8 = true; // rendered text comes from the decoder, never enc? (R1-1)
         this.storageHeader = sniffed.storageHeader;
+        // One byte-order policy, calibrated on the same head the sniff saw,
+        // shared by the index walk, worker scans and page re-decode (R5-6).
+        this.dltSwap = dlt.dltHeaderSwap(head);
         const stats = { warnings: 0 };
-        for await (const rec of dltRecordLines(this.file, onProgress, cancelled, stats)) add(rec);
+        for await (const rec of dltRecordLines(this.file, onProgress, cancelled, stats, this.dltSwap)) add(rec);
         if (cancelled && cancelled()) throw new Error('Cancelled');
         this.warnings = stats.warnings;
         return sample.concat(tail.slice(tailPos), tail.slice(0, tailPos)).filter(Boolean);
@@ -259,7 +271,7 @@
     // rules, export archive scan) resolve their matches in the decoded record
     // index space instead of raw byte-line space.
     async *recordLines(onProgress, cancelled) {
-      if (this.format === 'dlt-binary') { yield* dltRecordLines(this.file, onProgress, cancelled, null); return; }
+      if (this.format === 'dlt-binary') { yield* dltRecordLines(this.file, onProgress, cancelled, null, this.dltSwap); return; }
       yield* byteLines(this.file, onProgress, cancelled);
     }
     async page(block) {
@@ -278,8 +290,10 @@
           // starts at the standard header and every read is bounded by the
           // declared total length, so a trailing next-record storage header
           // inside the window is ignored as framing (AC-3.1). Re-decode is a
-          // pure function of the bytes and never touches this.warnings.
-          const m = dlt.dltDecodeMessage(bytes.subarray(from, to));
+          // pure function of the bytes and never touches this.warnings. The
+          // index-time byte-order policy is passed explicitly so rows match
+          // the index even when the byte-swapped length would also fit (R5-6).
+          const m = dlt.dltDecodeMessage(bytes.subarray(from, to), this.dltSwap);
           rows.push(this.record(i, m && m.line != null ? m.line : '', m && m.record ? m.record : { ts: null, level: null, tag: null, pid: null, msg: '' }));
           continue;
         }
