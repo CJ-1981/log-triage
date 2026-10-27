@@ -159,6 +159,33 @@ test('sniff: 16 KiB logcat-style head never classifies dlt-binary', () => {
   assert.deepStrictEqual(DLT.dltSniff(buf, buf.length), { binary: false, storageHeader: false });
 });
 
+test('sniff: printable text staging a plausible boundary chain never classifies (log_top regression, FR-30 AC-1)', () => {
+  // "20260917_17-33-01\n..." — byte 0 '2' (0x32) passes the DLT version bits
+  // and bytes 2-3 ('2','6') read as declared length 12854; the real `top`
+  // snapshot log happens to have another version-range byte at that offset
+  // ("2M S  0.0..." reads as length 12877), completing the chain. With no
+  // NUL/C0/DEL byte in the head it is text, never a capture.
+  const second = 12854;
+  let text = '20260917_17-33-01\ntop_cpu:\nTasks: 568 total,   2 running, 566 sleeping\n';
+  text += 'a'.repeat(second - text.length);
+  text += '2M S  0.0   0.1   0:00.5\n';
+  text += 'b'.repeat(25731 + 64 - text.length);
+  const buf = enc(text);
+  assert.strictEqual(DLT.dltPlausibleHeader(buf, second, buf.length) || DLT.dltPlausibleHeader(buf, second, buf.length, true), true, 'precondition: the chain would pass structurally');
+  assert.deepStrictEqual(DLT.dltSniff(buf, buf.length), { binary: false, storageHeader: false });
+});
+
+test('sniff: the text veto does not fire on binary bytes — the same chain with one NUL still classifies', () => {
+  const second = 12854;
+  let text = '20260917_17-33-01\ntop_cpu:\nTasks: 568 total\n';
+  text += 'a'.repeat(200) + '\x00';
+  text += 'a'.repeat(second - text.length);
+  text += '2M S  0.0   0.1   0:00.5\n';
+  text += 'b'.repeat(25731 + 64 - text.length);
+  const buf = enc(text);
+  assert.deepStrictEqual(DLT.dltSniff(buf, buf.length), { binary: true, storageHeader: false });
+});
+
 // --- header walking (R2-1) ---------------------------------------------------
 
 test('framing: storage header is framing; typed-flag extras decode in MSBF order', () => {

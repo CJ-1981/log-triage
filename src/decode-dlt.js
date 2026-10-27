@@ -121,28 +121,47 @@ function dltPlausibleHeader(bytes, off, end, lenSwap) {
   return !!p && p.length >= p.minLen && off + p.length <= (end === undefined ? bytes.length : end);
 }
 
+  /* Byte-level text veto for the headerless sniff (FR-30 AC-1): the protocol
+   * version bits accept every byte 0x20-0x3F, so plain text that merely starts
+   * with a digit or space can stage a plausible boundary chain — a `top`
+   * snapshot log ("20260917_17-33-01\n…") chains '2'→"26"→12854 into a second
+   * boundary whose byte is again '2' ("2M S …" → 12877). Real DLT framing is
+   * dense with NUL bytes (length high bytes, session ids, padded id fields),
+   * so a sampled head without a single NUL/C0-control/DEL byte is text, never
+   * a capture. LF/CR/TAB stay printable: logs are full of them. */
+  function dltHeadHasBinaryBytes(head) {
+    const n = Math.min(head.length, 65536);
+    for (let i = 0; i < n; i++) {
+      const b = head[i];
+      if (b === 0 || (b < 32 && b !== 9 && b !== 10 && b !== 13) || b === 127) return true;
+    }
+    return false;
+  }
+
   /* Classification sniff for detect.js (SPEC R1-2). `head` is the leading
    * chunk of the file (at least 4 bytes), `fileSize` the full file size.
    * storageHeader=true means the file starts with DLT storage-header magic.
    * A headerless capture is classified binary only when the first message's
    * boundary is followed by another plausible boundary (chained look-ahead) or
    * the first message alone decodes to a complete verbose typed structure —
-   * text rarely satisfies either. The authoritative veto against text files
+   * text rarely satisfies either, and a printable head never does (the
+   * byte-level veto above). The authoritative veto against text files
    * happens at index time in paged.js, which sees the full document. */
   function dltSniff(head, fileSize) {
     const no = { binary: false, storageHeader: false };
     if (!head || head.length < 4) return no;
     if (dltIsStorageMagic(head, 0)) return { binary: true, storageHeader: true };
+    const text = !dltHeadHasBinaryBytes(head);
     let first = probeHeader(head, 0);
     if (!first || first.length < first.minLen || first.length > fileSize) first = probeHeader(head, 0, true); // QNX BE-header head
     if (!first || first.length < first.minLen || first.length > fileSize) return no;
     const next = first.length;
-    if (next + 4 <= head.length) {
+    if (!text && next + 4 <= head.length) {
       if (dltIsStorageMagic(head, next) && next + STORAGE_LEN <= fileSize) return { binary: true, storageHeader: false };
       if (dltPlausibleHeader(head, next, fileSize)) return { binary: true, storageHeader: false };
       if (dltPlausibleHeader(head, next, fileSize, true)) return { binary: true, storageHeader: false }; // QNX BE-header chain
     }
-    if (next <= head.length) {
+    if (!text && next <= head.length) {
       const m = dltDecodeMessage(head.subarray(0, next));
       if (m && !m.implausible && !m.truncated && m.verbose && m.clean) return { binary: true, storageHeader: false };
     }
