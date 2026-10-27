@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+## 1.65.2 (2026-10-27)
+- Merge pull request #67 from CJ-1981/fix/dlt-control-char-escaping
+- fix(dlt): render payload control characters as escaped literals; one record is one rendered line
+
 ## 1.65.1 (2026-10-27)
 - Merge pull request #66 from CJ-1981/fix/dlt-qnx-writer-variant
 - fix(dlt): decode the QNX writer variant (BE standard header, epoch-first storage header)
