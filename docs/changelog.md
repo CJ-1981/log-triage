@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- fix(detect): byte-level text veto for the headerless dlt-binary sniff — a printable head (no NUL/C0/DEL byte in the first 64 KiB) never classifies binary, so `top` snapshot logs whose first byte stages a plausible boundary chain stay plain text (FR-30 AC-1)
+
 ## 1.65.1 (2026-10-27)
 - Merge pull request #66 from CJ-1981/fix/dlt-qnx-writer-variant
 - fix(dlt): decode the QNX writer variant (BE standard header, epoch-first storage header)
