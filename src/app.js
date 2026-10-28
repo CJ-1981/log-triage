@@ -901,7 +901,9 @@
     const chips = (state.viewMode === 'file' && state.activeFile)
       ? store.tallyFor(state.activeFile).chipList()
       : tally.chipList();
-    if (!chips.length) {
+    // a lone "—" chip (unparseable/continuation bucket, ADR-0023: prose lines
+    // no longer mint keyword levels) cannot narrow anything — show the hint
+    if (!chips.length || (chips.length === 1 && chips[0].id === '__')) {
       row.innerHTML = '<span class="muted" id="chips-hint">Level chips appear after loading</span>';
       return;
     }

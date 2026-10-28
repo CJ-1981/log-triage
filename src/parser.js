@@ -133,7 +133,13 @@
   }
 
   function parseFallback(line) {
-    return record(null, levelFromTokens(line), null, null, line);
+    // Continuation record: no ts, no level (custom-format AC-5, QXDM AC-6,
+    // ADR-0023). Severity tokens in prose must not mint badges — a 480k-line
+    // Android bugreport lit up with 2.4k keyword badges ('bt-debug-gpio',
+    // 'WINDOW MANAGER TRACE', 'DUMPSYS CRITICAL'), and the level chips could
+    // not narrow anything. Structured levels come from the format parsers;
+    // parseWithTs keeps token levels on its timestamp-matched lines.
+    return record(null, null, null, null, line);
   }
 
   function parseDlt(line) {

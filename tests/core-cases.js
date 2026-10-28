@@ -300,26 +300,29 @@
     eq(r.level, null);
   });
 
-  T('parse', 'plain line: null ts, severity token from text', () => {
+  T('parse', 'plain line: continuation record, all null but message kept (ADR-0023)', () => {
     const r = SRC.parseLine('something WARN: disk almost full', 'plain');
-    eq(r.ts, null);
-    eq(r.level, 'W');
+    deepEq(r, { ts: null, level: null, tag: null, pid: null, tid: null, msg: 'something WARN: disk almost full' });
+    deepEq(SRC.parseLine('plain continuation text', 'plain'), { ts: null, level: null, tag: null, pid: null, tid: null, msg: 'plain continuation text' });
   });
 
-  T('parse', 'plain line without tokens: all null but message kept', () => {
-    const r = SRC.parseLine('plain continuation text', 'plain');
-    deepEq(r, { ts: null, level: null, tag: null, pid: null, tid: null, msg: 'plain continuation text' });
+  T('parse', 'severity tokens stay structured: iso8601 matched lines keep token levels, word-bounded', () => {
+    eq(SRC.parseLine('2026-09-17 17:31:27 ERROR: disk almost full', 'iso8601').level, 'E');
+    eq(SRC.parseLine('2026-09-17 17:31:27 the ERRORCODE field', 'iso8601').level, null);
+    eq(SRC.parseLine('2026-09-17 17:31:27 informatie over iets', 'iso8601').level, null);
   });
 
-  T('parse', 'severity token matching is word-bounded', () => {
-    eq(SRC.parseLine('the ERRORCODE field', 'plain').level, null);
-    eq(SRC.parseLine('informatie over iets', 'plain').level, null);
+  T('parse', 'fallback lines never mint keyword levels (bugreport regression, ADR-0023)', () => {
+    eq(SRC.parseLine('------ DUMPSYS CRITICAL (/system/bin/dumpsys) ------', 'plain').level, null);
+    eq(SRC.parseLine('    com.android.systemui.car.debug.CarSystemUIShellCommandRegisterer:', 'plain').level, null);
+    eq(SRC.parseLine('<4>[    0.229940][  T120] Kernel module BTF mismatch detected, BTF debug info may be unavailable for some modules', 'plain').level, null);
+    eq(SRC.parseLine('WINDOW MANAGER TRACE (dumpsys window trace)', 'plain').level, null);
   });
 
   T('parse', 'syslog with unknown month falls back to raw record', () => {
     const r = SRC.parseLine('Foo 24 15:37:01 host tag: WARNING', 'syslog');
     eq(r.ts, null);
-    eq(r.level, 'W');
+    eq(r.level, null);
     eq(r.msg, 'Foo 24 15:37:01 host tag: WARNING');
   });
 

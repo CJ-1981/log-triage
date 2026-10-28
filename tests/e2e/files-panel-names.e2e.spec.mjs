@@ -133,8 +133,15 @@ test('AC-FILES-001/002: a long live-entry name renders on one clipped line and t
 
 test('AC-FILES-005: HTML-special characters — tooltip decodes to the exact raw name with no injected markup', async () => {
   await fresh();
-  // special characters AND long enough to truncate, so the instant tip engages
-  const name = 'lt-a<b>c&d"e\'f-' + 'overflow'.repeat(12) + '.log';
+  // special characters AND long enough to truncate, so the instant tip engages.
+  // Windows filenames cannot contain < > " (nor \ / : * ? |), so the hostile
+  // alphabet is platform-split: POSIX exercises the full markup set, Windows
+  // the legal-but-HTML-hostile subset (& ' ( ) # % + , ; = ! @) — the esc()
+  // contract is exercised by & and ' on every platform.
+  const stem = process.platform === 'win32'
+    ? "lt-a&b'c(d)#e%f+g,h;i=k!j@"
+    : 'lt-a<b>c&d"e\'f-';
+  const name = stem + 'overflow'.repeat(12) + '.log';
   const p = join(os.tmpdir(), name);
   fs.writeFileSync(p, SAMPLE);
   try {

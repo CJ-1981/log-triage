@@ -8,6 +8,9 @@
 - fix(detect): byte-level text veto for the headerless dlt-binary sniff
 
 - fix(detect): byte-level text veto for the headerless dlt-binary sniff — a printable head (no NUL/C0/DEL byte in the first 64 KiB) never classifies binary, so `top` snapshot logs whose first byte stages a plausible boundary chain stay plain text (FR-30 AC-1)
+- fix(parse): fallback lines are pure continuation records — prose keywords no longer mint severity badges, fixing random debug badges and useless level chips on Android bugreports (ADR-0023, FR-2 AC-4)
+- fix(viewer): level-chips row shows its hint instead of a lone unparseable-bucket chip when no real level exists in scope
+- test(e2e): AC-FILES-005 hostile-name fixture split per platform (Windows filenames cannot contain < > ")
 
 ## 1.65.2 (2026-10-27)
 - Merge pull request #67 from CJ-1981/fix/dlt-control-char-escaping
