@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+## 1.65.4 (2026-10-28)
+- fix(parse): fallback lines are pure continuation records — prose keywords never mint severity badges
+
 ## 1.65.3 (2026-10-27)
 - Merge pull request #68 from CJ-1981/fix/dlt-sniff-text-veto
 - merge origin/main (v1.65.2 release): resolve changelog, rebuild html
